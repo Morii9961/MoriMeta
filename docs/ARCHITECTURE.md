@@ -188,7 +188,7 @@ apps/desktop/src/
 
 长任务使用 Tauri Channel 流式推送（批量合并，≤ 4 次/秒）：`ScanProgress`、`PlanProgress`、`ExecProgress { done, total, ok, warn, fail, skipped, current }`、`FileResult`（失败项即时推送）。
 
-实现状态：`mm-core::executor::ExecProgress`（total、done、ok、failed、skipped、刚结算的文件）经 `ExecOptions.progress` 在每个文件结算后按完成顺序回调；批量合并与 Channel 属于适配层。`warn` 待有警告类结果时加入。`PlanProgress`：`planner::PlanCtl` 在检查文件阶段每 100 个文件、读取元数据阶段每块（100 个文件一条 ExifTool 命令）回调一次，取消返回 `CoreError::Cancelled`（未写入任何内容）；Plan 生成仍在单个 ExifTool 会话中顺序进行，并行读取待 S4 数据。
+实现状态：`mm-core::executor::ExecProgress`（total、done、ok、failed、skipped、刚结算的文件）经 `ExecOptions.progress` 在每个文件结算后按完成顺序回调；批量合并与 Channel 属于适配层。`warn` 待有警告类结果时加入。`asset_detail` / `selection_aggregate`：`mm-core::inspect`（字段有效值、来源、冲突与全部原始标签；选择集中每个字段各值的文件数、空值、冲突与不可读计数）。`PlanProgress`：`planner::PlanCtl` 在检查文件阶段每 100 个文件、读取元数据阶段每块（100 个文件一条 ExifTool 命令）回调一次，取消返回 `CoreError::Cancelled`（未写入任何内容）；Plan 生成仍在单个 ExifTool 会话中顺序进行，并行读取待 S4 数据。
 
 ---
 

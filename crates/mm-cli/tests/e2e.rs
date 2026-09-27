@@ -3401,3 +3401,48 @@ fn retry_failed_files() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// Inspector and aggregate through the CLI, for a NEF whose creator lives in its sidecar: the
+/// field view reads the sidecar first and lists the sidecar's own tags.
+#[test]
+fn inspect_and_aggregate_a_nef_with_its_sidecar() {
+    let pkg = require!();
+    let lab = Lab::new("inspect-nef", &pkg);
+    let nef = lab.add_nef("a.NEF");
+    let (p, _) = lab.plan_on(&["plan-creator", "--set", "Mori"], &[&nef], "c.json");
+    let op = lab.apply_ok(&p);
+    let d = Lab::json(&lab.cli(&["inspect", nef.to_str().unwrap()]));
+    let creator = &d["fields"][0];
+    assert_eq!(creator["field"], "creator");
+    assert_eq!(creator["value"], "Mori", "{d}");
+    assert!(
+        d["sidecar"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .ends_with("a.xmp")
+    );
+    assert_eq!(d["sidecar_tags"]["XMP-dc:Creator"], "Mori", "{d}");
+    assert!(d["tags"].as_object().unwrap().len() > 20);
+
+    let mut args = vec!["aggregate", nef.to_str().unwrap()];
+    let ps: Vec<String> = lab
+        .photos
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    args.extend(ps.iter().map(String::as_str));
+    let a = Lab::json(&lab.cli(&args));
+    let c = &a[0];
+    assert_eq!(c["files"], 9, "{a}");
+    assert!(
+        c["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v[0] == "Mori" && v[1] == 1),
+        "{a}"
+    );
+    lab.undo(&op);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

@@ -10,7 +10,7 @@ use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, ExecProgress, FaultPoint, ProgressSink};
 use mm_core::planner::{self, PlanCtl, PlanProgress, PlanStage};
 use mm_core::service::{EntryFilter, OperationGate, PAGE_SIZE, PlanBook, ServiceError, Session};
-use mm_core::undo;
+use mm_core::{inspect, undo};
 use mm_domain::creator::CreatorEdit;
 use mm_domain::plan::{EntryAction, Plan};
 use mm_exiftool::EngineConfig;
@@ -423,6 +423,66 @@ fn plan_progress_and_cancel() {
     assert!(matches!(r, Err(mm_core::CoreError::Cancelled)), "{r:?}");
     // the engine is still usable after a cancelled plan
     assert_eq!(lab.plan_creator().executable().count(), 250);
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
+
+/// ARCHITECTURE §5.2 `asset_detail` and `selection_aggregate`: field views with their sources,
+/// every raw tag, and per-field value counts that show a mixed selection.
+#[test]
+fn inspector_and_selection_aggregate() {
+    let Some(mut lab) = Lab::new("inspect", 6) else {
+        return;
+    };
+    let d = inspect::asset_detail(&mut lab.engines[0], &lab.files[0]).unwrap();
+    let names: Vec<&str> = d.fields.iter().map(|f| f.field).collect();
+    assert_eq!(names, ["creator", "copyright", "capture_time", "gps"]);
+    assert!(d.tags.len() > 10, "{:?}", d.tags);
+    assert!(d.sidecar.is_none());
+
+    let agg = |lab: &mut Lab| {
+        inspect::selection_aggregate(&mut lab.engines[0], &lab.files, &Default::default()).unwrap()
+    };
+    for a in agg(&mut lab) {
+        let listed: usize = a.values.iter().map(|(_, n)| n).sum();
+        assert_eq!(listed + a.empty + a.unreadable, 6, "{a:?}");
+    }
+    // write one creator to half of the files: the selection is now mixed
+    let half = lab.files[..3].to_vec();
+    let plan = planner::plan_creator(
+        &mut lab.engines[0],
+        &half,
+        &CreatorEdit::Set(vec!["Morii".into()]),
+        "C",
+        &Default::default(),
+    )
+    .unwrap();
+    let rep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &plan,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rep.status, OpStatus::Completed, "{rep:?}");
+    let creator = agg(&mut lab).remove(0);
+    assert_eq!(creator.field, "creator");
+    assert!(
+        creator.values.contains(&("Morii".to_string(), 3)),
+        "{creator:?}"
+    );
+    assert!(
+        creator.values.len() >= 2 || creator.empty > 0,
+        "{creator:?}"
+    );
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &up,
+        &ExecOptions::default(),
+    )
+    .unwrap();
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }

@@ -52,7 +52,12 @@ pub struct PlanCtl {
 }
 
 impl PlanCtl {
-    fn report(&self, stage: PlanStage, done: usize, total: usize) -> Result<(), CoreError> {
+    pub(crate) fn report(
+        &self,
+        stage: PlanStage,
+        done: usize,
+        total: usize,
+    ) -> Result<(), CoreError> {
         if self
             .cancel
             .as_ref()
@@ -321,7 +326,7 @@ fn ext_of(p: &Path) -> String {
 }
 
 /// FormatPolicy (SAFETY_MODEL §3).
-enum Policy {
+pub(crate) enum Policy {
     /// Written in place (JPEG).
     Embedded,
     /// An XMP file selected on its own: written in place, XMP tags only.
@@ -331,7 +336,7 @@ enum Policy {
     Unsupported,
 }
 
-fn policy(p: &Path) -> Policy {
+pub(crate) fn policy(p: &Path) -> Policy {
     let ext = ext_of(p);
     match ext.as_str() {
         "jpg" | "jpeg" => Policy::Embedded,
@@ -358,7 +363,7 @@ pub fn importable(p: &Path) -> bool {
 /// The sidecar of `raw` (SAFETY_MODEL §3.1): `<stem>.xmp` in any letter case (the existing name
 /// is used), unless another RAW with the same stem makes the ownership ambiguous. A darktable
 /// `<file>.<ext>.xmp` is recognised and left alone. Returns (path, exists, notes).
-fn pair_sidecar(raw: &Path) -> Result<(PathBuf, bool, Vec<String>), String> {
+pub(crate) fn pair_sidecar(raw: &Path) -> Result<(PathBuf, bool, Vec<String>), String> {
     let dir = raw.parent().ok_or("no folder")?;
     let stem = raw
         .file_stem()

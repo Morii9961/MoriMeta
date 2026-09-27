@@ -144,17 +144,32 @@ impl Engine {
 
     /// Full read for verification: every tag (`-a -G1 -u`) plus `ImageDataHash` (SHA-256).
     pub fn read_full(&mut self, paths: &[&Path]) -> Result<Vec<Option<Snapshot>>, CoreError> {
+        self.read_every_tag(paths, true)
+    }
+
+    /// Every tag (`-a -G1 -u`) for display (Inspector), without the image data hash.
+    pub fn read_all_tags(&mut self, paths: &[&Path]) -> Result<Vec<Option<Snapshot>>, CoreError> {
+        self.read_every_tag(paths, false)
+    }
+
+    fn read_every_tag(
+        &mut self,
+        paths: &[&Path],
+        image_hash: bool,
+    ) -> Result<Vec<Option<Snapshot>>, CoreError> {
         let mut c = Command::read_json();
-        for o in [
-            "-a",
-            "-G1",
-            "-u",
-            "-api",
-            "RequestTags=ImageDataHash",
-            "-api",
-            "ImageHashType=SHA256",
-        ] {
+        for o in ["-a", "-G1", "-u"] {
             c.push(Line::option(o));
+        }
+        if image_hash {
+            for o in [
+                "-api",
+                "RequestTags=ImageDataHash",
+                "-api",
+                "ImageHashType=SHA256",
+            ] {
+                c.push(Line::option(o));
+            }
         }
         numeric_gps_then_all(&mut c);
         let mut bytes = 0;

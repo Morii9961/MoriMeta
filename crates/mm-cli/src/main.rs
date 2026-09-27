@@ -9,6 +9,8 @@
 //!
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
+//!   inspect FILE              Inspector data: fields with sources, every tag (and the sidecar's)
+//!   aggregate [--files-from UTF8_FILE] FILE...   per field, which values how many files hold
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-time (--absolute "YYYY:MM:DD HH:MM:SS" | --shift [+|-][Nd]HH:MM:SS
 //!              | --sequence "START" --step HH:MM:SS [--order time|name] | --preserve ANCHOR_FILE --to "TIME")
@@ -60,7 +62,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::planner::TimeTool;
-use mm_core::{fsck, history, planner, presets, recovery, retention, undo};
+use mm_core::{fsck, history, inspect, planner, presets, recovery, retention, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
@@ -403,6 +405,21 @@ fn main() -> ExitCode {
                     })
                     .collect();
                 println!("{}", Value::Array(out));
+                Ok(ExitCode::SUCCESS)
+            }
+            "inspect" => {
+                let f = args.first().ok_or("inspect FILE")?;
+                let mut eng = with_engine(&g)?;
+                let d = inspect::asset_detail(&mut eng, Path::new(f)).map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&d).unwrap_or_default());
+                Ok(ExitCode::SUCCESS)
+            }
+            "aggregate" => {
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let a = inspect::selection_aggregate(&mut eng, &paths, &Default::default())
+                    .map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&a).unwrap_or_default());
                 Ok(ExitCode::SUCCESS)
             }
             "plan-creator" => {
