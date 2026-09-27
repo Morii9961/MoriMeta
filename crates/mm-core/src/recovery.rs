@@ -79,7 +79,7 @@ fn remove_if_hash(p: &Path, want: Option<&str>) -> bool {
 }
 
 /// The decision table. Never deletes the original path; never overwrites anything.
-fn decide(f: &FileRow) -> (FileState, String) {
+pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
     let path = Path::new(&f.path);
     let temp = Path::new(&f.temp_path);
     let bak = Path::new(&f.bak_path);

@@ -515,3 +515,68 @@ fn latin_iptc_blocks_cjk_and_updates_digest_for_latin_names() {
     let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
     lab.undo(&op);
 }
+
+#[test]
+fn injected_io_errors_are_settled_without_recovery() {
+    let pkg = require!();
+    for step in 1u8..=10 {
+        let lab = Lab::new(&format!("ioerr-{step}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--fail-at",
+                &format!("2:{step}"),
+            ],
+            true,
+        );
+        let r = Lab::json(&o);
+        let op = r["op_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("step {step}: {r}"))
+            .to_owned();
+        assert!(
+            r["status"] != "running",
+            "step {step} left the operation running"
+        );
+        let f2 = r["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["seq"] == 2)
+            .unwrap()
+            .clone();
+        let target = &lab.photos[2];
+        if step <= 7 {
+            // before the commit: the file is reported failed and was not changed
+            assert_eq!(f2["state"], "failed", "step {step}: {f2}");
+            assert_eq!(
+                blake(target).as_deref(),
+                Some(lab.truth[target].as_str()),
+                "step {step}"
+            );
+        } else {
+            // the commit had happened: the file is done
+            assert_eq!(f2["state"], "done", "step {step}: {f2}");
+        }
+        for f in r["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["seq"] != 2)
+        {
+            assert_eq!(f["state"], "done", "step {step}: {f}");
+        }
+        assert!(
+            lab.leftovers().is_empty(),
+            "step {step}: {:?}",
+            lab.leftovers()
+        );
+        assert!(lab.cli(&["fsck", &op]).status.success(), "step {step}");
+        assert!(lab.cli(&["recover"]).status.success());
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

@@ -28,7 +28,10 @@ pub struct FaultPoint {
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecOptions {
+    /// Terminate the process at this point (crash test).
     pub fault: Option<FaultPoint>,
+    /// Return an injected IO error at this point (error-path test).
+    pub fail: Option<FaultPoint>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,8 +50,10 @@ pub struct OpReport {
     pub note: Option<String>,
 }
 
-fn crash_if(opts: &ExecOptions, seq: u32, step: u8) {
-    if opts.fault == Some(FaultPoint { seq, step }) {
+/// Fault-injection hook at a numbered step: terminate (crash test) or fail with an IO error.
+fn fault(opts: &ExecOptions, seq: u32, step: u8) -> Result<(), CoreError> {
+    let here = Some(FaultPoint { seq, step });
+    if opts.fault == here {
         use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
         // SAFETY: terminating our own process; nothing after this runs (no destructors, like a crash).
         unsafe {
@@ -56,6 +61,12 @@ fn crash_if(opts: &ExecOptions, seq: u32, step: u8) {
         }
         unreachable!();
     }
+    if opts.fail == here {
+        return Err(CoreError::Io(std::io::Error::other(format!(
+            "injected IO error at step {step}"
+        ))));
+    }
+    Ok(())
 }
 
 enum Outcome {
@@ -228,7 +239,26 @@ fn run(
         };
         let outcome = match one_file(store, engine, op_id, entry, &files, opts) {
             Ok(o) => o,
-            Err(e) => Outcome::Failed(format!("internal: {e}")),
+            // An error in the middle of the transaction (IO, engine, journal): the lock is released;
+            // settle this file from the journal and the disk with the recovery table (SAFETY_MODEL §10).
+            // If the journal itself is failing, `?` stops the Operation in `running` state so that
+            // recovery handles it at the next start.
+            Err(e) => {
+                let now = store
+                    .files(op_id)?
+                    .into_iter()
+                    .find(|r| r.seq == *seq)
+                    .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))?;
+                let (to, action) = crate::recovery::decide(&now);
+                match to {
+                    FileState::NotStarted => Outcome::Failed(format!("{e}; original unchanged")),
+                    FileState::Done => {
+                        store.set_state(op_id, *seq, FileState::Done, &FileUpdate::default())?;
+                        Outcome::Done
+                    }
+                    _ => Outcome::Attention(format!("{e}; {action}")),
+                }
+            }
         };
         let (state, reason, verify_fail) = match outcome {
             Outcome::Done => (FileState::Done, None, false),
@@ -314,7 +344,7 @@ fn one_file(
     opts: &ExecOptions,
 ) -> Result<Outcome, CoreError> {
     let seq = entry.seq;
-    crash_if(opts, seq, 1);
+    fault(opts, seq, 1)?;
     // 1 lock + fingerprint
     let mut lock = match mm_fs::open_lock(&f.path) {
         Ok(l) => l,
@@ -339,14 +369,14 @@ fn one_file(
     if probe.links > 1 || probe.reparse_point {
         return Ok(Outcome::Skipped("hard link or reparse point".into()));
     }
-    crash_if(opts, seq, 2);
+    fault(opts, seq, 2)?;
     // 2 backup through the lock handle
     lock.rewind()?;
     let h0 = match mm_fs::copy_new_hashing(&mut lock, &f.backup) {
         Ok(h) => h,
         Err(e) => return Ok(Outcome::Failed(format!("backup failed: {e}"))),
     };
-    crash_if(opts, seq, 3);
+    fault(opts, seq, 3)?;
     if mm_fs::hash_path(&f.backup)? != h0 {
         remove_if_exists(&f.backup);
         return Ok(Outcome::Failed("backup verification failed".into()));
@@ -361,7 +391,7 @@ fn one_file(
             ..Default::default()
         },
     )?;
-    crash_if(opts, seq, 4);
+    fault(opts, seq, 4)?;
     // 3 produce the temp file
     match entry.action.as_ref() {
         Some(EntryAction::Write { ops, expect }) => {
@@ -380,7 +410,7 @@ fn one_file(
             if !f.temp.exists() {
                 return Ok(Outcome::Failed("ExifTool produced no output".into()));
             }
-            crash_if(opts, seq, 5);
+            fault(opts, seq, 5)?;
             // 4 verify against the verified backup (the actual source)
             let reads = engine.read_full(&[f.backup.as_path(), f.temp.as_path()])?;
             let (Some(src), Some(tmp)) = (reads[0].as_ref(), reads[1].as_ref()) else {
@@ -420,13 +450,13 @@ fn one_file(
                     "backup content does not match its recorded hash".into(),
                 ));
             }
-            crash_if(opts, seq, 5);
+            fault(opts, seq, 5)?;
         }
         None => return Ok(Outcome::Failed("plan entry has no action".into())),
     }
     mm_fs::flush_path(&f.temp)?;
     let h1s = mm_fs::hex(&mm_fs::hash_path(&f.temp)?);
-    crash_if(opts, seq, 6);
+    fault(opts, seq, 6)?;
     store.set_state(
         op_id,
         seq,
@@ -436,7 +466,7 @@ fn one_file(
             ..Default::default()
         },
     )?;
-    crash_if(opts, seq, 7);
+    fault(opts, seq, 7)?;
     // 5 identity and bak-name checks, then commit
     if mm_fs::file_id_of_path(&f.path).ok() != Some(mm_fs::file_id(&lock)?) {
         remove_if_exists(&f.temp);
@@ -463,7 +493,7 @@ fn one_file(
     if let Err(code) = result {
         return Ok(commit_failed(f, &h0s, code));
     }
-    crash_if(opts, seq, 8);
+    fault(opts, seq, 8)?;
     let new_id = mm_fs::file_id_of_path(&f.path)
         .ok()
         .map(|i| crate::file_id_hex(&i));
@@ -476,7 +506,7 @@ fn one_file(
             ..Default::default()
         },
     )?;
-    crash_if(opts, seq, 9);
+    fault(opts, seq, 9)?;
     drop(lock);
     // 6 post-check and cleanup
     if hash_opt(&f.path).as_deref() != Some(h1s.as_str()) {
@@ -487,7 +517,7 @@ fn one_file(
     if hash_opt(&f.bak).as_deref() == Some(h0s.as_str()) {
         remove_if_exists(&f.bak);
     }
-    crash_if(opts, seq, 10);
+    fault(opts, seq, 10)?;
     store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;
     Ok(Outcome::Done)
 }

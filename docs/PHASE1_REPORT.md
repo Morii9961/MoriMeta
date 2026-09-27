@@ -23,7 +23,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 ## 2. 验证
 
-`cargo test --workspace --release`：52 个测试全部通过（2026-09-27）。端到端测试 `crates/mm-cli/tests/e2e.rs` 使用锁定的 ExifTool 13.59 与 8 个 ExifTool 样本 JPEG（Writer、Nikon、Canon、XMP、Sony、Olympus、Pentax、GPS）：
+`cargo test --workspace --release`：53 个测试全部通过（2026-09-27）。端到端测试 `crates/mm-cli/tests/e2e.rs` 使用锁定的 ExifTool 13.59 与 8 个 ExifTool 样本 JPEG（Writer、Nikon、Canon、XMP、Sony、Olympus、Pentax、GPS）：
 
 | 测试 | 内容 | 结果 |
 |---|---|---|
@@ -32,14 +32,19 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | 随机终止 | 随机时刻终止 `mm-cli apply`，其后同上（默认 12 次，`MM_E2E_KILLS` 可调） | 12/12 通过 |
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
+| 注入 IO 错误 | 在文件 #2 的故障点 1–10 各注入一次 IO 错误（`--fail-at`）：Operation 不停留在 running；提交前出错 → 该文件 failed 且内容为 H0；提交后出错 → done；其他文件 done；无残留、fsck 干净；撤销后逐字节一致 | 10/10 通过 |
 
-实现过程中验证机制拦截的真实问题：`Pentax.jpg` 写入后 MakerNotes 中的预览图指针 `Pentax:PreviewImageStart` 移动，V3 判定为附带变化而拒绝提交（原文件未触碰）。修正：文件偏移类标签（`…Offset`、`…Offsets`、`…Start`）在两侧都存在时视为版式派生；新增或消失仍判为附带变化；对应长度标签不得改变（单元测试覆盖）。
+实现过程中发现并修正的问题：
+
+- 事务中途出现错误（IO、引擎、Journal）时，原实现一律记为 failed；若错误发生在提交之后，会把已提交的文件误记为失败。现改为：用与崩溃恢复相同的判定表按 Journal 与磁盘状态结算该文件（未动 → failed，已提交 → done，异常 → attention）；Journal 本身出错时 Operation 保持 running，由下次启动的恢复处理。
+
+验证机制拦截的真实问题：`Pentax.jpg` 写入后 MakerNotes 中的预览图指针 `Pentax:PreviewImageStart` 移动，V3 判定为附带变化而拒绝提交（原文件未触碰）。修正：文件偏移类标签（`…Offset`、`…Offsets`、`…Start`）在两侧都存在时视为版式派生；新增或消失仍判为附带变化；对应长度标签不得改变（单元测试覆盖）。
 
 ## 3. 已知缺口（尚未实现或尚未验证）
 
 | # | 缺口 | 计划 |
 |---|---|---|
-| G-1 | 故障注入只覆盖进程终止；IO 错误、磁盘满注入未做 | Phase 1b 后续（`mm-testkit`） |
+| G-1 | 故障注入覆盖进程终止与注入 IO 错误；真实磁盘满（小卷）与 Journal 写入失败尚未单独测试 | 需要可创建小卷的环境（管理员权限或可移动介质） |
 | G-2 | 规模：端到端每次 8 个小文件；5,000 文件规模与真实大文件未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |

@@ -8,13 +8,14 @@
 //! Commands:
 //!   scan FILE...
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] FILE...
-//!   apply PLAN.json [--crash-at SEQ:STEP]
+//!   apply PLAN.json [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
 //!   recover
-//!   resume OP_ID [--crash-at SEQ:STEP]
+//!   resume OP_ID [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
 //!   plan-undo OP_ID --out PLAN.json
 //!   history | show OP_ID | fsck OP_ID
 //!
-//! `--crash-at` terminates the process at a fault point; it requires MM_FAULT_INJECTION=1.
+//! `--crash-at` terminates the process at a fault point, `--fail-at` injects an IO error there;
+//! both require MM_FAULT_INJECTION=1.
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
 //! 4 fsck found problems.
 
@@ -97,16 +98,17 @@ fn instance_lock(data: &Path) -> Result<std::fs::File, String> {
         .map_err(|_| "another MoriMeta instance is using this data directory".to_string())
 }
 
-fn parse_fault(args: &mut Vec<String>) -> Result<Option<FaultPoint>, String> {
-    let Some(i) = args.iter().position(|a| a == "--crash-at") else {
+/// `--crash-at` / `--fail-at SEQ:STEP` (fault-injection tests only).
+fn parse_point(args: &mut Vec<String>, flag: &str) -> Result<Option<FaultPoint>, String> {
+    let Some(i) = args.iter().position(|a| a == flag) else {
         return Ok(None);
     };
     if std::env::var("MM_FAULT_INJECTION").as_deref() != Ok("1") {
-        return Err("--crash-at requires MM_FAULT_INJECTION=1".into());
+        return Err(format!("{flag} requires MM_FAULT_INJECTION=1"));
     }
-    let v = args.get(i + 1).cloned().ok_or("--crash-at SEQ:STEP")?;
+    let v = args.get(i + 1).cloned().ok_or(format!("{flag} SEQ:STEP"))?;
     args.drain(i..=i + 1);
-    let (s, t) = v.split_once(':').ok_or("--crash-at SEQ:STEP")?;
+    let (s, t) = v.split_once(':').ok_or(format!("{flag} SEQ:STEP"))?;
     Ok(Some(FaultPoint {
         seq: s.parse().map_err(|_| "bad SEQ")?,
         step: t.parse().map_err(|_| "bad STEP")?,
@@ -240,22 +242,24 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "apply" => {
-                let fault = parse_fault(&mut args)?;
+                let fault = parse_point(&mut args, "--crash-at")?;
+                let fail = parse_point(&mut args, "--fail-at")?;
                 let file = args.first().ok_or("apply PLAN.json")?;
                 let plan: Plan =
                     serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
                         .map_err(|e| format!("plan file: {e}"))?;
                 let mut eng = with_engine(&g)?;
-                let r = executor::start(&mut store, &mut eng, &plan, &ExecOptions { fault })
+                let r = executor::start(&mut store, &mut eng, &plan, &ExecOptions { fault, fail })
                     .map_err(|e| e.to_string())?;
                 eng.close();
                 Ok(report_exit(&r))
             }
             "resume" => {
-                let fault = parse_fault(&mut args)?;
+                let fault = parse_point(&mut args, "--crash-at")?;
+                let fail = parse_point(&mut args, "--fail-at")?;
                 let op = args.first().ok_or("resume OP_ID")?;
                 let mut eng = with_engine(&g)?;
-                let r = executor::resume(&mut store, &mut eng, op, &ExecOptions { fault })
+                let r = executor::resume(&mut store, &mut eng, op, &ExecOptions { fault, fail })
                     .map_err(|e| e.to_string())?;
                 eng.close();
                 Ok(report_exit(&r))
