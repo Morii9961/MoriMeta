@@ -2,8 +2,8 @@
 //! hold) and actions; a Preset is an ordered list of Rules stored as JSON with `schema_version`.
 //! Every condition is evaluated on the file's original snapshot; actions are combined in order and
 //! a later action on the same field replaces an earlier one, with a note. No rule sees another
-//! rule's result. Capture-time tools are not rule actions yet (Sequence and Preserve Relative
-//! Timing need the whole selection).
+//! rule's result. Of the capture-time tools, Absolute and Shift are rule actions (each file on its
+//! own); Sequence and Preserve Relative Timing need the whole selection and are not.
 
 use std::path::Path;
 
@@ -15,6 +15,7 @@ use crate::creator::{self, CreatorEdit};
 use crate::gps::{self, GeoPoint, GpsEdit};
 use crate::plan::{FieldPlan, Target};
 use crate::template::{Template, TemplateCtx};
+use crate::time::{self, TimeItem, TimeOp};
 
 pub const PRESET_SCHEMA_VERSION: u32 = 1;
 
@@ -92,6 +93,18 @@ pub enum Action {
         position: String,
     },
     RemoveGps,
+    /// Absolute: `YYYY:MM:DD HH:MM:SS` (local time; each location keeps its offset).
+    SetTime {
+        to: String,
+        #[serde(default = "yes")]
+        digitized: bool,
+    },
+    /// Shift: `[+|-][Nd]HH:MM:SS`; sub-seconds and offsets are kept.
+    ShiftTime {
+        by: String,
+        #[serde(default = "yes")]
+        digitized: bool,
+    },
 }
 
 impl Action {
@@ -100,6 +113,7 @@ impl Action {
             Action::SetCreator { .. } | Action::ClearCreator => Field::Creator,
             Action::SetCopyright { .. } | Action::ClearCopyright => Field::Copyright,
             Action::SetGps { .. } | Action::RemoveGps => Field::Gps,
+            Action::SetTime { .. } | Action::ShiftTime { .. } => Field::CaptureTime,
         }
     }
 }
@@ -177,6 +191,14 @@ impl Preset {
                     }
                     Action::SetGps { position } => {
                         GeoPoint::parse(position).map_err(at)?;
+                    }
+                    Action::SetTime { to, .. } => {
+                        time::parse_local(to)
+                            .ok_or_else(|| at(format!("{to:?}: use YYYY:MM:DD HH:MM:SS")))?;
+                    }
+                    Action::ShiftTime { by, .. } => {
+                        time::parse_shift(by)
+                            .ok_or_else(|| at(format!("{by:?}: use [+|-][Nd]HH:MM:SS")))?;
                     }
                     Action::ClearCreator | Action::ClearCopyright | Action::RemoveGps => {}
                 }
@@ -356,6 +378,34 @@ fn plan_action(a: &Action, t: &Target, ctx: &TemplateCtx) -> FieldPlan {
             Err(why) => FieldPlan::blocked(why),
         },
         Action::RemoveGps => gps::plan_target(t, &GpsEdit::Remove),
+        Action::SetTime { to, digitized } => match time::parse_local(to) {
+            Some(l) => plan_time(t, &TimeOp::Absolute(l), false, *digitized),
+            None => FieldPlan::blocked(format!("{to:?} is not a time")),
+        },
+        Action::ShiftTime { by, digitized } => match time::parse_shift(by) {
+            Some(d) => plan_time(t, &TimeOp::Shift(d), true, *digitized),
+            None => FieldPlan::blocked(format!("{by:?} is not a shift")),
+        },
+    }
+}
+
+/// A time operation that needs no other file (Absolute, Shift), for one file.
+fn plan_time(t: &Target, op: &TimeOp, keep_subsec: bool, digitized: bool) -> FieldPlan {
+    let item = TimeItem {
+        id: 0,
+        file_name: String::new(),
+        time: capture::read_target(t).ok().flatten(),
+    };
+    let after = time::apply(op, &[item])
+        .map_err(|e| e.to_string())
+        .and_then(|mut r| {
+            r.pop()
+                .map(|r| r.after)
+                .ok_or_else(|| "no result".to_string())
+        });
+    match after {
+        Ok(after) => capture::plan_target(t, &after, keep_subsec, digitized),
+        Err(why) => FieldPlan::blocked(why),
     }
 }
 
@@ -475,6 +525,34 @@ mod tests {
             "{:?}",
             m.notes
         );
+    }
+
+    #[test]
+    fn time_actions_per_file() {
+        let p = preset(
+            r#"{"schema_version":1,"name":"t","rules":[
+                {"when":[{"if":"not_empty","field":"capture_time"}],"then":[{"do":"shift_time","by":"+01:00:00"}]},
+                {"when":[{"if":"empty","field":"capture_time"}],"then":[{"do":"set_time","to":"2024:01:02 03:04:05"}]}
+            ]}"#,
+        );
+        let with = Snapshot::from_json(&json!({"ExifIFD:DateTimeOriginal": "2020:05:06 07:08:09"}));
+        let m = merge(plan_target(&p, &Target::Embedded(&with), r"C:\p\a.jpg"));
+        assert_eq!(m.status, EntryStatus::Ready);
+        assert_eq!(m.changes[0].field, "capture_time");
+        assert!(
+            format!("{:?}", m.changes[0].after).contains("2020:05:06 08:08:09"),
+            "{m:?}"
+        );
+        let without = Snapshot::from_json(&json!({}));
+        let m = merge(plan_target(&p, &Target::Embedded(&without), r"C:\p\b.jpg"));
+        assert!(
+            format!("{:?}", m.changes[0].after).contains("2024:01:02 03:04:05"),
+            "{m:?}"
+        );
+        assert!(Preset::from_json(
+            r#"{"schema_version":1,"name":"x","rules":[{"then":[{"do":"shift_time","by":"1 hour"}]}]}"#
+        )
+        .is_err());
     }
 
     #[test]

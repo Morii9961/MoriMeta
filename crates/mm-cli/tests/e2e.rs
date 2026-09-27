@@ -3201,7 +3201,10 @@ fn preset_rules_plan_apply_and_undo() {
              "then": [{"do": "set_copyright", "value": "© {creator|Studio} {year|2026}"}]},
             {"name": "no position in JPEGs",
              "when": [{"if": "not_empty", "field": "gps"}, {"if": "extension", "any": ["jpg"]}],
-             "then": [{"do": "remove_gps"}]}
+             "then": [{"do": "remove_gps"}]},
+            {"name": "clock was an hour behind",
+             "when": [{"if": "not_empty", "field": "capture_time"}],
+             "then": [{"do": "shift_time", "by": "+01:00:00"}]}
         ]}"#,
     )
     .unwrap();
@@ -3236,6 +3239,10 @@ fn preset_rules_plan_apply_and_undo() {
             .collect()
     };
     assert!(fields(gps).contains(&"gps".to_string()), "{pj}");
+    let timed = (0..lab.photos.len())
+        .filter(|&i| fields(i).contains(&"capture_time".to_string()))
+        .count();
+    assert!(timed >= 3, "{pj}");
     let with_copyright = lab.copyrights();
     for (i, c) in with_copyright.iter().enumerate() {
         let had = c["value"].as_str().is_some();
@@ -3291,7 +3298,10 @@ fn preset_rules_plan_apply_and_undo() {
         .unwrap()
         .clone();
     assert!(saved["last_used_ms"].is_i64(), "{saved}");
-    assert_eq!(saved["fields"], serde_json::json!(["copyright", "gps"]));
+    assert_eq!(
+        saved["fields"],
+        serde_json::json!(["copyright", "gps", "capture_time"])
+    );
     let exported = lab.cli(&["preset-export", &id]);
     let back: Value = serde_json::from_slice(&exported.stdout).unwrap();
     assert_eq!(back["name"], "Studio");
