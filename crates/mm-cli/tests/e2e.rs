@@ -2833,3 +2833,62 @@ fn real_nef_corpus_through_the_sidecar() {
     }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// APP11 with a JUMBF box labelled `c2pa` (the synthetic construction of research/s3/fields.py;
+/// not a real manifest).
+fn jumbf_app11() -> Vec<u8> {
+    let be32 = |n: usize| (n as u32).to_be_bytes();
+    let uuid: [u8; 16] = [
+        0x63, 0x32, 0x70, 0x61, 0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B,
+        0x71,
+    ];
+    let label = b"c2pa\0";
+    let mut jumd = be32(8 + 16 + 1 + label.len()).to_vec();
+    jumd.extend(b"jumd");
+    jumd.extend(uuid);
+    jumd.push(3);
+    jumd.extend(label);
+    let json = br#"{"test":"morimeta synthetic, not a real manifest"}"#;
+    let mut jsonbox = be32(8 + json.len()).to_vec();
+    jsonbox.extend(b"json");
+    jsonbox.extend(json);
+    let mut jumb = be32(8 + jumd.len() + jsonbox.len()).to_vec();
+    jumb.extend(b"jumb");
+    jumb.extend(jumd);
+    jumb.extend(jsonbox);
+    let mut data = b"JP".to_vec();
+    data.extend(1u16.to_be_bytes());
+    data.extend(1u32.to_be_bytes());
+    data.extend(jumb);
+    let mut seg = vec![0xFF, 0xEB];
+    seg.extend(((data.len() + 2) as u16).to_be_bytes());
+    seg.extend(data);
+    seg
+}
+
+/// SAFETY_MODEL §8.12: a JPEG with C2PA Content Credentials is excluded by default (writing would
+/// invalidate their signature); the other files of the same Plan are written.
+#[test]
+fn c2pa_files_are_excluded_by_default() {
+    let pkg = require!();
+    let lab = Lab::new("c2pa", &pkg);
+    let f = lab.dir.join("photos").join("credentials.jpg");
+    let src = std::fs::read(&lab.photos[0]).unwrap();
+    let mut bytes = src[..2].to_vec();
+    bytes.extend(jumbf_app11());
+    bytes.extend(&src[2..]);
+    std::fs::write(&f, &bytes).unwrap();
+    let before = blake(&f).unwrap();
+    let other = lab.photos[1].clone();
+    let (p, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&f, &other], "c.json");
+    let st = |i: usize| pj["entries"][i]["status"].clone();
+    assert_eq!(st(0)["status"], "blocked", "{pj}");
+    assert!(st(0)["reason"].as_str().unwrap().contains("C2PA"), "{pj}");
+    assert_eq!(st(1)["status"], "ready", "{pj}");
+    let op = lab.apply_ok(&p);
+    assert_eq!(blake(&f).as_deref(), Some(before.as_str()));
+    assert_ne!(blake(&other).as_deref(), Some(lab.truth[&other].as_str()));
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

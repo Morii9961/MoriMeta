@@ -1,7 +1,7 @@
 //! Planning (ARCHITECTURE §6.2): environment pre-checks, fingerprints, metadata snapshot, and the
 //! pure field planner. Produces an immutable `Plan`; nothing is written.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use mm_domain::capture;
@@ -15,6 +15,8 @@ use mm_domain::snapshot::Snapshot;
 use mm_domain::time::{
     self, NaiveDateTime, SequenceOrder, TimeDelta, TimeItem, TimeOp, TimeOpError,
 };
+
+use mm_fs::VolumeKind;
 
 use crate::engine::Engine;
 use crate::{CoreError, fingerprint, new_id, normalize};
@@ -312,6 +314,7 @@ fn plan_with(
     let mut entries: Vec<PlanEntry> = Vec::new();
     let mut seen = HashSet::new();
     let mut pending: Vec<Pending> = Vec::new();
+    let mut volumes: HashMap<PathBuf, VolumeKind> = HashMap::new();
     for input in inputs {
         let path = normalize(input)?;
         let fp_in = fingerprint(&path)?;
@@ -397,6 +400,26 @@ fn plan_with(
                 }
             }
         }
+        // SAFETY_MODEL §8.4 / §8.5: where the file that is written lives
+        if job.is_some() {
+            let root = mm_fs::volume_root(Path::new(&entry.path)).unwrap_or_default();
+            let kind = *volumes
+                .entry(root.clone())
+                .or_insert_with(|| mm_fs::volume_kind(&root));
+            match kind {
+                VolumeKind::Removable => {
+                    entry.status = EntryStatus::Blocked(
+                        "on removable media (memory card, USB drive): writing there is off by default; copy the files to the computer first"
+                            .into(),
+                    );
+                    job = None;
+                }
+                VolumeKind::Network => entry.notes.push(
+                    "on a network drive: allowed, but not verified on real NAS devices".into(),
+                ),
+                _ => {}
+            }
+        }
         entry.seq = entries.len() as u32;
         if let Some(mut j) = job {
             j.idx = entries.len();
@@ -443,10 +466,22 @@ fn plan_with(
         .filter_map(|(i, r)| r.target().map(|t| (*i, t)))
         .collect();
     let plans = field_all(&targets, &entries)?;
-    for ((idx, _), cp) in targets.iter().zip(plans) {
+    for ((idx, t), cp) in targets.iter().zip(plans) {
         let e = &mut entries[*idx];
         e.status = cp.status;
         e.notes.extend(cp.notes);
+        // SAFETY_MODEL §8.12: writing in place would invalidate Content Credentials
+        let c2pa = match t {
+            Target::Embedded(s) => mm_domain::risk::has_c2pa(s),
+            Target::Sidecar { .. } => false, // the RAW is not written
+        };
+        if c2pa && e.status == EntryStatus::Ready {
+            e.status = EntryStatus::Blocked(
+                "carries C2PA Content Credentials: any metadata change invalidates their signature, so the file is excluded by default"
+                    .into(),
+            );
+            continue;
+        }
         if let Some(ch) = cp.change {
             e.changes.push(ch);
         }

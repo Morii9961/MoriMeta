@@ -43,6 +43,7 @@ NEF sidecar（SAFETY_MODEL §3、§4.2、§4.3）：FormatPolicy——JPEG 就�
 | GPS 设置与移除 | 8 个夹具设为 `35.6812345,139.7671234,40.5`：数值按容差核对，GPS.jpg 的时间戳与 MapDatum 保留；移除：只有带 GPS 的文件被写，写后无任何 GPS 标签；已有 XMP GPS 一并更新/移除；南纬、西经与海平面以下保持符号；全部撤销逐字节一致 | 通过（2 个端到端测试） |
 | NEF + XMP sidecar | NEF 只写其 sidecar：新建的 sidecar 只含写入字段；更新保留其他属性；撤销新建 = 移入备份库，再撤销则重建；拍摄时间/GPS 写入 sidecar，再次规划以 sidecar 的值为起点；配对：已有 `.XMP` 大小写沿用、darktable `.NEF.xmp` 不动、同名另一 RAW → Blocked、同名 JPEG 写自身、NEF 与其 sidecar 同选合为一项；新建事务在故障点 1、5–10 崩溃后路径只为“无”或完整 sidecar；NEF 全程逐字节不变 | 通过（4 个端到端测试） |
 | 真实 NEF（Z8 ×2、D850；CC0，SHA-256 锁定，23–58 MB） | 四个字段依次写入各自 sidecar，再逆序全部撤销：NEF 逐字节不变、sidecar 消失；Shift 保留相机写入的亚秒与偏移（D850 `…59.09+01:00`、Z8 `…25.67+02:00` 各移 1 小时） | 通过（语料未获取时跳过） |
+| 环境规则（SAFETY_MODEL §8） | 带 C2PA 内容凭证（APP11 JUMBF，标签 `c2pa`，合成构造而非真实清单）的 JPEG → Blocked，文件逐字节不变；同一 Plan 的另一文件正常写入并可撤销。可移动介质 → Blocked、网络驱动器 → 提示：规则已实现，因无可移动介质/NAS 未测（A-2、D-13） | 通过（C2PA）；可移动/网络未测 |
 | 并行执行（worker pool） | 4 个 worker、24 个文件：随机终止 8 次（每次多个文件处于事务中）→ 恢复、继续、撤销逐字节一致；4 个 worker 下的磁盘满：每个文件只为 done 或 cancelled（原内容不变），继续后全部完成；卷许可单元测试（超过卷上限的第 N+1 个事务等待）；熔断按完成顺序计数 | 通过 |
 | Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |

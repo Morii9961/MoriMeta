@@ -10,6 +10,7 @@ pub mod creator;
 pub mod gps;
 pub mod iptc;
 pub mod plan;
+pub mod risk;
 pub mod snapshot;
 pub mod time;
 pub mod value;
