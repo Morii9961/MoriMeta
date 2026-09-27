@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
@@ -196,6 +196,17 @@ pub struct OperationRow {
     pub pruned_ms: Option<i64>,
 }
 
+/// A user Preset as stored (PRODUCT_SPEC §6.11).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetRow {
+    pub id: String,
+    pub name: String,
+    pub json: String,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+    pub last_used_ms: Option<i64>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct FileUpdate {
     pub h0: Option<String>,
@@ -297,6 +308,17 @@ impl Store {
                  ALTER TABLE operations ADD COLUMN keep INTEGER NOT NULL DEFAULT 0;
                  ALTER TABLE operations ADD COLUMN pruned_ms INTEGER;
                  PRAGMA user_version = 2;
+                 COMMIT;",
+            )?;
+        }
+        if v < 3 {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE presets(
+                   id TEXT PRIMARY KEY, name TEXT NOT NULL, json TEXT NOT NULL,
+                   created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL, last_used_ms INTEGER);
+                 CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 PRAGMA user_version = 3;
                  COMMIT;",
             )?;
         }
@@ -541,6 +563,79 @@ impl Store {
             "UPDATE operations SET keep = ?2 WHERE id = ?1",
             params![op_id, keep],
         )?;
+        Ok(())
+    }
+
+    /// Insert or replace a user Preset (its JSON is checked by the caller).
+    pub fn save_preset(&mut self, id: &str, name: &str, json: &str) -> Result<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO presets(id, name, json, created_ms, updated_ms) VALUES(?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(id) DO UPDATE SET name = ?2, json = ?3, updated_ms = ?4",
+            params![id, name, json, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn presets(&self) -> Result<Vec<PresetRow>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, name, json, created_ms, updated_ms, last_used_ms FROM presets
+             ORDER BY name COLLATE NOCASE, id",
+        )?;
+        let rows = st
+            .query_map([], |r| {
+                Ok(PresetRow {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    json: r.get(2)?,
+                    created_ms: r.get(3)?,
+                    updated_ms: r.get(4)?,
+                    last_used_ms: r.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Whether it existed.
+    pub fn delete_preset(&mut self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM presets WHERE id = ?1", params![id])?
+            > 0)
+    }
+
+    pub fn touch_preset(&mut self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE presets SET last_used_ms = ?2 WHERE id = ?1",
+            params![id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn set_setting(&mut self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_setting(&mut self, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM settings WHERE key = ?1", params![key])?;
         Ok(())
     }
 
@@ -909,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn version_1_database_is_upgraded() {
+    fn version_1_database_is_upgraded_to_the_current_one() {
         let d = dir("v1");
         {
             let s = Store::open(&d).unwrap();
@@ -917,6 +1012,8 @@ mod tests {
                 .execute_batch(
                     "ALTER TABLE operations DROP COLUMN keep;
                      ALTER TABLE operations DROP COLUMN pruned_ms;
+                     DROP TABLE presets;
+                     DROP TABLE settings;
                      PRAGMA user_version = 1;",
                 )
                 .unwrap();
@@ -944,6 +1041,11 @@ mod tests {
         s.set_keep("op-1", true).unwrap();
         let o = s.operation("op-1").unwrap().unwrap();
         assert!(o.keep && o.pruned_ms.is_none());
+        s.set_setting("k", "v").unwrap();
+        assert_eq!(s.setting("k").unwrap().as_deref(), Some("v"));
+        s.save_preset("p1", "P", "{}").unwrap();
+        s.save_preset("p1", "Q", "{}").unwrap();
+        assert_eq!(s.presets().unwrap()[0].name, "Q");
     }
 
     #[test]

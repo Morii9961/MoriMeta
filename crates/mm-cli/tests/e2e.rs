@@ -3252,8 +3252,8 @@ fn preset_rules_plan_apply_and_undo() {
     // the built-in Remove GPS
     let o = lab.cli(&[
         "plan-preset",
-        "--builtin",
-        "Remove GPS",
+        "--id",
+        "builtin:Remove GPS",
         "--out",
         lab.dir.join("builtin.json").to_str().unwrap(),
         lab.photos[gps].to_str().unwrap(),
@@ -3266,6 +3266,56 @@ fn preset_rules_plan_apply_and_undo() {
             .unwrap()
             .iter()
             .any(|p| p["name"] == "Copyright Template")
+    );
+
+    // saved presets: import, apply by id (last used), export, delete
+    let id = Lab::json(&lab.cli(&["preset-import", preset.to_str().unwrap()]))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let o = lab.cli(&[
+        "plan-preset",
+        "--id",
+        &id,
+        "--out",
+        lab.dir.join("by-id.json").to_str().unwrap(),
+        lab.photos[0].to_str().unwrap(),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let list = Lab::json(&lab.cli(&["presets"]));
+    let saved = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == id.as_str())
+        .unwrap()
+        .clone();
+    assert!(saved["last_used_ms"].is_i64(), "{saved}");
+    assert_eq!(saved["fields"], serde_json::json!(["copyright", "gps"]));
+    let exported = lab.cli(&["preset-export", &id]);
+    let back: Value = serde_json::from_slice(&exported.stdout).unwrap();
+    assert_eq!(back["name"], "Studio");
+    assert!(lab.cli(&["preset-delete", &id]).status.success());
+    assert!(
+        !lab.cli(&["preset-delete", "builtin:Remove GPS"])
+            .status
+            .success()
+    );
+    // settings drive the retention policy and are checked
+    assert!(
+        lab.cli(&["setting", "backup.max_age_days", "7"])
+            .status
+            .success()
+    );
+    assert!(
+        !lab.cli(&["setting", "backup.max_share_of_volume", "5"])
+            .status
+            .success()
+    );
+    let kept = Lab::json(&lab.cli(&["setting", "backup.max_share_of_volume"]));
+    assert!(
+        kept["value"].is_null(),
+        "an invalid value is not kept: {kept}"
     );
     let _ = std::fs::remove_dir_all(&lab.dir);
 }

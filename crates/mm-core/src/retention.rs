@@ -30,6 +30,34 @@ impl Default for Policy {
     }
 }
 
+/// Settings keys of the policy (PRODUCT_SPEC §6.16 Backup).
+pub const SETTING_MAX_AGE_DAYS: &str = "backup.max_age_days";
+pub const SETTING_MAX_SHARE: &str = "backup.max_share_of_volume";
+pub const SETTING_KEEP_LATEST: &str = "backup.keep_latest";
+
+impl Policy {
+    /// The user's settings over the defaults; an unreadable value is an error, not a silent
+    /// default, since it decides what is deleted.
+    pub fn from_settings(store: &Store) -> Result<Policy, CoreError> {
+        let mut p = Policy::default();
+        let bad = |k: &str, v: &str| CoreError::Input(format!("setting {k} = {v:?} is not valid"));
+        if let Some(v) = store.setting(SETTING_MAX_AGE_DAYS)? {
+            p.max_age_days = v.parse().map_err(|_| bad(SETTING_MAX_AGE_DAYS, &v))?;
+        }
+        if let Some(v) = store.setting(SETTING_MAX_SHARE)? {
+            p.max_share_of_volume = v
+                .parse::<f64>()
+                .ok()
+                .filter(|x| (0.0..=1.0).contains(x))
+                .ok_or_else(|| bad(SETTING_MAX_SHARE, &v))?;
+        }
+        if let Some(v) = store.setting(SETTING_KEEP_LATEST)? {
+            p.keep_latest = v.parse().map_err(|_| bad(SETTING_KEEP_LATEST, &v))?;
+        }
+        Ok(p)
+    }
+}
+
 /// Why an Operation's backups are not pruned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protection {
@@ -310,6 +338,23 @@ mod tests {
             prune_plan(&tight, &policy, now),
             [("op-a".to_string(), Reason::Size)]
         );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn policy_from_settings() {
+        let (d, mut s) = lab("settings");
+        assert_eq!(Policy::from_settings(&s).unwrap(), Policy::default());
+        s.set_setting(SETTING_MAX_AGE_DAYS, "7").unwrap();
+        s.set_setting(SETTING_MAX_SHARE, "0.25").unwrap();
+        let p = Policy::from_settings(&s).unwrap();
+        assert_eq!(
+            (p.max_age_days, p.max_share_of_volume, p.keep_latest),
+            (7, 0.25, 10)
+        );
+        s.set_setting(SETTING_MAX_SHARE, "2").unwrap();
+        assert!(Policy::from_settings(&s).is_err());
+        drop(s);
         let _ = std::fs::remove_dir_all(&d);
     }
 

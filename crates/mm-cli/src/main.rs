@@ -15,8 +15,11 @@
 //!             [--no-digitized] --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-gps --set "lat,lon[,alt]" | --remove  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
-//!   plan-preset (--builtin NAME | --preset PRESET.json) --out PLAN.json [--files-from UTF8_FILE] FILE...
-//!   presets                   the built-in Presets (PRODUCT_SPEC §6.11) as JSON
+//!   plan-preset (--id PRESET_ID | --preset PRESET.json) --out PLAN.json [--files-from UTF8_FILE] FILE...
+//!   presets                   built-in (id builtin:NAME) and saved Presets (PRODUCT_SPEC §6.11)
+//!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
+//!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
+//!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3)
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
@@ -55,7 +58,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::planner::TimeTool;
-use mm_core::{fsck, planner, recovery, retention, undo};
+use mm_core::{fsck, planner, presets, recovery, retention, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
@@ -499,35 +502,97 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "presets" => {
-                let list: Vec<Value> = rules::builtin()
-                    .iter()
-                    .map(|p| json!({"name": p.name, "fields": p.fields().iter().map(|f| f.name()).collect::<Vec<_>>(),
-                                    "preset": serde_json::to_value(p).unwrap_or_default()}))
-                    .collect();
-                println!("{}", Value::Array(list));
+                let list = presets::list(&store).map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    Value::Array(list.iter().map(|p| json!({"id": p.id, "name": p.name, "builtin": p.builtin,
+                        "fields": p.fields.iter().map(|f| f.name()).collect::<Vec<_>>(), "last_used_ms": p.last_used_ms,
+                        "preset": serde_json::to_value(&p.preset).unwrap_or_default()})).collect())
+                );
+                Ok(ExitCode::SUCCESS)
+            }
+            "preset-import" => {
+                let file = args.first().ok_or("preset-import PRESET.json")?;
+                let text = std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+                let id = presets::import(&mut store, &text).map_err(|e| e.to_string())?;
+                println!("{}", json!({"id": id}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "preset-export" => {
+                let id = args.first().ok_or("preset-export ID")?;
+                let p = presets::get(&store, id).map_err(|e| e.to_string())?;
+                println!("{}", p.preset.to_json());
+                Ok(ExitCode::SUCCESS)
+            }
+            "preset-duplicate" => {
+                let id = args.first().ok_or("preset-duplicate ID")?;
+                let new = presets::duplicate(&mut store, id).map_err(|e| e.to_string())?;
+                println!("{}", json!({"id": new}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "preset-delete" => {
+                let id = args.first().ok_or("preset-delete ID")?;
+                presets::delete(&mut store, id).map_err(|e| e.to_string())?;
+                println!("{}", json!({"deleted": id}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "setting" => {
+                let clear = take_flag(&mut args, "--clear");
+                let key = args
+                    .first()
+                    .cloned()
+                    .ok_or("setting KEY [VALUE | --clear]")?;
+                let before = store.setting(&key).map_err(|e| e.to_string())?;
+                if clear {
+                    store.clear_setting(&key).map_err(|e| e.to_string())?;
+                } else if let Some(v) = args.get(1) {
+                    store.set_setting(&key, v).map_err(|e| e.to_string())?;
+                }
+                // a policy setting is checked before it is kept: it decides what is deleted
+                if key.starts_with("backup.") {
+                    if let Err(e) = retention::Policy::from_settings(&store) {
+                        match &before {
+                            Some(b) => store.set_setting(&key, b),
+                            None => store.clear_setting(&key),
+                        }
+                        .map_err(|e| e.to_string())?;
+                        return Err(e.to_string());
+                    }
+                }
+                let v = store.setting(&key).map_err(|e| e.to_string())?;
+                println!("{}", json!({"key": key, "value": v}));
                 Ok(ExitCode::SUCCESS)
             }
             "plan-preset" => {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
-                let preset = match (
-                    take_opt(&mut args, "--builtin"),
-                    take_opt(&mut args, "--preset"),
-                ) {
-                    (Some(name), None) => rules::builtin()
-                        .into_iter()
-                        .find(|p| p.name == name)
-                        .ok_or_else(|| format!("no built-in preset {name:?}"))?,
-                    (None, Some(file)) => {
-                        let text =
-                            std::fs::read_to_string(&file).map_err(|e| format!("{file}: {e}"))?;
-                        rules::Preset::from_json(text.trim_start_matches('\u{feff}'))?
-                    }
-                    _ => return Err("use either --builtin NAME or --preset FILE.json".into()),
-                };
+                let (preset, used) =
+                    match (take_opt(&mut args, "--id"), take_opt(&mut args, "--preset")) {
+                        (Some(id), None) => (
+                            presets::get(&store, &id).map_err(|e| e.to_string())?.preset,
+                            Some(id),
+                        ),
+                        (None, Some(file)) => {
+                            let text = std::fs::read_to_string(&file)
+                                .map_err(|e| format!("{file}: {e}"))?;
+                            (
+                                rules::Preset::from_json(text.trim_start_matches('\u{feff}'))?,
+                                None,
+                            )
+                        }
+                        _ => {
+                            return Err(
+                                "use either --id PRESET_ID (see `presets`) or --preset FILE.json"
+                                    .into(),
+                            );
+                        }
+                    };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
                 let plan = planner::plan_preset(&mut eng, &paths, &preset, &Default::default())
                     .map_err(|e| e.to_string())?;
+                if let Some(id) = used {
+                    presets::used(&mut store, &id).map_err(|e| e.to_string())?;
+                }
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
@@ -657,7 +722,7 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "backups" => {
-                let policy = retention::Policy::default();
+                let policy = retention::Policy::from_settings(&store).map_err(|e| e.to_string())?;
                 let now = match take_opt(&mut args, "--now-ms") {
                     Some(v) => v.parse().map_err(|_| "--now-ms MS")?,
                     None => mm_store::now_ms(),
@@ -678,9 +743,9 @@ fn main() -> ExitCode {
                 if args.is_empty() {
                     return Err("prune [--requested] OP_ID...".into());
                 }
-                let done =
-                    retention::prune(&mut store, &retention::Policy::default(), &args, requested)
-                        .map_err(|e| e.to_string())?;
+                let policy = retention::Policy::from_settings(&store).map_err(|e| e.to_string())?;
+                let done = retention::prune(&mut store, &policy, &args, requested)
+                    .map_err(|e| e.to_string())?;
                 println!("{}", json!({"pruned": done}));
                 Ok(ExitCode::SUCCESS)
             }

@@ -7,6 +7,7 @@ pub mod engine;
 pub mod executor;
 pub mod fsck;
 pub mod planner;
+pub mod presets;
 pub mod recovery;
 pub mod retention;
 pub mod service;
