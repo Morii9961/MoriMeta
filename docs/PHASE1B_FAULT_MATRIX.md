@@ -32,8 +32,12 @@
 | Undo | IO 错误 | 故障点 1–10 × 文件 2 | 10 | 通过（新增） |
 | Apply | 空间预检不足 | 执行前 | 1 | 通过（新增） |
 | Apply | 磁盘满（真实） | 照片卷满于 2:4；备份/Journal 卷满于 2:2 | 2 | 通过（64 MB VHDX，见下） |
+| Apply / recover | manifest.json 写入失败 | Operation 开始时、结束时（once / persist），恢复时 | 5 | 通过（第二轮新增） |
+| recover | Journal 写入失败 | 恢复已把 bak 移回原路径之后，记录失败（once / persist） | 2 | 通过（第二轮新增） |
+| resume | Journal 写入失败 | 重新登记待重试文件时 | 1 | **发现缺陷并修正**（见下） |
+| Undo | 随机终止 | 50–750 ms | 12 | 通过（第二轮新增） |
 
-`cargo test --workspace`（2026-09-27，本机，`ReplaceFileW` 可用）：62 个测试通过、0 失败；该次运行中 `real_disk_full_on_small_volume` 因未设置 `MM_E2E_SMALL_VOLUME` 而跳过。之后在 64 MB 测试卷上以 `MM_E2E_SMALL_VOLUME` 单独运行该测试：通过（两个场景）。`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
+`cargo test --workspace`（2026-09-27，本机，`ReplaceFileW` 可用）：第一轮 62 个、第二轮 66 个测试通过、0 失败；两次运行中 `real_disk_full_on_small_volume` 均因未设置 `MM_E2E_SMALL_VOLUME` 而跳过。第一轮之后在 64 MB 测试卷上以 `MM_E2E_SMALL_VOLUME` 单独运行该测试：通过（两个场景）；该卷随后已卸载，第二轮未重跑。`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
 
 ### 真实磁盘满（64 MB NTFS VHDX）
 
@@ -48,22 +52,31 @@
 - **提交后的 Journal 写失败**（`committed`、`done`）：按磁盘哈希结算为 done。此前该文件的报告不带任何错误说明；现在记录 `…; commit confirmed on disk`，使“提交由磁盘而非完整 Journal 确认”可见。
 - **`finish` 失败**：所有文件已是终态，Operation 停在 `running`；`recover` 将其结为 `recovered`。
 - **磁盘满（模拟）**：按 SAFETY_MODEL §8.13 实现为暂停——当前文件经判定表结算：提交前为 `cancelled`（原内容不变，`resume` 会重试），提交后为 done；其后所有文件 `cancelled`，Operation 状态 `cancelled`，说明为 `paused: a volume is full; free space, then resume`。按此前的代码，磁盘满只会使文件逐个 failed 直到熔断，且 failed 文件不会被 `resume` 重试（代码核对，未单独测试）。
-- **Undo 路径**（Restore 分支）的崩溃与 IO 错误与 Apply 路径同样恢复；Undo 部分失败后，再次对原 Operation 规划 Undo 只恢复仍被修改的文件。
+- **Undo 路径**（Restore 分支）的崩溃、IO 错误与随机终止与 Apply 路径同样恢复；Undo 部分失败后，再次对原 Operation 规划 Undo 只恢复仍被修改的文件。
+- **`resume` 的 Journal 写失败（缺陷，已修正）**：`resume` 原先先把待重试文件逐个改回 `planned`，最后才把 Operation 设为 `running`。第 3 个重新登记写入失败时，文件 2、3 停在 `planned`，而 Operation 仍为 `cancelled`：恢复不检查已结束的 Operation，`resume` 只重试 `not_started`/`cancelled`，这两个文件从此无法重试（照片未被触碰，没有数据风险）。改为先设 `running` 再重新登记；失败后 Operation 对恢复可见，`recover` 将其归为未开始，`resume` 完成。回归测试 `resume_journal_failure_leaves_operation_recoverable`。
+- **恢复自身的 Journal 写失败**：合成 `ReplaceFileW` 中途终止的状态（原路径不存在、原内容在登记的 bak 名下），恢复已把 bak 移回原路径后记录失败。磁盘动作已发生而记录缺失，再次 `recover` 按磁盘哈希判定为未开始，不重复动作也不丢数据。
+- **manifest.json 写入失败**（真实文件系统拒绝：在临时名处放一个目录，Win32 5）：开始时失败 → Operation 已登记但未触碰任何文件，`recover` 归为未开始；结束时失败 → 所有文件已完成，Journal 状态为 `completed`，`apply` 仍报错；恢复时失败 → Journal 已记为 `recovered`。三者都不引入未记录的不可逆动作。**但 manifest 会停留在失败前的内容**：手动核对结束时失败的情形，Journal 为 `completed`，manifest 仍是开始时的版本（状态 `running`、每个文件 `planned`、无 H0），之后的 `recover` 也不会重写它。
+
+### 与规格的差异（代码核对）
+
+- SAFETY_MODEL §6.1 要求 manifest “执行期间追加写入并 fsync”；实现只在 Operation 开始、结束与恢复时整体重写。执行中途数据库丢失时，manifest 中没有已完成文件的 H0/H1。
+- manifest 写入失败后没有补写机制（见上）。两者都只影响“数据库丢失时凭 manifest 恢复”（G-7，未实现），不影响以 Journal 为准的恢复；应在实现 G-7 时一起处理。
 
 ## 3. 本轮随测试加入的实现
 
 - `mm-core`：SAFETY_MODEL §6.2 的执行前空间预检（`apply` 与 `resume`）：备份卷需 `Σ 文件大小 × 1.05 + 1 GiB`，每个目标目录所在卷需 `最大文件 × 1.1`；不满足时返回 `InsufficientSpace`，不登记 Operation、不写任何文件。
 - `mm-core`：磁盘满分类（Win32 112/39、`SQLITE_FULL`），以及上述暂停语义。ExifTool 写失败只以文本报告，因此在其失败后查询目标卷剩余空间，低于 `文件大小 × 1.1` 时按磁盘满处理；这一启发式在真实照片卷满的场景中生效，但只覆盖了“卷完全填满”一种情形。
-- `mm-store`：`WriteFault`（测试用 Journal 写入失败）；`mm-fs`：`volume_space`、`is_disk_full`、`fill_volume`（≤ 2 GiB 卷）。
+- `mm-core`：`resume` 先把 Operation 设为 `running` 再重新登记待重试文件（第二轮）。
+- `mm-store`：`WriteFault`（测试用 Journal 写入失败；第二轮加入 `manifest[:N]` 与 `resume` 的重新登记写入）；`mm-fs`：`volume_space`、`is_disk_full`、`fill_volume`（≤ 2 GiB 卷）。
 - `mm-cli`：上述注入选项；`tests/fault-lab/small_volume.ps1`（管理员）创建并挂载 64 MB NTFS VHDX 以运行真实磁盘满测试。
 
 ## 4. 仍未验证与所需条件
 
 | 项 | 状态 | 需要 |
 |---|---|---|
-| 真实磁盘满的其他位置 | 只在两个填充时机（2:4 照片卷、2:2 数据卷）各做一次；未在提交后、Undo 中、或卷“接近满”而非完全满时测试 | 测试卷已具备，可在本地扩大 |
+| 真实磁盘满的其他位置 | 只在两个填充时机（2:4 照片卷、2:2 数据卷）各做一次；未在提交后、Undo 中、或卷“接近满”而非完全满时测试 | 需要再次挂载测试卷（管理员运行 `small_volume.ps1`） |
 | `SQLITE_IOERR` 形式的 Journal 失败 | 未产生 | 需要能注入存储 IO 错误的环境 |
-| manifest.json 写入失败、`recover`/`resume` 自身的 Journal 写失败 | 未注入 | 可在本地继续补 |
-| 故障点位置 | 每类注入只在 1–2 个文件序号上做；Undo 路径无随机终止 | 可在本地扩大 |
+| manifest 过期与执行中追加写 | 见“与规格的差异” | 随 G-7 实现 |
+| 故障点位置 | 每类注入只在 1–2 个文件序号上做 | 可在本地扩大 |
 | 规模 | 每例 8 个小文件；SAFETY_MODEL §12 要求 5,000 文件规模重做 | 真实语料（D-13）或合成规模测试 |
 | 断电、exFAT/FAT32、云同步目录、真实 NAS | 未测（G-3） | 虚拟机、介质、同步目录、NAS（D-13） |

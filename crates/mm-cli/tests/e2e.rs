@@ -960,3 +960,246 @@ fn real_disk_full_on_small_volume() {
         let _ = std::fs::remove_dir_all(&on_small);
     }
 }
+
+/// manifest.json (the redundant record next to the backups) cannot be written: at Operation
+/// begin, at its end, and during recovery. It must never lead to an unrecorded irreversible step.
+#[test]
+fn manifest_write_failures_keep_invariants() {
+    let pkg = require!();
+    // (where, fault, persistent)
+    let cases = [
+        ("begin", "manifest:0", false),
+        ("begin", "manifest:0", true),
+        ("finish", "manifest:1", false),
+        ("finish", "manifest:1", true),
+        ("recover", "manifest:0", true),
+    ];
+    for (at, fault, persist) in cases {
+        let case = format!("manifest at {at} ({fault}, persistent {persist})");
+        let lab = Lab::new(&format!("manifest-{at}-{persist}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let mut faults = vec!["--journal-fail-at", fault];
+        if persist {
+            faults.push("--journal-fail-persist");
+        }
+        let op = if at == "recover" {
+            let o = lab.cli_env(
+                &["apply", plan.to_str().unwrap(), "--crash-at", "2:7"],
+                true,
+            );
+            assert_eq!(o.status.code(), Some(77), "{case}");
+            let op = lab.last_op();
+            let mut args = vec!["recover"];
+            args.extend(&faults);
+            let r = lab.cli_env(&args, true);
+            let out = String::from_utf8_lossy(&r.stdout).into_owned();
+            assert!(!r.status.success() && out.contains("Io("), "{case}: {out}");
+            op
+        } else {
+            let mut args = vec!["apply", plan.to_str().unwrap()];
+            args.extend(&faults);
+            let o = lab.cli_env(&args, true);
+            let out = String::from_utf8_lossy(&o.stdout).into_owned();
+            assert!(!o.status.success() && out.contains("Io("), "{case}: {out}");
+            let op = lab.last_op();
+            if at == "begin" {
+                // registered, nothing touched yet
+                assert_eq!(op_status(&lab, &op), "running", "{case}");
+                lab.assert_all_original();
+            } else {
+                // every file was done before the manifest failed
+                assert_eq!(op_status(&lab, &op), "completed", "{case}");
+                assert!(
+                    creators(&lab)
+                        .iter()
+                        .all(|c| c == &serde_json::json!(["Morii"])),
+                    "{case}"
+                );
+            }
+            op
+        };
+        lab.assert_preimages(&op);
+        assert!(lab.cli(&["recover"]).status.success(), "{case}");
+        lab.assert_recovered(&op);
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// Recovery itself loses its journal: it has already put a file back from its bak name (a crash
+/// inside ReplaceFileW) when recording that fails. Running recovery again must finish the job.
+#[test]
+fn recovery_journal_failure_is_retried_safely() {
+    let pkg = require!();
+    for persist in [false, true] {
+        let case = format!("recover journal failure (persistent {persist})");
+        let lab = Lab::new(&format!("recover-journal-{persist}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &["apply", plan.to_str().unwrap(), "--crash-at", "2:7"],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(77), "{case}");
+        let op = lab.last_op();
+        // the state a termination inside ReplaceFileW leaves (SAFETY_MODEL §4.5, S2: 14/300 kills):
+        // the original path is gone, the original content is under the registered bak name
+        let show = lab.show(&op);
+        let row = show["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["seq"] == 2)
+            .unwrap();
+        assert_eq!(row["state"], "ready", "{case}");
+        let bak = PathBuf::from(row["bak"].as_str().unwrap());
+        std::fs::rename(&lab.photos[2], &bak).unwrap();
+        lab.assert_preimages(&op);
+        let mut args = vec!["recover", "--journal-fail-at", "2:not_started"];
+        if persist {
+            args.push("--journal-fail-persist");
+        }
+        let r = lab.cli_env(&args, true);
+        let out = String::from_utf8_lossy(&r.stdout).into_owned();
+        assert!(
+            !r.status.success() && out.contains("DatabaseBusy"),
+            "{case}: {out}"
+        );
+        // the disk action happened, its record did not: the original is back at its path
+        assert_eq!(
+            blake(&lab.photos[2]).as_deref(),
+            Some(lab.truth[&lab.photos[2]].as_str()),
+            "{case}"
+        );
+        lab.assert_preimages(&op);
+        assert!(lab.cli(&["recover"]).status.success(), "{case}");
+        lab.assert_recovered(&op);
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// `resume` loses its journal while re-registering the files it will retry: no file may be left
+/// in a non-terminal state inside an Operation that recovery no longer looks at.
+#[test]
+fn resume_journal_failure_leaves_operation_recoverable() {
+    let pkg = require!();
+    let lab = Lab::new("resume-journal", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(
+        &["apply", plan.to_str().unwrap(), "--disk-full-at", "2:4"],
+        true,
+    );
+    let op = Lab::json(&o)["op_id"].as_str().unwrap().to_owned();
+    assert_eq!(op_status(&lab, &op), "cancelled");
+    let r = lab.cli_env(
+        &[
+            "resume",
+            &op,
+            "--journal-fail-at",
+            "4:planned",
+            "--journal-fail-persist",
+        ],
+        true,
+    );
+    let out = String::from_utf8_lossy(&r.stdout).into_owned();
+    assert!(!r.status.success() && out.contains("DatabaseBusy"), "{out}");
+    assert_eq!(
+        op_status(&lab, &op),
+        "running",
+        "files were re-registered but the Operation is not visible to recovery: {}",
+        lab.show(&op)
+    );
+    lab.assert_preimages(&op);
+    assert!(lab.cli(&["recover"]).status.success());
+    lab.assert_recovered(&op);
+    let res = lab.cli(&["resume", &op]);
+    assert!(
+        res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    assert!(
+        creators(&lab)
+            .iter()
+            .all(|c| c == &serde_json::json!(["Morii"]))
+    );
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// Random termination of the Undo Operation (the Restore branch of the transaction).
+#[test]
+fn random_kills_during_undo_recover() {
+    let pkg = require!();
+    let iterations: u64 = std::env::var("MM_E2E_KILLS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12);
+    let mut rng: u64 = 0x2026_0928;
+    for i in 0..iterations {
+        let lab = Lab::new(&format!("undo-kill-{i}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+        assert!(a.status.success());
+        let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+        let applied = lab.snapshot();
+        let u = lab.dir.join("undo.json");
+        assert!(
+            lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+                .status
+                .success()
+        );
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let delay = Duration::from_millis(50 + (rng >> 33) % 700);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+            .arg("--data")
+            .arg(&lab.data)
+            .arg("--exiftool")
+            .arg(&lab.pkg)
+            .args(["apply", u.to_str().unwrap()])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(delay);
+        let _ = child.kill();
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(100));
+        let undo_op = lab.last_op();
+        if undo_op == op {
+            // killed before the Undo Operation was registered
+            assert_eq!(lab.snapshot(), applied, "undo kill {i}");
+            lab.undo(&op);
+        } else {
+            lab.assert_preimages_of(&undo_op, &applied);
+            assert!(lab.cli(&["recover"]).status.success(), "undo kill {i}");
+            lab.assert_recovered_of(&undo_op, &applied);
+            let res = lab.cli(&["resume", &undo_op]);
+            assert!(
+                res.status.success(),
+                "undo kill {i}: {}",
+                String::from_utf8_lossy(&res.stdout)
+            );
+        }
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "undo kill {i}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

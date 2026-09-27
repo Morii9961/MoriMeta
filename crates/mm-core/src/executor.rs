@@ -271,6 +271,9 @@ pub fn resume(
             .filter(|e| retry.iter().any(|f| f.seq == e.seq)),
         opts.space_reserve.unwrap_or(SPACE_RESERVE),
     )?;
+    // `running` first: if re-registering a file fails part-way, the files already set back to
+    // `planned` stay visible to recovery instead of being stranded in a finished Operation
+    store.set_status(op_id, OpStatus::Running)?;
     let mut seqs = Vec::new();
     for f in retry {
         let (temp, bak, backup) = names(Path::new(&f.path), &backup_dir, f.seq)?;
@@ -283,7 +286,6 @@ pub fn resume(
         )?;
         seqs.push(f.seq);
     }
-    store.set_status(op_id, OpStatus::Running)?;
     run(store, engine, op_id, &plan, &seqs, opts)
 }
 

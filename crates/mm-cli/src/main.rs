@@ -9,7 +9,7 @@
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
-//!   recover
+//!   recover [--journal-fail-at ...]
 //!   resume OP_ID [FAULTS]
 //!   plan-undo OP_ID --out PLAN.json
 //!   history | show OP_ID | fsck OP_ID
@@ -19,9 +19,11 @@
 //!   --fail-at SEQ:STEP        return an IO error there
 //!   --disk-full-at SEQ:STEP   return a simulated disk-full error (Win32 112) there
 //!   --fill-at SEQ:STEP --fill-dir DIR   really fill the (small test) volume of DIR there
-//!   --journal-fail-at begin | finish | SEQ:STATE [--journal-fail-persist]
+//!   --journal-fail-at begin | finish | manifest[:N] | SEQ:STATE [--journal-fail-persist]
 //!                             make SQLite fail that journal write (another connection holds the
-//!                             write lock); with --journal-fail-persist every later write fails too
+//!                             write lock), or the file system refuse a manifest.json write
+//!                             (after N successful ones);
+//!                             with --journal-fail-persist every later write fails too
 //!   --space-reserve BYTES     replace the 1 GiB backup-volume reserve of the space pre-check
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
 //! 4 fsck found problems.
@@ -160,8 +162,15 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         let target = match t.as_str() {
             "begin" => WriteTarget::Begin,
             "finish" => WriteTarget::Finish,
+            "manifest" => WriteTarget::Manifest(0),
+            m if m.starts_with("manifest:") => WriteTarget::Manifest(
+                m["manifest:".len()..]
+                    .parse()
+                    .map_err(|_| "--journal-fail-at manifest:N")?,
+            ),
             s => {
-                let bad = || "--journal-fail-at begin | finish | SEQ:STATE".to_string();
+                let bad =
+                    || "--journal-fail-at begin | finish | manifest[:N] | SEQ:STATE".to_string();
                 let (seq, state) = s.split_once(':').ok_or_else(bad)?;
                 WriteTarget::File {
                     seq: seq.parse().map_err(|_| bad())?,
@@ -345,6 +354,7 @@ fn main() -> ExitCode {
                 Ok(report_exit(&r))
             }
             "recover" => {
+                exec_options(&mut args, &mut store)?; // only the journal faults apply here
                 let reps = recovery::recover(&mut store).map_err(|e| e.to_string())?;
                 let out: Vec<Value> = reps
                     .iter()

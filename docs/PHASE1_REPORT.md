@@ -37,8 +37,12 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | 磁盘满（模拟 112） | 文件 #2 的故障点 1–10：Operation 暂停（cancelled），`resume` 完成，撤销后逐字节一致 | 10/10 通过 |
 | Undo 路径 | Undo Operation 在文件 #2 的故障点 1–10 各终止一次、各注入 IO 错误一次 | 20/20 通过 |
 | 空间预检 | 余量不可满足时拒绝执行，不登记、不写入 | 通过 |
+| manifest / recover / resume 写失败 | manifest.json 在开始、结束、恢复时写入失败（5 例）；恢复已移回 bak 后记录失败（2 例）；`resume` 重新登记时失败（1 例，发现并修正缺陷） | 8/8 通过 |
+| Undo 随机终止 | 随机时刻终止撤销 Operation，恢复、继续后逐字节还原 | 12/12 通过 |
 
-2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。
+2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。
+
+第二轮发现并修正：`resume` 重新登记待重试文件时若 Journal 写失败，已改回 `planned` 的文件会滞留在已结束（`cancelled`）的 Operation 中，恢复与 `resume` 都不再处理它们；现改为先设 `running`。
 
 实现过程中发现并修正的问题：
 
@@ -54,13 +58,13 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 | # | 缺口 | 计划 |
 |---|---|---|
-| G-1 | 已测：Journal 写入失败（SQLite 真实 BUSY 与满盘时的真实 FULL）、模拟与真实磁盘满（64 MB VHDX，两个填充时机）、Undo 路径崩溃/IO 错误、空间预检。未测：manifest 写失败、`recover`/`resume` 自身的写失败注入、更多故障位置 | 本地继续补（[PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md) §4） |
+| G-1 | 已测：Journal 写入失败（SQLite 真实 BUSY 与满盘时的真实 FULL）、模拟与真实磁盘满（64 MB VHDX，两个填充时机）、Undo 路径崩溃/IO 错误、空间预检。manifest、`recover`、`resume` 写失败，Undo 随机终止。未测：更多故障位置与真实磁盘满的其他时机 | 本地继续补（[PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md) §4） |
 | G-2 | 1,000 个重复小样本 JPEG 的 Creator→Undo 已通过；5,000 文件、1,000 个不同相机原片与真实大文件仍未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
 | G-5 | 字段注册表 v0 暂定（仅 creator） | S3 第三方测试后冻结 v1 |
 | G-6 | 撤销时文件已被删除或移动：当前 Blocked，未实现"恢复到原路径" | Phase 1b 后续 |
-| G-7 | 数据库丢失时仅凭 manifest 恢复：未实现 | Phase 4 前 |
+| G-7 | 数据库丢失时仅凭 manifest 恢复：未实现。manifest 目前只在开始、结束、恢复时重写（SAFETY_MODEL §6.1 要求执行中追加），写入失败后不补写 | Phase 4 前，与 manifest 写入策略一起处理 |
 | G-8 | `resume` 要求应用与 ExifTool 版本不变；版本变化时只能撤销或重新规划 | 设计如此（ARCHITECTURE §11） |
 | G-9 | 经 Git Bash 传入的非 ASCII 命令行参数会被代码页转换；CLI 提供 `--set-from UTF8_FILE` | 产品 UI 经 IPC 传值，不受影响 |
 | G-10 | 构建：GNU 工具链下 SQLite 需要 PATH 中有 MinGW gcc；MSVC 工具链无此要求 | README 说明 |

@@ -210,12 +210,18 @@ pub enum WriteTarget {
     File { seq: u32, state: FileState },
     /// The final status of the Operation.
     Finish,
+    /// A rewrite of an Operation's `manifest.json`, after skipping this many successful ones.
+    Manifest(u32),
 }
 
 /// A journal write failure produced by SQLite itself: right before the target write, a second
 /// connection takes the database write lock (`BEGIN IMMEDIATE`), so the write fails with a real
 /// `SQLITE_BUSY`. `persistent` keeps the lock until the process ends, so every later write fails
 /// too (a journal that stays unavailable); otherwise only the target write fails.
+///
+/// For [`WriteTarget::Manifest`], a directory is created at the manifest's temporary name, so the
+/// file system refuses to create the file (access denied); `persistent` keeps that directory
+/// until the process ends, so every later manifest write of that Operation fails too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteFault {
     pub target: WriteTarget,
@@ -229,6 +235,15 @@ pub struct Store {
     data_dir: PathBuf,
     fault: Option<WriteFault>,
     blocker: Option<Connection>,
+    manifest_blocker: Option<PathBuf>,
+}
+
+impl Drop for Store {
+    fn drop(&mut self) {
+        if let Some(d) = self.manifest_blocker.take() {
+            let _ = std::fs::remove_dir(d);
+        }
+    }
 }
 
 impl Store {
@@ -269,6 +284,7 @@ impl Store {
             data_dir: data_dir.to_path_buf(),
             fault: None,
             blocker: None,
+            manifest_blocker: None,
         })
     }
 
@@ -368,11 +384,17 @@ impl Store {
         bak: &str,
         backup: &str,
     ) -> Result<()> {
-        let n = self.conn.execute(
-            "UPDATE op_files SET temp_path = ?3, bak_path = ?4, backup_path = ?5, state = 'planned', h0 = NULL, h1 = NULL, error = NULL, updated_ms = ?6
-             WHERE op_id = ?1 AND seq = ?2",
-            params![op_id, seq, temp, bak, backup, now_ms()],
-        )?;
+        let target = WriteTarget::File {
+            seq,
+            state: FileState::Planned,
+        };
+        let n = self.write(target, |conn| {
+            Ok(conn.execute(
+                "UPDATE op_files SET temp_path = ?3, bak_path = ?4, backup_path = ?5, state = 'planned', h0 = NULL, h1 = NULL, error = NULL, updated_ms = ?6
+                 WHERE op_id = ?1 AND seq = ?2",
+                params![op_id, seq, temp, bak, backup, now_ms()],
+            )?)
+        })?;
         if n != 1 {
             return Err(StoreError::NotFound(format!("{op_id}#{seq}")));
         }
@@ -458,7 +480,34 @@ impl Store {
     }
 
     /// `backups/<op>/manifest.json`: enough to understand and restore the backups without the DB.
-    pub fn write_manifest(&self, op_id: &str) -> Result<()> {
+    pub fn write_manifest(&mut self, op_id: &str) -> Result<()> {
+        let armed = match self.fault {
+            Some(WriteFault {
+                target: WriteTarget::Manifest(0),
+                ..
+            }) => self.fault.take(),
+            Some(WriteFault {
+                target: WriteTarget::Manifest(n),
+                persistent,
+            }) => {
+                self.fault = Some(WriteFault {
+                    target: WriteTarget::Manifest(n - 1),
+                    persistent,
+                });
+                None
+            }
+            _ => None,
+        };
+        let r = self.write_manifest_file(op_id, armed.is_some());
+        if armed.is_some_and(|x| !x.persistent) {
+            if let Some(d) = self.manifest_blocker.take() {
+                let _ = std::fs::remove_dir(d);
+            }
+        }
+        r
+    }
+
+    fn write_manifest_file(&mut self, op_id: &str, block: bool) -> Result<()> {
         let op = self
             .operation(op_id)?
             .ok_or_else(|| StoreError::NotFound(op_id.into()))?;
@@ -475,6 +524,10 @@ impl Store {
         let dir = PathBuf::from(&op.backup_dir);
         std::fs::create_dir_all(&dir)?;
         let tmp = dir.join("manifest.json.tmp");
+        if block {
+            std::fs::create_dir(&tmp)?; // the file below can no longer be created
+            self.manifest_blocker = Some(tmp.clone());
+        }
         {
             use std::io::Write;
             let mut f = std::fs::File::create(&tmp)?;

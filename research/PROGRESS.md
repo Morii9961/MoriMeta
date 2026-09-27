@@ -10,7 +10,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **S3/S4 preparation**: `research/s3/compat_corpus.py` + `tests/compat-lab/`; `research/s4/bench.py` + `tests/perf/`.
 - **S5 (automated part)**: `research/spikes/s5-ui` — Tauri 2.12 + React; numbers in SPIKE_REPORT §5a.
 - **Phase 1b scale (limited)**: 1,000 copies of 8 ExifTool fixtures, Creator apply → undo byte-identical (`docs/PHASE1B_SCALE_VALIDATION.md`); not a camera corpus or S4 result.
-- **G-1 fault matrix** (`docs/PHASE1B_FAULT_MATRIX.md`): journal write failures (real SQLITE_BUSY, once/persistent), simulated disk full → Operation pauses and resumes, undo-path crashes/IO errors, space pre-check (§6.2). 62 tests. Real disk full on a 64 MB NTFS VHDX (photo volume; backup/journal volume with real SQLITE_FULL): passed, run separately with `MM_E2E_SMALL_VOLUME`.
+- **G-1 fault matrix** (`docs/PHASE1B_FAULT_MATRIX.md`): journal write failures (real SQLITE_BUSY, once/persistent), simulated disk full → Operation pauses and resumes, undo-path crashes/IO errors, space pre-check (§6.2). 62 tests. Real disk full on a 64 MB NTFS VHDX (photo volume; backup/journal volume with real SQLITE_FULL): passed, run separately with `MM_E2E_SMALL_VOLUME`. Round 2: manifest / recover / resume write failures, undo random kills; fixed resume stranding re-registered files in a finished Operation. 66 tests.
 
 ## Waiting / needs the user
 
@@ -22,5 +22,5 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 ## Next engineering steps (no design dependency)
 
 - Worker pool + per-volume IO limits (ARCHITECTURE §7.5/§8), then S4 on real data.
-- More real disk-full positions (after commit, during undo); manifest-write and recover/resume journal-write faults; wider fault positions; manifest-only recovery; undo when the file was moved.
+- More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; manifest per-file append (SAFETY_MODEL §6.1) + rewrite after a failed write, with manifest-only recovery (G-7); undo when the file was moved (G-6).
 - Time tools (Absolute/Shift/Sequence/Preserve) through the same Plan/transaction path.
