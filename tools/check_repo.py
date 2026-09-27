@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Pre-commit inclusion check (docs/REPOSITORY_CHECKLIST.md §2).
 
 Checks the files staged for commit (default) or the paths given on the command line:

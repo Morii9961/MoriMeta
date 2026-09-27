@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Operation Journal (SAFETY_MODEL §9) on SQLite (WAL, synchronous=FULL), plus the backup
 //! store layout and the self-describing `manifest.json` written next to each Operation's backups.
 //!
@@ -720,10 +721,10 @@ impl Store {
             _ => None,
         };
         let r = self.write_manifest_file(op_id, armed.is_some());
-        if armed.is_some_and(|x| !x.persistent) {
-            if let Some(d) = self.manifest_blocker.take() {
-                let _ = std::fs::remove_dir(d);
-            }
+        if armed.is_some_and(|x| !x.persistent)
+            && let Some(d) = self.manifest_blocker.take()
+        {
+            let _ = std::fs::remove_dir(d);
         }
         r
     }

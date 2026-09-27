@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Capture-time model and the four MVP time tools (METADATA_MODEL §5; v0.1 §33):
 //! Absolute, Shift, Sequence, Preserve Relative Timing.
 //!

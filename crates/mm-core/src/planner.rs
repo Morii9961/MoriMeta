@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Planning (ARCHITECTURE §6.2): environment pre-checks, fingerprints, metadata snapshot, and the
 //! pure field planner. Produces an immutable `Plan`; nothing is written.
 
@@ -706,13 +707,13 @@ fn plan_with(
                 ),
                 _ => {}
             }
-            if job.is_some() {
-                if let Some(provider) = mm_fs::sync_provider(Path::new(&entry.path), &sync_roots) {
-                    entry.notes.push(format!(
+            if job.is_some()
+                && let Some(provider) = mm_fs::sync_provider(Path::new(&entry.path), &sync_roots)
+            {
+                entry.notes.push(format!(
                         "in a {provider} folder: the change will be uploaded, and if the file is \
                          edited elsewhere at the same time the sync client may keep a conflicted copy"
                     ));
-                }
             }
         }
         entry.seq = entries.len() as u32;

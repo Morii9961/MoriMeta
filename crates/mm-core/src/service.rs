@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Backend interface for the UI adapter (ARCHITECTURE §5.1, §5.1a, §5.2). The frontend never names
 //! a path for a write: files enter a [`Session`] through the backend and are referred to by
 //! [`AssetId`]; a write names a Plan id, its version and a single-use confirmation token handed

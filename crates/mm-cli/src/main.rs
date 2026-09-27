@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! mm-cli — development and test driver for the MoriMeta core (not a public product; ARCHITECTURE §4.1).
 //!
 //! Global options (before the command):
@@ -92,6 +93,7 @@ fn usage() -> ExitCode {
         "{}",
         include_str!("main.rs")
             .lines()
+            .skip_while(|l| !l.starts_with("//!")) // the SPDX line comes first
             .take_while(|l| l.starts_with("//!"))
             .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
             .collect::<Vec<_>>()
@@ -578,15 +580,15 @@ fn main() -> ExitCode {
                     store.set_setting(&key, v).map_err(|e| e.to_string())?;
                 }
                 // a policy setting is checked before it is kept: it decides what is deleted
-                if key.starts_with("backup.") {
-                    if let Err(e) = retention::Policy::from_settings(&store) {
-                        match &before {
-                            Some(b) => store.set_setting(&key, b),
-                            None => store.clear_setting(&key),
-                        }
-                        .map_err(|e| e.to_string())?;
-                        return Err(e.to_string());
+                if key.starts_with("backup.")
+                    && let Err(e) = retention::Policy::from_settings(&store)
+                {
+                    match &before {
+                        Some(b) => store.set_setting(&key, b),
+                        None => store.clear_setting(&key),
                     }
+                    .map_err(|e| e.to_string())?;
+                    return Err(e.to_string());
                 }
                 let v = store.setting(&key).map_err(|e| e.to_string())?;
                 println!("{}", json!({"key": key, "value": v}));

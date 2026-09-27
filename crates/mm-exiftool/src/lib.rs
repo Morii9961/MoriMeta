@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! ExifTool adapter: process session, argfile encoding, supervision (Windows).
 //!
 //! Scope (Phase 1a): the protocol layer validated in S1 (docs/SPIKE_REPORT.md §2). Typed

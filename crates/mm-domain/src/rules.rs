@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Rules and Presets, MVP (PRODUCT_SPEC §6.10, §6.11): a Rule is optional conditions (all must
 //! hold) and actions; a Preset is an ordered list of Rules stored as JSON with `schema_version`.
 //! Every condition is evaluated on the file's original snapshot; actions are combined in order and
@@ -170,10 +171,10 @@ impl Preset {
                 return Err(at("no action".into()));
             }
             for c in &r.when {
-                if let Condition::Extension { any } = c {
-                    if any.is_empty() {
-                        return Err(at("extension condition without extensions".into()));
-                    }
+                if let Condition::Extension { any } = c
+                    && any.is_empty()
+                {
+                    return Err(at("extension condition without extensions".into()));
                 }
             }
             for a in &r.then {

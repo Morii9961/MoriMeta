@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `creator` field: read reconciliation and write planning for Embedded JPEG/TIFF targets
 //! (METADATA_MODEL §2.2, §6, §8). Explicit mapping (ADR-08): EXIF `IFD0:Artist` (items joined
 //! with "; "), XMP `dc:creator` (Seq), IPTC `By-line` only when the file already has IPTC, and

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Read-only views for the UI (ARCHITECTURE §5.2): `asset_detail` for the Inspector (each field's
 //! effective value, where it comes from, conflicts, and every raw tag) and `selection_aggregate`
 //! for the batch editor (how many files hold which value, so mixed values are visible).

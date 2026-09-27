@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Template variables in edit values (PRODUCT_SPEC §6.9): `© {creator} {year}`. Evaluated per
 //! file from its original snapshot (before any change of the same Plan). A missing value is never
 //! silently replaced by an empty string: the file's change is blocked unless the template gives a

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Input validation for text values (METADATA_MODEL §3 "可接受的值").
 //!
 //! These are the characters that can be carried to ExifTool exactly (docs/SPIKE_REPORT.md §2):

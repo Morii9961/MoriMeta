@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Application services (ARCHITECTURE §4.1 `mm-core`): planning, execution of the single-file
 //! transaction, crash recovery, resume, undo and offline consistency checks.
 //!

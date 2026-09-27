@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! ExifTool engine wrapper used by the application services: respawns a dead session, applies
 //! size-based timeouts (ARCHITECTURE §7.2) and turns typed `TagOp`s into validated argfile lines.
 

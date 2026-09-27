@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! One `exiftool -stay_open True -@ -` process (ARCHITECTURE §7.1–7.2, ADR-11).
 //!
 //! * Each command ends with `-echo4 {mm-end:<ID>:${status}}` and `-execute<ID>`, where ID is a
@@ -29,6 +30,7 @@ use windows_sys::Win32::System::JobObjects::{
 use crate::encode::Command;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_SUSPENDED: u32 = 0x0000_0004;
 /// Output above this size is treated as abnormal (SECURITY_MODEL §4.2).
 const MAX_OUTPUT: usize = 256 << 20;
 
@@ -134,6 +136,42 @@ impl Job {
             Ok(Job(job))
         }
     }
+}
+
+/// Resume the only thread of a process created with `CREATE_SUSPENDED`.
+fn resume_main_thread(pid: u32) -> io::Result<()> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+    // SAFETY: plain Win32 calls; every handle opened here is closed here, `entry` is sized.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if snap.is_null() || snap as isize == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut entry: THREADENTRY32 = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+        let mut resumed = 0;
+        let mut more = Thread32First(snap, &mut entry) != 0;
+        while more {
+            if entry.th32OwnerProcessID == pid {
+                let t = OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID);
+                if !t.is_null() {
+                    if ResumeThread(t) != u32::MAX {
+                        resumed += 1;
+                    }
+                    CloseHandle(t);
+                }
+            }
+            more = Thread32Next(snap, &mut entry) != 0;
+        }
+        CloseHandle(snap);
+        if resumed == 0 {
+            return Err(io::Error::other("could not resume the ExifTool process"));
+        }
+    }
+    Ok(())
 }
 
 impl Drop for Job {
@@ -308,12 +346,19 @@ impl Session {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .creation_flags(CREATE_NO_WINDOW);
+        // Created suspended and put into the kill-on-close job before its first instruction: if
+        // this process dies at any moment (a crash, a killed test driver), ExifTool dies with it
+        // and never outlives its job
+        .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         let mut child = cmd.spawn().map_err(EngineError::Spawn)?;
-        let job = match Job::kill_on_close_for(&child) {
+        let job = match Job::kill_on_close_for(&child).and_then(|j| {
+            resume_main_thread(child.id())?;
+            Ok(j)
+        }) {
             Ok(j) => Some(j),
             Err(e) => {
                 let _ = child.kill();
+                let _ = child.wait();
                 return Err(EngineError::Spawn(e));
             }
         };

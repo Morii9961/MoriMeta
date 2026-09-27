@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `gps` field for Embedded JPEG/TIFF targets (METADATA_MODEL §7): read the position, set
 //! coordinates, or remove GPS entirely.
 //!
@@ -78,10 +79,10 @@ impl GeoPoint {
         if !(-180.0..=180.0).contains(&self.lon) || !self.lon.is_finite() {
             return Err(format!("longitude {} outside -180..180", self.lon));
         }
-        if let Some(a) = self.alt {
-            if !a.is_finite() || a.abs() > 100_000.0 {
-                return Err(format!("altitude {a} m is not plausible"));
-            }
+        if let Some(a) = self.alt
+            && (!a.is_finite() || a.abs() > 100_000.0)
+        {
+            return Err(format!("altitude {a} m is not plausible"));
         }
         Ok(())
     }
@@ -285,17 +286,17 @@ pub fn plan(snap: &Snapshot, edit: &GpsEdit) -> FieldPlan {
                     format!("{:.7}", p.lon),
                     DEG_TOLERANCE,
                 );
-                if let Some(a) = p.alt {
-                    if snap.contains(XMP_ALT) {
-                        near(
-                            &mut ops,
-                            &mut expect,
-                            XMP_ALT,
-                            format!("{:.3}", a.abs()),
-                            ALT_TOLERANCE,
-                        );
-                        altitude_ref(&mut ops, &mut expect, XMP_ALT_REF, a < 0.0);
-                    }
+                if let Some(a) = p.alt
+                    && snap.contains(XMP_ALT)
+                {
+                    near(
+                        &mut ops,
+                        &mut expect,
+                        XMP_ALT,
+                        format!("{:.3}", a.abs()),
+                        ALT_TOLERANCE,
+                    );
+                    altitude_ref(&mut ops, &mut expect, XMP_ALT_REF, a < 0.0);
                 }
                 notes.push("XMP GPS updated because the file already has it".into());
             }

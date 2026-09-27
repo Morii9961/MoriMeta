@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Windows file-system primitives for the single-file transaction (SAFETY_MODEL §4.1).
 //!
 //! Behaviour of every primitive here was measured in S2 (docs/SPIKE_REPORT.md §3) on local
@@ -527,13 +528,12 @@ pub fn sync_roots() -> Vec<(PathBuf, &'static str)> {
         }
     }
     for base in ["APPDATA", "LOCALAPPDATA"] {
-        if let Some(b) = std::env::var_os(base) {
-            if let Ok(text) =
+        if let Some(b) = std::env::var_os(base)
+            && let Ok(text) =
                 std::fs::read_to_string(PathBuf::from(b).join("Dropbox").join("info.json"))
-            {
-                for p in dropbox_paths(&text) {
-                    roots.push((p, "Dropbox"));
-                }
+        {
+            for p in dropbox_paths(&text) {
+                roots.push((p, "Dropbox"));
             }
         }
     }

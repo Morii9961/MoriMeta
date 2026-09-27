@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `capture_time` field for Embedded JPEG/TIFF targets (METADATA_MODEL §5, §8): reading the
 //! effective time and turning the result of a time tool (`time::apply`) into tag writes (§5.3).
 //!
@@ -213,11 +214,9 @@ pub fn plan(
         if let Some((_, frac, off)) = &st.time {
             s.push(' ');
             s.push_str(&after.local.format("%H:%M:%S").to_string());
-            if keep_subsec {
-                if let Some(f) = frac {
-                    s.push('.');
-                    s.push_str(f);
-                }
+            if keep_subsec && let Some(f) = frac {
+                s.push('.');
+                s.push_str(f);
             }
             if let Some(o) = off {
                 s.push_str(o);

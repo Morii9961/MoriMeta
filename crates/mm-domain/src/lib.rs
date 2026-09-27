@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Pure domain model (no IO, no processes).
 //!
 //! Phase 1a: MVP time tools, value rules. Phase 1b (in progress): Plan model, tag snapshot,

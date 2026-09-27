@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Operation execution: the single-file transaction of SAFETY_MODEL §4.1 for every executable
 //! plan entry, with journal records before every irreversible step (I-8).
 //!
@@ -127,10 +128,10 @@ fn fault(opts: &ExecOptions, seq: u32, step: u8) -> Result<(), CoreError> {
         }
         unreachable!();
     }
-    if opts.cancel_at == here {
-        if let Some(c) = &opts.cancel {
-            c.store(true, Ordering::SeqCst);
-        }
+    if opts.cancel_at == here
+        && let Some(c) = &opts.cancel
+    {
+        c.store(true, Ordering::SeqCst);
     }
     if opts.fail == here {
         return Err(CoreError::Io(std::io::Error::other(format!(

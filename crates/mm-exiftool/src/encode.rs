@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Argfile encoding for `exiftool -stay_open True -@ -` (ARCHITECTURE ADR-10).
 //!
 //! Every argument travels as one *plain* argfile line. Tag values are XML-escaped and the

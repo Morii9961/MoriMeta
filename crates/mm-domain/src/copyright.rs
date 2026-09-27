@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `copyright` field: read reconciliation and write planning for Embedded JPEG/TIFF targets
 //! (METADATA_MODEL §6, §8; PRODUCT_SPEC §6.7). Explicit mapping (ADR-08): EXIF `IFD0:Copyright`,
 //! XMP `dc:rights` default language, IPTC `CopyrightNotice` only when the file already has IPTC,

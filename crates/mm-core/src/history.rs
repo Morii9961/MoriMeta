@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! History (PRODUCT_SPEC §6.14): the Operation Journal as a list (time, name, files, changes,
 //! result, backup state) and as the detail of one Operation with field-level before/after, which
 //! is also what "Export Log" writes.

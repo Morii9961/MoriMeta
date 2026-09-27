@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! IPTC IIM rules shared by every field that updates an existing IPTC copy (METADATA_MODEL §6):
 //! character set, encoded byte limits, duplicate records, and the Photoshop IPTC digest.
 

@@ -1,7 +1,7 @@
 # MoriMeta — License Decision Preparation (D-1)
 
 > **Status:** 已决定 · 2026-09-27 — **GPL-3.0-or-later**（用户决定）。
-> 已执行：`LICENSE` 为 gnu.org 官方 GPL-3.0 原文（SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`）；workspace `Cargo.toml` 写入 `license = "GPL-3.0-or-later"`，各 crate 继承；README 写明许可声明。尚未做：源文件头 SPDX 注释、`CONTRIBUTING.md`（DCO/CLA，§3 第 3 问）、应用内 About → Licenses。以下为决定前的准备材料，保留备查。
+> 已执行：`LICENSE` 为 gnu.org 官方 GPL-3.0 原文（SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`）；workspace `Cargo.toml` 写入 `license = "GPL-3.0-or-later"`，各 crate 继承；README 写明许可声明。产品源文件（`crates/`、`tools/`、`tests/`）已加 `SPDX-License-Identifier: GPL-3.0-or-later` 头（2026-09-28）。尚未做：`CONTRIBUTING.md`（DCO/CLA，§3 第 3 问）、应用内 About → Licenses。以下为决定前的准备材料，保留备查。
 
 ## 1. 当前约束（不论选哪种）
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Content that changes what writing means (SAFETY_MODEL §8).
 
 use crate::snapshot::{Snapshot, value_text};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Offline consistency check of one Operation (SAFETY_MODEL §10 "mm-cli fsck"). Read-only.
 
 use std::path::Path;

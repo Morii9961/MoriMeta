@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Integration tests against the pinned ExifTool (research/exiftool.lock.json).
 //! Skipped (with a message) when `research/scripts/fetch_exiftool.py` has not been run,
 //! or when MM_EXIFTOOL_PKG points elsewhere.

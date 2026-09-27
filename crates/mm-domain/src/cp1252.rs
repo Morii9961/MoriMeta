@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Windows-1252: the character set ExifTool assumes for IPTC without CodedCharacterSet [F-20].
 
 /// The 27 characters that Windows-1252 maps into 0x80–0x9F (5 positions are undefined).

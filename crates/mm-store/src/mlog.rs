@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `manifest.jsonl`: the append-only record next to each Operation's backups (SAFETY_MODEL §6.1),
 //! and rebuilding the Journal from it when the database is lost (PHASE1_REPORT G-7).
 //!

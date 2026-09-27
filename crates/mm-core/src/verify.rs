@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Pre-commit verification of a temporary output (SAFETY_MODEL §5, V1–V5).
 
 use std::collections::BTreeSet;

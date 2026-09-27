@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Backup retention (SAFETY_MODEL §6.3). The defaults are the recommendation of D-7, which is not
 //! decided yet, so they are parameters. Pruning only removes MoriMeta's own backup folders
 //! (invariant I-9) and keeps the History record, marked as no longer undoable.

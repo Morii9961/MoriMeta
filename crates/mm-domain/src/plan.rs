@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Plan model (METADATA_MODEL §9). A Plan is immutable once created; the executable part of each
 //! entry (`action`) is persisted when an Operation starts so that "continue" after a crash
 //! executes exactly what was previewed (SAFETY_MODEL §9).

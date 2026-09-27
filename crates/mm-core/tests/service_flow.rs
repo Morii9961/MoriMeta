@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The backend interface end to end with the pinned ExifTool (skipped when it is not fetched):
 //! Session → Plan → Preview page → exclusion → confirmation → execution → undo through the same
 //! interface. Works on copies of the ExifTool test images in a temporary folder.

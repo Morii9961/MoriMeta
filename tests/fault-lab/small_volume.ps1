@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Small NTFS test volume for the real disk-full test (docs/PHASE1B_FAULT_MATRIX.md, G-1).
 #
 # Needs an elevated PowerShell (diskpart). Creates an expandable 64 MB VHDX under the ignored

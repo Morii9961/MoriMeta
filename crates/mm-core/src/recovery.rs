@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Crash recovery (SAFETY_MODEL §10). Runs before any new write. Decides every unfinished file
 //! from the journal and the observed disk state; only files registered in the journal are touched,
 //! and a registered file is removed only after its hash has been checked (I-9).

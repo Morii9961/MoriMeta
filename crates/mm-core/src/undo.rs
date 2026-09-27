@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Undo planning (SAFETY_MODEL §7). Undo restores verified backups byte-for-byte; it is itself an
 //! Operation (with its own backups), so it can be undone again.
 

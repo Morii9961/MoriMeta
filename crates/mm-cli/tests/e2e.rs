@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! End-to-end tests of the JPEG + Creator chain through mm-cli, with fault injection.
 //! Needs the pinned ExifTool (research/scripts/fetch_exiftool.py); skipped otherwise.
 //!

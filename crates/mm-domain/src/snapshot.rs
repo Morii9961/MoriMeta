@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Raw tag snapshot of one file: `Group1:Tag` → value, as read with
 //! `-json -G1 -api StructFormat=JSONQ` (every value is a string or a list of strings).
 

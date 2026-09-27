@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The user's Presets (PRODUCT_SPEC §6.11): create, edit, duplicate, delete, export, import, apply.
 //! Stored as their JSON (schema_version 1); every save and import is validated. The built-in
 //! Presets are not stored and cannot be changed, only duplicated.
