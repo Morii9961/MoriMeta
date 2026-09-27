@@ -42,6 +42,7 @@ NEF sidecar（SAFETY_MODEL §3、§4.2、§4.3）：FormatPolicy——JPEG 就�
 | 拍摄时间（四种 MVP 工具） | Shift：无时间的文件 Blocked，其余各移 1 小时；XMP 仅日期值保持仅日期、IPTC 日期随新时间、`IFD0:ModifyDate` 不变；Absolute：含无时间的文件；Sequence：按自然文件名每分钟一张；Preserve：锚点得新时间、其余移动相同量；带亚秒/偏移/XMP/IPTC 的文件：Shift 保留亚秒与各处偏移，Absolute 去掉亚秒、保留偏移；Shift 中途崩溃后恢复与继续；全部撤销逐字节一致 | 通过（3 个端到端测试） |
 | GPS 设置与移除 | 8 个夹具设为 `35.6812345,139.7671234,40.5`：数值按容差核对，GPS.jpg 的时间戳与 MapDatum 保留；移除：只有带 GPS 的文件被写，写后无任何 GPS 标签；已有 XMP GPS 一并更新/移除；南纬、西经与海平面以下保持符号；全部撤销逐字节一致 | 通过（2 个端到端测试） |
 | NEF + XMP sidecar | NEF 只写其 sidecar：新建的 sidecar 只含写入字段；更新保留其他属性；撤销新建 = 移入备份库，再撤销则重建；拍摄时间/GPS 写入 sidecar，再次规划以 sidecar 的值为起点；配对：已有 `.XMP` 大小写沿用、darktable `.NEF.xmp` 不动、同名另一 RAW → Blocked、同名 JPEG 写自身、NEF 与其 sidecar 同选合为一项；新建事务在故障点 1、5–10 崩溃后路径只为“无”或完整 sidecar；NEF 全程逐字节不变 | 通过（4 个端到端测试） |
+| 真实 NEF（Z8 ×2、D850；CC0，SHA-256 锁定，23–58 MB） | 四个字段依次写入各自 sidecar，再逆序全部撤销：NEF 逐字节不变、sidecar 消失；Shift 保留相机写入的亚秒与偏移（D850 `…59.09+01:00`、Z8 `…25.67+02:00` 各移 1 小时） | 通过（语料未获取时跳过） |
 | 并行执行（worker pool） | 4 个 worker、24 个文件：随机终止 8 次（每次多个文件处于事务中）→ 恢复、继续、撤销逐字节一致；4 个 worker 下的磁盘满：每个文件只为 done 或 cancelled（原内容不变），继续后全部完成；卷许可单元测试（超过卷上限的第 N+1 个事务等待）；熔断按完成顺序计数 | 通过 |
 | Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
@@ -80,7 +81,7 @@ NEF sidecar（SAFETY_MODEL §3、§4.2、§4.3）：FormatPolicy——JPEG 就�
 | G-1 | 已测：Journal 写入失败（SQLite 真实 BUSY 与满盘时的真实 FULL）、模拟与真实磁盘满（64 MB VHDX，两个填充时机）、Undo 路径崩溃/IO 错误、空间预检。manifest、`recover`、`resume` 写失败，Undo 随机终止。未测：更多故障位置与真实磁盘满的其他时机 | 本地继续补（[PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md) §4） |
 | G-2 | 1,000 个重复小样本 JPEG 的 Creator→Undo 已通过；5,000 文件、1,000 个不同相机原片与真实大文件仍未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
-| G-4 | 就地写入只支持 JPEG；NEF/NRW 经 XMP sidecar（已实现，以 ExifTool 自带 Nikon.nef 测试；真实 Z8/D850 NEF 与第三方软件读 sidecar 待 V-03/V-07）；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
+| G-4 | 就地写入只支持 JPEG；NEF/NRW 经 XMP sidecar（已实现，以 ExifTool 自带 Nikon.nef 与 3 个真实 Z8/D850 NEF 测试；第三方软件读 sidecar 待 V-03/V-07）；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
 | G-5 | 字段注册表 v0 暂定（creator、copyright） | S3 第三方测试后冻结 v1 |
 | G-6 | 已实现：撤销时文件已被删除或移动 → 从备份在原路径重建（不覆盖的重命名提交，Journal 角色 `recreate`）。撤销这次重建：把文件移入备份库（锁定 → 复制到备份库并核对 → Ready → 不覆盖地改名为登记的 bak 名 → 核对后删除 bak；Journal 角色 `remove`），再撤销又重建，撤销链可以无限往复。重建的文件不保留原创建时间等属性 | Phase 3 的 sidecar 新建/撤销复用该事务 |
 | G-7 | 已实现：`manifest.jsonl` 只追加记录（H0/H1 先刷盘）+ `plan.json`；`mm-cli rebuild-journal` 导入数据库中缺失的 Operation，再按正常恢复处理。已测：完成的 apply 与 undo 链重建后可继续撤销；在故障点 2、4、7、8、9 崩溃及 `ReplaceFileW` 中途状态下丢失数据库，重建、恢复、继续、撤销全部逐字节还原；截断的最后一行被忽略，中间行损坏则不导入。未测：数据库损坏而非丢失（需先移走损坏文件）、备份目录部分缺失；每个文件多两次刷盘的性能开销待 S4 测量 | 产品 UI 中的入口待 Phase 2 |

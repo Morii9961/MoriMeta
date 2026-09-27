@@ -2746,3 +2746,90 @@ fn nef_sidecar_creation_crashes_recover() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+/// Real camera files (research/corpus.lock.json: Nikon Z8 ×2, D850; CC0, SHA-256-pinned; skipped
+/// when not fetched): every field through the sidecar, then undone. The NEFs stay byte-identical;
+/// the shifted time keeps the camera's sub-seconds and offset.
+#[test]
+fn real_nef_corpus_through_the_sidecar() {
+    let pkg = require!();
+    let corpus = repo().join("research/.work/corpus/nikon");
+    let names = [
+        "Nikon_Z8_high_efficiency_low.NEF",
+        "Nikon_Z8_raw_14_bit_lossless_compression.NEF",
+        "Nikon-D850-14bit-lossless-compressed.NEF",
+    ];
+    if !names.iter().all(|n| corpus.join(n).exists()) {
+        eprintln!("SKIP: research/.work/corpus not fetched");
+        return;
+    }
+    let lab = Lab::new("real-nef", &pkg);
+    let dir = lab.photos[0].parent().unwrap().to_path_buf();
+    let nefs: Vec<PathBuf> = names
+        .iter()
+        .map(|n| {
+            let p = dir.join(n);
+            std::fs::copy(corpus.join(n), &p).unwrap();
+            p
+        })
+        .collect();
+    let refs: Vec<&Path> = nefs.iter().map(PathBuf::as_path).collect();
+    let before: Vec<String> = nefs.iter().map(|p| blake(p).unwrap()).collect();
+
+    let (p, pj) = lab.plan_on(&["plan-time", "--shift", "+01:00:00"], &refs, "t.json");
+    let shown: Vec<String> = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            assert_eq!(e["status"]["status"], "ready", "{e}");
+            e["changes"][0]["before"][0].as_str().unwrap().to_owned()
+        })
+        .collect();
+    let mut ops = vec![lab.apply_ok(&p)];
+    for (nef, b) in nefs.iter().zip(&shown) {
+        let t = lab.xmp_tags(&nef.with_extension("xmp"));
+        let a = t["XMP-exif:DateTimeOriginal"].as_str().unwrap();
+        assert_eq!(
+            (local(a) - local(b)).num_seconds(),
+            3600,
+            "{}: {b} -> {a}",
+            nef.display()
+        );
+        assert_eq!(
+            &a[19..],
+            &b[19..],
+            "sub-seconds and offset kept: {b} -> {a}"
+        );
+    }
+    for (i, cmd) in [
+        vec!["plan-creator", "--set", "森 Morii"],
+        vec!["plan-copyright", "--set", "© 2026 Morii"],
+        vec!["plan-gps", "--set", "35.6812345,139.7671234,40"],
+    ]
+    .iter()
+    .enumerate()
+    {
+        let (p, _) = lab.plan_on(cmd, &refs, &format!("f{i}.json"));
+        ops.push(lab.apply_ok(&p));
+    }
+    for nef in &nefs {
+        let t = lab.xmp_tags(&nef.with_extension("xmp"));
+        assert_eq!(t["XMP-dc:Creator"], "森 Morii", "{t:?}");
+        assert_eq!(t["XMP-dc:Rights"], "© 2026 Morii", "{t:?}");
+        assert!(t.contains_key("XMP-exif:GPSLatitude"), "{t:?}");
+    }
+    for op in ops.iter().rev() {
+        lab.undo(op);
+    }
+    for (nef, h) in nefs.iter().zip(&before) {
+        assert_eq!(
+            blake(nef).as_deref(),
+            Some(h.as_str()),
+            "{} changed",
+            nef.display()
+        );
+        assert!(!nef.with_extension("xmp").exists());
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

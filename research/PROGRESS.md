@@ -17,7 +17,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **Worker pool**: N file transactions in parallel (`--workers`, default clamp(cores/2,1,4)), one ExifTool session each, journal serialized behind a lock, per-volume IO permits (SSD 4 / HDD 1 / network 2 / removable 1). Stop (disk full, breaker) = no new files, in-flight ones finish. 200 tiny files: 10.8 s -> 4.9 s (debug, NVMe; not S4). 87 tests.
 - **Capture time**: Absolute / Shift / Sequence / Preserve Relative Timing planned over the whole selection (`mm-cli plan-time`); every existing location keeps its shape and offset; IPTC time only written with its own offset (ExifTool would insert the computer's zone). 95 tests.
 - **GPS set/remove**: numeric reads for GPS (`-GPS:all#` before `-all`), V2 numeric tolerance, removal of the whole GPS directory + XMP GPS; altitude reference written by name (V2 caught ExifTool turning a written `1` into 0). 103 tests.
-- **NEF + XMP sidecar** for all four fields: FormatPolicy, §3.1 pairing, sidecar-first reading, W-S writes only, new sidecars written from nothing (role `create`, undo = move to backup store), V4 only for image files. NEF byte-identical throughout. 111 tests.
+- **NEF + XMP sidecar** for all four fields: FormatPolicy, §3.1 pairing, sidecar-first reading, W-S writes only, new sidecars written from nothing (role `create`, undo = move to backup store), V4 only for image files. NEF byte-identical throughout. 111 tests; plus the 3 real Z8/D850 NEFs of the corpus through all four fields and back (112).
 
 ## Waiting / needs the user
 
@@ -30,4 +30,4 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 - S4 on real data with the worker pool (needs D-13 corpus); parallel scan/plan; group-commit of journal writes if S4 shows the serialized flushes dominate.
 - More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
-- Real Z8/D850 NEFs through the sidecar path (corpus is local, large files); third-party reading of sidecars is V-03/V-07 (D-13). Backend interface for Phase 2 (Handle model, Plan/Preview paging).
+- Third-party reading of the sidecars is V-03/V-07 (needs LR/C1/NX Studio, D-13). Backend interface for Phase 2 (Handle model, Plan/Preview paging).
