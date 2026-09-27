@@ -79,6 +79,12 @@ pub enum Expect {
     Absent {
         tag: String,
     },
+    /// A number within `within` of `value` (decimal strings; read numerically, e.g. GPS).
+    Near {
+        tag: String,
+        value: String,
+        within: String,
+    },
     /// IPTCDigest present and matching the IPTC block (no "not current" warning).
     IptcDigestCurrent,
 }

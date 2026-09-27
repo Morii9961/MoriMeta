@@ -33,6 +33,15 @@ fn path_line(p: &Path) -> Result<Line, CoreError> {
     Line::path(p).map_err(|e| CoreError::Input(format!("{}: {e}", p.display())))
 }
 
+/// GPS values as numbers (compared numerically, SAFETY_MODEL §5 V2), every other tag printed as
+/// before. ExifTool 13.59 honours a `TAG#` request only when it comes before `-all`.
+fn numeric_gps_then_all(c: &mut Command) {
+    for o in mm_domain::gps::NUMERIC_READ {
+        c.push(Line::option(o));
+    }
+    c.push(Line::option("-all"));
+}
+
 /// The string ExifTool reports as `SourceFile` for a path we passed.
 pub fn source_key(p: &Path) -> Option<String> {
     Line::path(p).ok().map(|l| l.as_str().to_owned())
@@ -94,6 +103,7 @@ impl Engine {
         for chunk in paths.chunks(100) {
             let mut c = Command::read_json();
             c.push(Line::option("-G1"));
+            numeric_gps_then_all(&mut c);
             let mut bytes = 0u64;
             for p in chunk {
                 c.push(path_line(p)?);
@@ -134,6 +144,7 @@ impl Engine {
         ] {
             c.push(Line::option(o));
         }
+        numeric_gps_then_all(&mut c);
         let mut bytes = 0;
         for p in paths {
             c.push(path_line(p)?);

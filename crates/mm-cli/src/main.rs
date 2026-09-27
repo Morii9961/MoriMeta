@@ -13,6 +13,7 @@
 //!   plan-time (--absolute "YYYY:MM:DD HH:MM:SS" | --shift [+|-][Nd]HH:MM:SS
 //!              | --sequence "START" --step HH:MM:SS [--order time|name] | --preserve ANCHOR_FILE --to "TIME")
 //!             [--no-digitized] --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
+//!   plan-gps --set "lat,lon[,alt]" | --remove  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
@@ -48,6 +49,7 @@ use mm_core::{fsck, planner, recovery, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
+use mm_domain::gps::{self, GeoPoint, GpsEdit};
 use mm_domain::plan::Plan;
 use mm_domain::time::{self, SequenceOrder};
 use mm_exiftool::EngineConfig;
@@ -368,6 +370,7 @@ fn main() -> ExitCode {
                             };
                             json!({"path": p, "creator": c.effective, "sources": c.sources, "conflicting": c.conflicting,
                                    "capture_time": t,
+                                   "gps": gps::read(&s).map(|p| p.display()),
                                    "copyright": {"value": r.effective, "sources": r.sources, "conflicting": r.conflicting,
                                                  "other_languages": r.other_languages}})
                         }
@@ -441,6 +444,27 @@ fn main() -> ExitCode {
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
                 let plan = planner::plan_capture_time(&mut eng, &paths, &tool, digitized, &title)
+                    .map_err(|e| e.to_string())?;
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-gps" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
+                let remove = args.iter().any(|a| a == "--remove");
+                args.retain(|a| a != "--remove");
+                let edit = match (take_opt(&mut args, "--set"), remove) {
+                    (Some(v), false) => GpsEdit::Set(GeoPoint::parse(&v)?),
+                    (None, true) => GpsEdit::Remove,
+                    _ => return Err("use either --set lat,lon[,alt] or --remove".into()),
+                };
+                let title = take_opt(&mut args, "--title").unwrap_or_else(|| match edit {
+                    GpsEdit::Set(_) => "Set GPS".into(),
+                    GpsEdit::Remove => "Remove GPS".into(),
+                });
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let plan = planner::plan_gps(&mut eng, &paths, &edit, &title)
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

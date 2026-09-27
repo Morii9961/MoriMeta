@@ -16,6 +16,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **Copyright field** (scenario D's field): EXIF Copyright, XMP dc:rights x-default (other languages kept; ExifTool drops them without a language code), existing IPTC CopyrightNotice with the shared IPTC charset/length rules; `mm-cli plan-copyright`. 82 tests.
 - **Worker pool**: N file transactions in parallel (`--workers`, default clamp(cores/2,1,4)), one ExifTool session each, journal serialized behind a lock, per-volume IO permits (SSD 4 / HDD 1 / network 2 / removable 1). Stop (disk full, breaker) = no new files, in-flight ones finish. 200 tiny files: 10.8 s -> 4.9 s (debug, NVMe; not S4). 87 tests.
 - **Capture time**: Absolute / Shift / Sequence / Preserve Relative Timing planned over the whole selection (`mm-cli plan-time`); every existing location keeps its shape and offset; IPTC time only written with its own offset (ExifTool would insert the computer's zone). 95 tests.
+- **GPS set/remove**: numeric reads for GPS (`-GPS:all#` before `-all`), V2 numeric tolerance, removal of the whole GPS directory + XMP GPS; altitude reference written by name (V2 caught ExifTool turning a written `1` into 0). 103 tests.
 
 ## Waiting / needs the user
 
@@ -28,4 +29,4 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 - S4 on real data with the worker pool (needs D-13 corpus); parallel scan/plan; group-commit of journal writes if S4 shows the serialized flushes dominate.
 - More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
-- Time tools for NEF sidecars (Phase 3, with FormatPolicy Sidecar); GPS set/remove field.
+- NEF sidecars (Phase 3, FormatPolicy Sidecar) for all four fields; field-level `mm-cli` → backend interface for Phase 2 (Handle model, Plan/Preview paging).

@@ -191,6 +191,7 @@ struct GeoPoint { lat: f64, lon: f64, alt: Option<f64> }   // WGS84，十进制�
   - Sidecar 目标（专有 RAW）：RAW 内 GPS 无法移除 → 该 Asset 整体 `Unsupported`，不做局部写入。
   - "清除 sidecar 中的 GPS 覆盖值"是另一个操作（结果是生效值回到 RAW 内嵌 GPS），v1 候选。
 - 设置坐标时不修改 GPS 时间戳。
+- 实现说明（2026-09-27）：未给出海拔时删除已有海拔（否则描述另一个位置）；海拔参考按名称写入（ExifTool 13.59 把写入的 `1` 当作 0，单独写负海拔会丢失符号）；GPS 在规划与验证时按数值读取并以容差比较。
 
 ---
 

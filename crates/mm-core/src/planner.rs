@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
+use mm_domain::gps::{self, GpsEdit};
 use mm_domain::plan::{
     EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind,
 };
@@ -59,6 +60,15 @@ pub fn plan_copyright(
     title: &str,
 ) -> Result<Plan, CoreError> {
     plan_field(engine, inputs, title, |s| copyright::plan(s, edit))
+}
+
+pub fn plan_gps(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    edit: &GpsEdit,
+    title: &str,
+) -> Result<Plan, CoreError> {
+    plan_field(engine, inputs, title, |s| gps::plan(s, edit))
 }
 
 /// A time tool as the user specified it (METADATA_MODEL §5.2); the anchor of Preserve Relative

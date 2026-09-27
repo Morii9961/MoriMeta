@@ -7,6 +7,7 @@ pub mod capture;
 pub mod copyright;
 pub mod cp1252;
 pub mod creator;
+pub mod gps;
 pub mod iptc;
 pub mod plan;
 pub mod snapshot;

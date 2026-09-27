@@ -2312,3 +2312,165 @@ fn time_shift_crash_recovers_and_resumes() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+impl Lab {
+    fn plan_gps(&self, how: &[&str], files: &[&Path], name: &str) -> (PathBuf, Value) {
+        let out = self.dir.join(name);
+        let mut args = vec!["plan-gps"];
+        args.extend_from_slice(how);
+        args.extend(["--out", out.to_str().unwrap()]);
+        let ps: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        args.extend(ps.iter().map(String::as_str));
+        let o = self.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, Lab::json(&o))
+    }
+
+    fn gps_of(&self, files: &[&Path]) -> Vec<Value> {
+        let ps: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let mut args = vec!["scan"];
+        args.extend(ps.iter().map(String::as_str));
+        Lab::json(&self.cli(&args))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["gps"].clone())
+            .collect()
+    }
+
+    /// Every GPS tag of a file, numerically, straight from ExifTool (lab copies only).
+    fn gps_tags(&self, p: &Path) -> serde_json::Map<String, Value> {
+        let o = Command::new(self.pkg.join("exiftool.exe"))
+            .args([
+                "-config",
+                "",
+                "-json",
+                "-G1",
+                "-n",
+                "-GPS:all",
+                "-XMP-exif:GPS*",
+            ])
+            .arg(p)
+            .output()
+            .unwrap();
+        let mut m = serde_json::from_slice::<Value>(&o.stdout).unwrap()[0]
+            .as_object()
+            .unwrap()
+            .clone();
+        m.remove("SourceFile");
+        m
+    }
+}
+
+/// GPS set and remove (METADATA_MODEL §7) through Plan → apply → undo on the fixtures: numbers
+/// are verified numerically, the GPS time stamp survives a set, removal leaves no GPS tag.
+#[test]
+fn gps_set_and_remove_apply_and_undo() {
+    let pkg = require!();
+    let lab = Lab::new("gps", &pkg);
+    let all: Vec<&Path> = lab.photos.iter().map(PathBuf::as_path).collect();
+    let gps_jpg = lab.photos[SAMPLES.iter().position(|s| *s == "GPS.jpg").unwrap()].clone();
+    let before = lab.gps_tags(&gps_jpg);
+    assert!(before.contains_key("GPS:GPSTimeStamp"), "{before:?}");
+
+    let (p, pj) = lab.plan_gps(&["--set", "35.6812345,139.7671234,40.5"], &all, "set.json");
+    assert!(
+        pj["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["status"]["status"] == "ready"),
+        "{pj}"
+    );
+    let op = lab.apply_ok(&p);
+    assert!(
+        lab.gps_of(&all)
+            .iter()
+            .all(|g| g == "35.6812345, 139.7671234, 40.50 m"),
+        "{:?}",
+        lab.gps_of(&all)
+    );
+    let after = lab.gps_tags(&gps_jpg);
+    for kept in ["GPS:GPSTimeStamp", "GPS:GPSMapDatum"] {
+        assert_eq!(after.get(kept), before.get(kept), "{kept} must be kept");
+    }
+    assert!(lab.cli(&["fsck", &op]).status.success());
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // removal: only the file with GPS changes; afterwards it has no GPS tag at all
+    let (p, pj) = lab.plan_gps(&["--remove"], &all, "remove.json");
+    let statuses: Vec<&str> = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["status"]["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        statuses.iter().filter(|s| **s == "ready").count(),
+        1,
+        "{pj}"
+    );
+    let op = lab.apply_ok(&p);
+    assert!(
+        lab.gps_tags(&gps_jpg).is_empty(),
+        "{:?}",
+        lab.gps_tags(&gps_jpg)
+    );
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// XMP GPS already present is updated with the GPS directory and removed with it; southern and
+/// western coordinates and an altitude below sea level keep their signs.
+#[test]
+fn gps_xmp_copy_and_signs() {
+    let pkg = require!();
+    let lab = Lab::new("gps-xmp", &pkg);
+    let f = lab.dir.join("photos").join("xmpgps.jpg");
+    let mk = Command::new(pkg.join("exiftool.exe"))
+        .args([
+            "-config",
+            "",
+            "-XMP-exif:GPSLatitude=10.5",
+            "-XMP-exif:GPSLongitude=20.25",
+            "-o",
+        ])
+        .arg(&f)
+        .arg(&lab.photos[SAMPLES.iter().position(|s| *s == "Nikon.jpg").unwrap()])
+        .output()
+        .unwrap();
+    assert!(mk.status.success());
+    let original = blake(&f).unwrap();
+    let (p, _) = lab.plan_gps(&["--set", "-33.8688,-70.5,-10"], &[&f], "s.json");
+    let op = lab.apply_ok(&p);
+    assert_eq!(lab.gps_of(&[&f])[0], "-33.8688000, -70.5000000, -10.00 m");
+    let t = lab.gps_tags(&f);
+    assert_eq!(t["GPS:GPSLatitudeRef"], "S", "{t:?}");
+    assert_eq!(t["GPS:GPSLongitudeRef"], "W", "{t:?}");
+    assert_eq!(t["GPS:GPSAltitudeRef"], 1, "{t:?}");
+    assert!(
+        (t["XMP-exif:GPSLatitude"].as_f64().unwrap() + 33.8688).abs() < 1e-7,
+        "{t:?}"
+    );
+    assert!(
+        (t["XMP-exif:GPSLongitude"].as_f64().unwrap() + 70.5).abs() < 1e-7,
+        "{t:?}"
+    );
+    lab.undo(&op);
+    assert_eq!(blake(&f).as_deref(), Some(original.as_str()));
+
+    let (p, _) = lab.plan_gps(&["--remove"], &[&f], "r.json");
+    let op = lab.apply_ok(&p);
+    assert!(lab.gps_tags(&f).is_empty(), "{:?}", lab.gps_tags(&f));
+    lab.undo(&op);
+    assert_eq!(blake(&f).as_deref(), Some(original.as_str()));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

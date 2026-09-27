@@ -127,6 +127,16 @@ pub fn check_output(
                     return Err(VerifyError::Value(format!("{tag}: expected absent")));
                 }
             }
+            Expect::Near { tag, value, within } => {
+                let got = temp.text(tag).and_then(|t| t.trim().parse::<f64>().ok());
+                let (want, tol) = (value.parse::<f64>(), within.parse::<f64>());
+                let ok = matches!((got, want, tol), (Some(g), Ok(w), Ok(t)) if (g - w).abs() <= t);
+                if !ok {
+                    return Err(VerifyError::Value(format!(
+                        "{tag}: expected {value} ± {within}, found {got:?}"
+                    )));
+                }
+            }
             Expect::IptcDigestCurrent => {
                 if !temp.contains("Photoshop:IPTCDigest")
                     || warnings(temp).iter().any(|w| w.contains("IPTCDigest"))
@@ -151,12 +161,30 @@ pub fn check_output(
     if !source_had_exif {
         allowed.extend(MANDATORY_EXIF);
     }
+    // ExifTool adds GPSVersionID itself when it has to create the GPS directory
+    if !source.keys().any(|k| k.starts_with("GPS:")) {
+        allowed.insert("GPS:GPSVersionID");
+    }
+    // `Group:all` (deleting a whole group, e.g. GPS removal) covers every tag of that group
+    let whole_groups: Vec<&str> = ops
+        .iter()
+        .filter_map(|o| o.tag().strip_suffix(":all"))
+        .collect();
     let a: std::collections::BTreeMap<&String, &serde_json::Value> = stored(source).collect();
     let b: std::collections::BTreeMap<&String, &serde_json::Value> = stored(temp).collect();
     let mut bad = Vec::new();
     for k in a.keys().chain(b.keys()).collect::<BTreeSet<_>>() {
         let base = k.split(" (").next().unwrap_or(k);
-        if allowed.contains(base) || (is_pointer(base) && a.contains_key(k) && b.contains_key(k)) {
+        // …but only for tags that disappeared; anything appearing or changing there still counts
+        let in_deleted_group = base
+            .split_once(':')
+            .is_some_and(|(g, _)| whole_groups.contains(&g))
+            && a.contains_key(k)
+            && !b.contains_key(k);
+        if allowed.contains(base)
+            || in_deleted_group
+            || (is_pointer(base) && a.contains_key(k) && b.contains_key(k))
+        {
             continue;
         }
         if a.get(k) != b.get(k) {
@@ -184,6 +212,58 @@ mod tests {
 
     fn s(v: serde_json::Value) -> Snapshot {
         Snapshot::from_json(&v)
+    }
+
+    #[test]
+    fn numbers_within_tolerance_and_whole_group_deletion() {
+        let src = s(
+            json!({"GPS:GPSLatitude": 1.0, "GPS:GPSTimeStamp": "10:00:00",
+            "IFD0:Make": "X", "File:ImageDataHash": "h"}),
+        );
+        let ops = vec![TagOp::Delete {
+            tag: "GPS:all".into(),
+        }];
+        let gone = s(json!({"IFD0:Make": "X", "File:ImageDataHash": "h"}));
+        let expect = vec![
+            Expect::Absent {
+                tag: "GPS:GPSLatitude".into(),
+            },
+            Expect::Absent {
+                tag: "GPS:GPSTimeStamp".into(),
+            },
+        ];
+        assert_eq!(check_output(&src, &gone, &ops, &expect), Ok(()));
+        // a GPS tag that appears while the group is deleted is still a collateral change
+        let odd =
+            s(json!({"IFD0:Make": "X", "GPS:GPSMapDatum": "WGS84", "File:ImageDataHash": "h"}));
+        assert!(matches!(
+            check_output(&src, &odd, &ops, &expect),
+            Err(VerifyError::Collateral(_))
+        ));
+        // numeric comparison within tolerance
+        let set = vec![TagOp::Set {
+            tag: "GPS:GPSLatitude".into(),
+            values: vec!["35.6812345".into()],
+        }];
+        let near = |v: &str| {
+            vec![Expect::Near {
+                tag: "GPS:GPSLatitude".into(),
+                value: v.into(),
+                within: "0.0000001".into(),
+            }]
+        };
+        let written = s(
+            json!({"GPS:GPSLatitude": 35.6812345000306, "GPS:GPSTimeStamp": "10:00:00",
+            "IFD0:Make": "X", "File:ImageDataHash": "h"}),
+        );
+        assert_eq!(
+            check_output(&src, &written, &set, &near("35.6812345")),
+            Ok(())
+        );
+        assert!(matches!(
+            check_output(&src, &written, &set, &near("35.6812347")),
+            Err(VerifyError::Value(_))
+        ));
     }
 
     #[test]

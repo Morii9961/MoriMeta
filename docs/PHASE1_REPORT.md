@@ -1,4 +1,4 @@
-# MoriMeta — Phase 1 Report（JPEG + Creator / Copyright / 拍摄时间 垂直链路）
+# MoriMeta — Phase 1 Report（JPEG + Creator / Copyright / 拍摄时间 / GPS 垂直链路）
 
 > **Status:** 进行中 · 2026-09-27
 > 记录 Phase 1b 的实现范围、验证方式与已知缺口。安全措辞仍以 SAFETY_MODEL §0 的前提为准。
@@ -25,6 +25,8 @@ Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF
 
 拍摄时间写入规则（METADATA_MODEL §5）：四种工具（Absolute、Shift、Sequence、Preserve Relative Timing）以整个选择为单位规划（Sequence 需排序、Preserve 需锚点），`mm-cli plan-time`。写 `ExifIFD:DateTimeOriginal`，默认同时写 `ExifIFD:CreateDate`（`--no-digitized` 关闭）；已存在时更新 `IFD0:DateTimeOriginal`、`XMP-exif:DateTimeOriginal`、`XMP-photoshop:DateCreated`、`XMP-xmp:CreateDate`、IPTC `DateCreated`/`TimeCreated`，不新建。各位置保持自身形态：仅日期的值仍只写日期，各自的偏移不变（MVP 工具不改偏移，D-18），亚秒由 Shift/Preserve 保留、由 Absolute/Sequence 删除。原先与拍摄时间不一致的位置也改为新时间，Preview 为每个这样的位置给出说明。实测（ExifTool 13.59，2026-09-27）：各格式按写入值读回；但**不带偏移写 `IPTC:TimeCreated` 时 ExifTool 填入本机时区**（本机 `+08:00`），因此 IPTC 时间只以其已有偏移写入，无法识别时该文件 Blocked。
 
+GPS 写入规则（METADATA_MODEL §7）：设置写 GPS 目录的纬度/经度及其参考（N/S、E/W），给出海拔时写海拔及其参考，未给出时删除旧海拔（旧海拔属于另一个位置，Preview 说明）；已有 XMP GPS 一并更新；时间戳不改。移除删除整个 GPS 目录与已有 XMP GPS 标签（含时间戳），不动地名。GPS 值在规划与验证时按数值读取（`-GPS:all#` 等须位于 `-all` 之前才生效，实测），V2 以数值容差比较（坐标 1e-7°，海拔 1 mm）；V3 允许 ExifTool 新建 GPS 目录时自动加入的 `GPSVersionID`，删除整组时只放行消失的标签。**验证拦截的真实问题**：海拔参考写 `1` 时 ExifTool 13.59 写成 0（海平面以上），单独写负海拔会丢失符号——端到端测试中 V2 拒绝了该文件（原文件未动）；改为按名称写 `Below Sea Level` / `Above Sea Level`，读回数值 1/0。
+
 ## 2. 验证
 
 `cargo test --workspace --release`：53 个测试全部通过（2026-09-27）。端到端测试 `crates/mm-cli/tests/e2e.rs` 使用锁定的 ExifTool 13.59 与 8 个 ExifTool 样本 JPEG（Writer、Nikon、Canon、XMP、Sony、Olympus、Pentax、GPS）：
@@ -36,6 +38,7 @@ Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF
 | 随机终止 | 随机时刻终止 `mm-cli apply`，其后同上（默认 12 次，`MM_E2E_KILLS` 可调） | 12/12 通过 |
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
 | 拍摄时间（四种 MVP 工具） | Shift：无时间的文件 Blocked，其余各移 1 小时；XMP 仅日期值保持仅日期、IPTC 日期随新时间、`IFD0:ModifyDate` 不变；Absolute：含无时间的文件；Sequence：按自然文件名每分钟一张；Preserve：锚点得新时间、其余移动相同量；带亚秒/偏移/XMP/IPTC 的文件：Shift 保留亚秒与各处偏移，Absolute 去掉亚秒、保留偏移；Shift 中途崩溃后恢复与继续；全部撤销逐字节一致 | 通过（3 个端到端测试） |
+| GPS 设置与移除 | 8 个夹具设为 `35.6812345,139.7671234,40.5`：数值按容差核对，GPS.jpg 的时间戳与 MapDatum 保留；移除：只有带 GPS 的文件被写，写后无任何 GPS 标签；已有 XMP GPS 一并更新/移除；南纬、西经与海平面以下保持符号；全部撤销逐字节一致 | 通过（2 个端到端测试） |
 | 并行执行（worker pool） | 4 个 worker、24 个文件：随机终止 8 次（每次多个文件处于事务中）→ 恢复、继续、撤销逐字节一致；4 个 worker 下的磁盘满：每个文件只为 done 或 cancelled（原内容不变），继续后全部完成；卷许可单元测试（超过卷上限的第 N+1 个事务等待）；熔断按完成顺序计数 | 通过 |
 | Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
