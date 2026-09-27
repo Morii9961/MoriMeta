@@ -22,6 +22,10 @@
 //!   resume OP_ID [FAULTS]
 //!   plan-undo OP_ID --out PLAN.json
 //!   history | show OP_ID | fsck OP_ID
+//!   backups [--now-ms MS]     backup usage, protection and what the retention policy would prune
+//!   prune [--requested] OP_ID...   remove backups (the policy's choice, or the user's with
+//!                             --requested); unfinished Operations are always refused
+//!   keep OP_ID [--off]        exempt an Operation from automatic pruning
 //!
 //! FAULTS (tests only; all require MM_FAULT_INJECTION=1):
 //!   --crash-at SEQ:STEP       terminate the process at a fault point
@@ -45,7 +49,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::planner::TimeTool;
-use mm_core::{fsck, planner, recovery, undo};
+use mm_core::{fsck, planner, recovery, retention, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
@@ -168,6 +172,13 @@ fn parse_point(args: &mut Vec<String>, flag: &str) -> Result<Option<FaultPoint>,
         seq: s.parse().map_err(|_| "bad SEQ")?,
         step: t.parse().map_err(|_| "bad STEP")?,
     }))
+}
+
+/// Remove a flag without a value; whether it was there.
+fn take_flag(args: &mut Vec<String>, name: &str) -> bool {
+    let had = args.iter().any(|a| a == name);
+    args.retain(|a| a != name);
+    had
 }
 
 fn take_opt(args: &mut Vec<String>, name: &str) -> Option<String> {
@@ -523,6 +534,8 @@ fn main() -> ExitCode {
             "recover" => {
                 exec_options(&mut args, &mut store)?; // only the journal faults apply here
                 let reps = recovery::recover(&mut store).map_err(|e| e.to_string())?;
+                // a prune interrupted between its database mark and the deletion
+                retention::finish_interrupted(&store).map_err(|e| e.to_string())?;
                 let out: Vec<Value> = reps
                     .iter()
                     .map(|r| {
@@ -564,6 +577,45 @@ fn main() -> ExitCode {
                         "seq": f.seq, "path": f.path, "state": f.state.as_str(), "h0": f.h0, "h1": f.h1, "error": f.error,
                         "backup": f.backup_path, "temp": f.temp_path, "bak": f.bak_path})).collect::<Vec<_>>()})
                 );
+                Ok(ExitCode::SUCCESS)
+            }
+            "backups" => {
+                let policy = retention::Policy::default();
+                let now = match take_opt(&mut args, "--now-ms") {
+                    Some(v) => v.parse().map_err(|_| "--now-ms MS")?,
+                    None => mm_store::now_ms(),
+                };
+                let u = retention::usage(&store, &policy).map_err(|e| e.to_string())?;
+                let plan = retention::prune_plan(&u, &policy, now);
+                println!(
+                    "{}",
+                    json!({"total_bytes": u.total_bytes, "volume_bytes": u.volume_bytes,
+                           "ops": u.ops.iter().map(|o| json!({"id": o.op_id, "title": o.title, "bytes": o.bytes,
+                               "pruned": o.pruned, "protection": o.protection.map(|p| format!("{p:?}").to_lowercase())})).collect::<Vec<_>>(),
+                           "would_prune": plan.iter().map(|(id, why)| json!({"id": id, "reason": format!("{why:?}").to_lowercase()})).collect::<Vec<_>>()})
+                );
+                Ok(ExitCode::SUCCESS)
+            }
+            "prune" => {
+                let requested = take_flag(&mut args, "--requested");
+                if args.is_empty() {
+                    return Err("prune [--requested] OP_ID...".into());
+                }
+                let done =
+                    retention::prune(&mut store, &retention::Policy::default(), &args, requested)
+                        .map_err(|e| e.to_string())?;
+                println!("{}", json!({"pruned": done}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "keep" => {
+                let off = take_flag(&mut args, "--off");
+                let op = args.first().ok_or("keep OP_ID [--off]")?;
+                store
+                    .operation(op)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("no such operation")?;
+                store.set_keep(op, !off).map_err(|e| e.to_string())?;
+                println!("{}", json!({"id": op, "keep": !off}));
                 Ok(ExitCode::SUCCESS)
             }
             "fsck" => {

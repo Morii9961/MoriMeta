@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
@@ -190,6 +190,10 @@ pub struct OperationRow {
     pub registry_version: u32,
     pub undo_of: Option<String>,
     pub backup_dir: String,
+    /// Marked by the user: never pruned automatically (SAFETY_MODEL §6.3).
+    pub keep: bool,
+    /// When the backups were pruned; the Operation can no longer be undone.
+    pub pruned_ms: Option<i64>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -284,6 +288,15 @@ impl Store {
                    updated_ms INTEGER NOT NULL, PRIMARY KEY(op_id, seq));
                  CREATE INDEX op_files_state ON op_files(state);
                  PRAGMA user_version = 1;
+                 COMMIT;",
+            )?;
+        }
+        if v < 2 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE operations ADD COLUMN keep INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE operations ADD COLUMN pruned_ms INTEGER;
+                 PRAGMA user_version = 2;
                  COMMIT;",
             )?;
         }
@@ -503,7 +516,7 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT id, kind, title, status, created_ms, finished_ms, plan_json, exiftool_version, app_version, registry_version, undo_of, backup_dir
+                "SELECT id, kind, title, status, created_ms, finished_ms, plan_json, exiftool_version, app_version, registry_version, undo_of, backup_dir, keep, pruned_ms
                  FROM operations WHERE id = ?1",
                 params![op_id],
                 row_to_op,
@@ -513,13 +526,33 @@ impl Store {
 
     pub fn operations(&self) -> Result<Vec<OperationRow>> {
         let mut st = self.conn.prepare(
-            "SELECT id, kind, title, status, created_ms, finished_ms, plan_json, exiftool_version, app_version, registry_version, undo_of, backup_dir
+            "SELECT id, kind, title, status, created_ms, finished_ms, plan_json, exiftool_version, app_version, registry_version, undo_of, backup_dir, keep, pruned_ms
              FROM operations ORDER BY created_ms, id",
         )?;
         let rows = st
             .query_map([], row_to_op)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Mark (or unmark) an Operation as kept: its backups are never pruned automatically.
+    pub fn set_keep(&mut self, op_id: &str, keep: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE operations SET keep = ?2 WHERE id = ?1",
+            params![op_id, keep],
+        )?;
+        Ok(())
+    }
+
+    /// Record that the backups of an Operation are being removed (before they are deleted, so
+    /// that an interrupted prune is finished rather than leaving an Operation that looks
+    /// undoable without its backups).
+    pub fn mark_pruned(&mut self, op_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE operations SET pruned_ms = COALESCE(pruned_ms, ?2) WHERE id = ?1",
+            params![op_id, now_ms()],
+        )?;
+        Ok(())
     }
 
     /// Operations left in `running` (crash) or `interrupted` (recovery not finished).
@@ -637,6 +670,8 @@ fn row_to_op(r: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRow> {
         registry_version: r.get(9)?,
         undo_of: r.get(10)?,
         backup_dir: r.get(11)?,
+        keep: r.get(12)?,
+        pruned_ms: r.get(13)?,
     })
 }
 
@@ -856,6 +891,44 @@ mod tests {
             .is_disk_full()
         );
         assert!(!StoreError::Io(std::io::Error::from_raw_os_error(5)).is_disk_full());
+    }
+
+    #[test]
+    fn version_1_database_is_upgraded() {
+        let d = dir("v1");
+        {
+            let s = Store::open(&d).unwrap();
+            s.conn
+                .execute_batch(
+                    "ALTER TABLE operations DROP COLUMN keep;
+                     ALTER TABLE operations DROP COLUMN pruned_ms;
+                     PRAGMA user_version = 1;",
+                )
+                .unwrap();
+        }
+        let mut s = Store::open(&d).unwrap();
+        let v: i32 = s
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, SCHEMA_VERSION);
+        s.begin_operation(
+            &NewOperation {
+                id: "op-1".into(),
+                kind: "apply".into(),
+                title: "t".into(),
+                plan_json: "{}".into(),
+                app_version: "0".into(),
+                exiftool_version: "0".into(),
+                registry_version: 0,
+                undo_of: None,
+            },
+            &[],
+        )
+        .unwrap();
+        s.set_keep("op-1", true).unwrap();
+        let o = s.operation("op-1").unwrap().unwrap();
+        assert!(o.keep && o.pruned_ms.is_none());
     }
 
     #[test]

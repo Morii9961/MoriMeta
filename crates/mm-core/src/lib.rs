@@ -8,6 +8,7 @@ pub mod executor;
 pub mod fsck;
 pub mod planner;
 pub mod recovery;
+pub mod retention;
 pub mod service;
 pub mod undo;
 pub mod verify;

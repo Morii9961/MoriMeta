@@ -2892,3 +2892,80 @@ fn c2pa_files_are_excluded_by_default() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §6.3: automatic pruning spares recent Operations; a requested prune removes only
+/// the backup folder. History keeps the Operation, it can no longer be undone, fsck does not
+/// report the missing backups, and later Operations still undo.
+#[test]
+fn pruned_backups_keep_history_but_not_undo() {
+    let pkg = require!();
+    let lab = Lab::new("prune", &pkg);
+    let op1 = lab.apply_ok(&lab.plan("Morii", "p1.json"));
+    let op2 = lab.apply_ok(&lab.plan("Mori", "p2.json"));
+
+    let b = Lab::json(&lab.cli(&["backups"]));
+    assert!(b["would_prune"].as_array().unwrap().is_empty(), "{b}");
+    assert!(b["total_bytes"].as_u64().unwrap() > 0, "{b}");
+    let o = lab.cli(&["prune", &op1]);
+    assert!(!o.status.success(), "recent: refused without --requested");
+    assert!(lab.data.join("backups").join(&op1).exists());
+
+    let o = lab.cli(&["prune", "--requested", &op1]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    assert!(!lab.data.join("backups").join(&op1).exists());
+    let b = Lab::json(&lab.cli(&["backups"]));
+    let row = |id: &str| {
+        b["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(row(&op1)["pruned"], true, "{b}");
+    assert_eq!(row(&op1)["bytes"], 0, "{b}");
+    assert_eq!(row(&op2)["pruned"], false, "{b}");
+
+    let h = Lab::json(&lab.cli(&["history"]));
+    assert!(
+        h.as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o["id"] == op1.as_str())
+    );
+    let u = lab.dir.join("undo-pruned.json");
+    let o = lab.cli(&["plan-undo", &op1, "--out", u.to_str().unwrap()]);
+    assert!(!o.status.success());
+    assert!(
+        String::from_utf8_lossy(&o.stdout).contains("retention"),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let f = lab.cli(&["fsck", &op1]);
+    // op2 rewrote the files after op1, so op1's results differ; but no backup problem is reported
+    assert!(
+        !String::from_utf8_lossy(&f.stdout).contains("backup missing"),
+        "{}",
+        String::from_utf8_lossy(&f.stdout)
+    );
+
+    // keep: exempt from automatic pruning
+    let o = lab.cli(&["keep", &op2]);
+    assert!(o.status.success());
+    let b = Lab::json(&lab.cli(&["backups"]));
+    assert_eq!(
+        b["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["id"] == op2.as_str())
+            .unwrap()["protection"],
+        "kept",
+        "{b}"
+    );
+    lab.undo(&op2);
+    let f = lab.cli(&["fsck", &lab.last_op()]);
+    assert!(f.status.success(), "{}", String::from_utf8_lossy(&f.stdout));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

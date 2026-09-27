@@ -319,6 +319,11 @@ pub fn resume(
     let op = store
         .operation(op_id)?
         .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
+    if op.pruned_ms.is_some() {
+        return Err(CoreError::Input(format!(
+            "the backups of {op_id} were removed; plan the remaining files again"
+        )));
+    }
     if op.app_version != APP_VERSION || op.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
             "operation made with app {} / ExifTool {}; running {} / {} — undo it or plan again",

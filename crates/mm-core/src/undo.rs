@@ -15,6 +15,11 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
     if op.status == "running" || op.status == "interrupted" {
         return Err(CoreError::RecoveryPending(vec![op_id.to_owned()]));
     }
+    if op.pruned_ms.is_some() {
+        return Err(CoreError::Input(format!(
+            "the backups of {op_id} were removed by the retention policy; it cannot be undone"
+        )));
+    }
     let mut entries = Vec::new();
     for f in store.files(op_id)? {
         if f.state != FileState::Done {

@@ -15,6 +15,10 @@ pub struct FsckReport {
 
 pub fn fsck(store: &Store, op_id: &str) -> Result<FsckReport, CoreError> {
     let files = store.files(op_id)?;
+    // backups removed by the retention policy are not expected (SAFETY_MODEL §6.3)
+    let pruned = store
+        .operation(op_id)?
+        .is_some_and(|o| o.pruned_ms.is_some());
     let mut problems = Vec::new();
     for f in &files {
         let id = format!("#{} {}", f.seq, f.path);
@@ -31,7 +35,7 @@ pub fn fsck(store: &Store, op_id: &str) -> Result<FsckReport, CoreError> {
                 if cur.is_some() {
                     problems.push(format!("{id}: a file exists at this path again"));
                 }
-                if hash_opt(Path::new(&f.backup_path)) != f.h0 {
+                if !pruned && hash_opt(Path::new(&f.backup_path)) != f.h0 {
                     problems.push(format!("{id}: backup missing or damaged"));
                 }
             }
@@ -43,7 +47,7 @@ pub fn fsck(store: &Store, op_id: &str) -> Result<FsckReport, CoreError> {
                         "{id}: content differs from the committed result (changed later?)"
                     ));
                 }
-                if hash_opt(Path::new(&f.backup_path)) != f.h0 {
+                if !pruned && hash_opt(Path::new(&f.backup_path)) != f.h0 {
                     problems.push(format!("{id}: backup missing or damaged"));
                 }
             }
