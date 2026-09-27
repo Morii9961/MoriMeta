@@ -67,6 +67,44 @@ const SAMPLES: &[&str] = &[
     "GPS.jpg",
 ];
 
+/// BLAKE3 of the pinned ExifTool 13.59 fixtures (their SHA-256 are in
+/// docs/PHASE1B_SCALE_VALIDATION.md). Every test copies them; a changed fixture would silently
+/// change what the tests prove, so it stops the test instead.
+const FIXTURE_BLAKE3: &[(&str, &str)] = &[
+    (
+        "Writer.jpg",
+        "e1814acf81acf70055b3f31acfb56c1e25c534420943da52fc4e85d84dcc979f",
+    ),
+    (
+        "Nikon.jpg",
+        "0e3dc126263b2f0da7787f98e9447f3d39bda3f6e9bee6307beca53fb331c7f2",
+    ),
+    (
+        "Canon.jpg",
+        "230c0981f567bc4ece255546a61d0ac96ee320f23663bdf5b5335468ecf4d0e3",
+    ),
+    (
+        "XMP.jpg",
+        "df0e53915a22893064161b34f0a4bae3f8280575e7cb0647db0469f0d7132d92",
+    ),
+    (
+        "Sony.jpg",
+        "85c14a041daa2d5fa5aba2f54fe1d965489fc1ea1cee0ea9929ab501475735d8",
+    ),
+    (
+        "Olympus.jpg",
+        "babeb761ad20c65dab557b6c982cf0695284336ee36eadce2909edc6dbef8a03",
+    ),
+    (
+        "Pentax.jpg",
+        "c48f9f59953b15e9f7eee76d632bd6f54efc20b0a556f287031fe30408e078b6",
+    ),
+    (
+        "GPS.jpg",
+        "eea1397afd8d9160d3adf3a2b4b3c0f271c0d448c81b4b4242719f65f64e86c7",
+    ),
+];
+
 struct Lab {
     dir: PathBuf,
     data: PathBuf,
@@ -96,7 +134,14 @@ impl Lab {
         let mut truth = BTreeMap::new();
         for s in SAMPLES {
             let p = photo_dir.join(s);
-            std::fs::copy(timages().join(s), &p).unwrap();
+            let src = timages().join(s);
+            let want = FIXTURE_BLAKE3.iter().find(|(n, _)| n == s).unwrap().1;
+            assert_eq!(
+                blake(&src).as_deref(),
+                Some(want),
+                "pinned fixture {s} changed; restore it (SHA-256 in docs/PHASE1B_SCALE_VALIDATION.md)"
+            );
+            std::fs::copy(&src, &p).unwrap();
             truth.insert(p.clone(), blake(&p).unwrap());
             photos.push(p);
         }

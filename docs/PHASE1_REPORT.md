@@ -44,6 +44,8 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。加入 G-6 后：69 个测试通过、0 失败；加入移入备份库后：70 个；加入 G-7 后：73 个（均跳过真实磁盘满测试）。
 
+2026-09-27 事件记录：为 Copyright 字段核对 ExifTool 行为时，一次 PowerShell 5.1 下的探查命令丢失了空参数 `-config ""`，ExifTool 把 `-o` 当作配置文件名，结果**就地改写了锁定的测试夹具 `Writer.jpg`**（留下 `Writer.jpg_original`）。发现后已用 `_original` 恢复，8 个夹具的 SHA-256 与 [PHASE1B_SCALE_VALIDATION.md](PHASE1B_SCALE_VALIDATION.md) 记录一致。改写发生在 G-7 测试与提交之后、其后未运行任何测试，因此没有已记录的结果受影响。此后端到端测试在复制夹具前核对其 BLAKE3，夹具一旦变化即停止测试。
+
 第二轮发现并修正：`resume` 重新登记待重试文件时若 Journal 写失败，已改回 `planned` 的文件会滞留在已结束（`cancelled`）的 Operation 中，恢复与 `resume` 都不再处理它们；现改为先设 `running`。
 
 实现过程中发现并修正的问题：
