@@ -12,5 +12,6 @@ pub mod iptc;
 pub mod plan;
 pub mod risk;
 pub mod snapshot;
+pub mod template;
 pub mod time;
 pub mod value;

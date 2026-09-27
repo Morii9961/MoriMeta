@@ -14,6 +14,7 @@ use mm_domain::plan::{
     EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind, Target,
 };
 use mm_domain::snapshot::Snapshot;
+use mm_domain::template::{Template, TemplateCtx};
 use mm_domain::time::{
     self, NaiveDateTime, SequenceOrder, TimeDelta, TimeItem, TimeOp, TimeOpError,
 };
@@ -93,8 +94,21 @@ pub fn plan_creator(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    plan_field(engine, inputs, title, ctl, |t| {
-        creator::plan_target(t, edit)
+    let CreatorEdit::Set(names) = edit else {
+        return plan_field(engine, inputs, title, ctl, |t| {
+            creator::plan_target(t, edit)
+        });
+    };
+    let templates = names
+        .iter()
+        .map(|n| Template::parse(n))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(CoreError::Input)?;
+    plan_templated(engine, inputs, title, ctl, |t, ctx| {
+        match templates.iter().map(|tm| tm.render(ctx)).collect() {
+            Ok(names) => creator::plan_target(t, &CreatorEdit::Set(names)),
+            Err(why) => FieldPlan::blocked(why),
+        }
     })
 }
 
@@ -105,8 +119,38 @@ pub fn plan_copyright(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    plan_field(engine, inputs, title, ctl, |t| {
-        copyright::plan_target(t, edit)
+    let CopyrightEdit::Set(value) = edit else {
+        return plan_field(engine, inputs, title, ctl, |t| {
+            copyright::plan_target(t, edit)
+        });
+    };
+    let template = Template::parse(value).map_err(CoreError::Input)?;
+    plan_templated(engine, inputs, title, ctl, |t, ctx| {
+        match template.render(ctx) {
+            Ok(v) => copyright::plan_target(t, &CopyrightEdit::Set(v)),
+            Err(why) => FieldPlan::blocked(why),
+        }
+    })
+}
+
+/// A field whose value is a template (PRODUCT_SPEC §6.9), rendered per file from its original
+/// snapshot and the path the user sees (the RAW for a sidecar).
+fn plan_templated(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    title: &str,
+    ctl: &PlanCtl,
+    field: impl Fn(&Target, &TemplateCtx) -> FieldPlan,
+) -> Result<Plan, CoreError> {
+    plan_with(engine, inputs, title, ctl, |targets, entries| {
+        Ok(targets
+            .iter()
+            .map(|(idx, t)| {
+                let e = &entries[*idx];
+                let shown = e.raw.as_deref().unwrap_or(&e.path);
+                field(t, &TemplateCtx::from_target(t, shown))
+            })
+            .collect())
     })
 }
 

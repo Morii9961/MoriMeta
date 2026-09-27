@@ -3108,3 +3108,80 @@ fn needs_attention_is_resolved_by_the_user() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.9 (scenario D's template): values rendered per file from its original
+/// snapshot; a file without a capture time is blocked (no silent empty value), a default fills a
+/// missing creator; literal braces and unknown variables.
+#[test]
+fn copyright_template_per_file() {
+    let pkg = require!();
+    let lab = Lab::new("template", &pkg);
+    let scan = Lab::json(
+        &lab.cli(
+            &[
+                vec!["scan"],
+                lab.photos.iter().map(|p| p.to_str().unwrap()).collect(),
+            ]
+            .concat(),
+        ),
+    );
+    let (p, pj) = lab.plan_copyright("© {creator|Anonymous} {year}", "t.json");
+    let entries = pj["entries"].as_array().unwrap();
+    let mut ready = 0;
+    for (e, s) in entries.iter().zip(scan.as_array().unwrap()) {
+        let time = s["capture_time"].as_str();
+        match time {
+            None => {
+                assert_eq!(e["status"]["status"], "blocked", "{e}");
+                assert!(
+                    e["status"]["reason"].as_str().unwrap().contains("{year}"),
+                    "{e}"
+                );
+            }
+            Some(t) => {
+                let who = s["creator"]
+                    .as_array()
+                    .map(|v| {
+                        v.iter()
+                            .map(|x| x.as_str().unwrap())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    })
+                    .unwrap_or_else(|| "Anonymous".into());
+                let want = format!("© {who} {}", &t[..4]);
+                if e["status"]["status"] == "ready" {
+                    ready += 1;
+                    assert_eq!(e["changes"][0]["after"][0], want.as_str(), "{e}");
+                }
+            }
+        }
+    }
+    assert!(ready >= 3, "{pj}");
+    let op = lab.apply_ok(&p);
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    let (_, pj) = lab.plan_copyright("{{Studio}} ©", "l.json");
+    let after: Vec<&Value> = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["status"]["status"] == "ready")
+        .map(|e| &e["changes"][0]["after"][0])
+        .collect();
+    assert!(
+        !after.is_empty() && after.iter().all(|a| *a == "{Studio} ©"),
+        "{pj}"
+    );
+    let o = lab.cli(&[
+        "plan-copyright",
+        "--set",
+        "{index}",
+        "--out",
+        "x.json",
+        lab.photos[0].to_str().unwrap(),
+    ]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stdout).contains("unknown variable"));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
