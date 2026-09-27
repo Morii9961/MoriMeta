@@ -159,3 +159,46 @@ pub fn export_log(store: &Store, op_id: &str, out: &std::path::Path) -> Result<(
     f.sync_all()?;
     Ok(())
 }
+
+/// "Retry Failed" (PRODUCT_SPEC §6.14): a new Plan of the persisted entries of the files that
+/// failed or were skipped (in use, read-only…). The original content was not changed for them, so
+/// the planned writes still apply as long as the file is unchanged, which execution checks
+/// (fingerprint and before-values; a changed file becomes a Conflict). Files not started or
+/// cancelled are continued with resume instead; conflicts need a new Plan.
+pub fn retry_plan(store: &Store, op_id: &str, exiftool_version: &str) -> Result<Plan, CoreError> {
+    let o = store
+        .operation(op_id)?
+        .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
+    if matches!(o.status.as_str(), "running" | "interrupted") {
+        return Err(CoreError::RecoveryPending(vec![op_id.to_owned()]));
+    }
+    if o.app_version != crate::APP_VERSION || o.exiftool_version != exiftool_version {
+        return Err(CoreError::VersionMismatch(format!(
+            "operation made with app {} / ExifTool {}; plan the files again",
+            o.app_version, o.exiftool_version
+        )));
+    }
+    let mut plan =
+        plan_of(&o).ok_or_else(|| CoreError::Internal("persisted plan unreadable".into()))?;
+    if !matches!(plan.kind, mm_domain::plan::PlanKind::Apply) {
+        return Err(CoreError::Input(
+            "an undo is retried by planning the undo again".into(),
+        ));
+    }
+    let retry: Vec<u32> = store
+        .files(op_id)?
+        .iter()
+        .filter(|f| matches!(f.state, FileState::Failed | FileState::Skipped))
+        .map(|f| f.seq)
+        .collect();
+    if retry.is_empty() {
+        return Err(CoreError::Input(format!(
+            "{op_id} has no failed or skipped files"
+        )));
+    }
+    plan.entries.retain(|e| retry.contains(&e.seq));
+    plan.id = crate::new_id("plan")?;
+    plan.version = 1;
+    plan.title = format!("Retry: {}", plan.title);
+    Ok(plan)
+}

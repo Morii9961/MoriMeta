@@ -3366,3 +3366,38 @@ fn history_summary_and_export_log() {
     );
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.14 Retry Failed: a file that failed (injected IO error before its commit, the
+/// original unchanged) is written by a retry Plan made from the persisted entries; both
+/// Operations undo back to the originals. Nothing to retry is an error.
+#[test]
+fn retry_failed_files() {
+    let pkg = require!();
+    let lab = Lab::new("retry", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(&["apply", plan.to_str().unwrap(), "--fail-at", "2:4"], true);
+    let op = Lab::json(&o)["op_id"].as_str().unwrap().to_owned();
+    assert_eq!(lab.show(&op)["files"][2]["state"], "failed");
+    let r = lab.dir.join("retry.json");
+    let o = lab.cli(&["plan-retry", &op, "--out", r.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pj = Lab::json(&o);
+    assert_eq!(pj["entries"].as_array().unwrap().len(), 1, "{pj}");
+    assert_eq!(pj["entries"][0]["seq"], 2);
+    let retry = lab.apply_ok(&r);
+    assert_ne!(
+        blake(&lab.photos[2]).as_deref(),
+        Some(lab.truth[&lab.photos[2]].as_str())
+    );
+    let again = lab.cli(&[
+        "plan-retry",
+        &retry,
+        "--out",
+        lab.dir.join("r2.json").to_str().unwrap(),
+    ]);
+    assert!(!again.status.success());
+    lab.undo(&retry);
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

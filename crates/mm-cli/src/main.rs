@@ -31,6 +31,7 @@
 //!                             files changed after the Operation are excluded unless forced (their
 //!                             current content is backed up first, so the forced restore can be undone)
 //!   history | show OP_ID | fsck OP_ID
+//!   plan-retry OP_ID --out PLAN.json   the failed and skipped files of an Operation again
 //!   export-log OP_ID --out FILE.json   the Operation with field-level before/after (a new file)
 //!   backups [--now-ms MS]     backup usage, protection and what the retention policy would prune
 //!   prune [--requested] OP_ID...   remove backups (the policy's choice, or the user's with
@@ -704,6 +705,17 @@ fn main() -> ExitCode {
                 let mut ops = history::list(&store, 0, usize::MAX).map_err(|e| e.to_string())?;
                 ops.reverse();
                 println!("{}", serde_json::to_value(&ops).unwrap_or_default());
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-retry" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
+                let op = args.first().ok_or("plan-retry OP_ID --out PLAN.json")?;
+                let eng = with_engine(&g)?;
+                let plan =
+                    history::retry_plan(&store, op, eng.version()).map_err(|e| e.to_string())?;
+                eng.close();
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
             }
             "export-log" => {
