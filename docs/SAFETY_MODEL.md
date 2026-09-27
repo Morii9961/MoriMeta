@@ -252,7 +252,7 @@ op_undo_plan(op, scope)
 | 8.11 | Lightroom / darktable 等的覆盖 | 无法技术阻止；在 RAW 相关 Preview 与帮助中说明 |
 | 8.12 | C2PA 内容凭证 | 导入时检测 JUMBF（S3：可检测）；修改会使凭证失效（APP11 原样保留但签名不再匹配）；Preview 显著警告并默认排除；Plan 中标为 Blocked 已实现（以合成 JUMBF 测试；真实带凭证文件待 S3 语料） |
 | 8.13 | 磁盘满 | 预检（§6.2）；执行中出现 `DiskFull` → 暂停 Operation（不再启动新文件，进行中的文件照常结算；未开始的文件为 Cancelled，可继续） |
-| 8.14 | 系统睡眠 | 执行期间 `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` |
+| 8.14 | 系统睡眠 | 执行期间 `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)`；已实现（执行与撤销共用，单元测试核对请求在执行期间保持、结束后清除；未做真实睡眠测试） |
 | 8.15 | 断电 | 提交前刷盘；恢复以磁盘实际哈希判定状态（§10）；**尚未做断电测试**（A-3） |
 | 8.16 | 系统性故障 | 熔断：前 20 个文件中失败率 ≥ 50%，或连续 10 个验证失败 → 暂停并询问 |
 | 8.17 | 两个 MoriMeta 实例 | 单实例锁 |

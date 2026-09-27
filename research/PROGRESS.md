@@ -19,6 +19,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **GPS set/remove**: numeric reads for GPS (`-GPS:all#` before `-all`), V2 numeric tolerance, removal of the whole GPS directory + XMP GPS; altitude reference written by name (V2 caught ExifTool turning a written `1` into 0). 103 tests.
 - **NEF + XMP sidecar** for all four fields: FormatPolicy, §3.1 pairing, sidecar-first reading, W-S writes only, new sidecars written from nothing (role `create`, undo = move to backup store), V4 only for image files. NEF byte-identical throughout. 111 tests; plus the 3 real Z8/D850 NEFs of the corpus through all four fields and back (112).
 - **Environment rules (SAFETY_MODEL §8)**: C2PA Content Credentials → Blocked (synthetic JUMBF test), removable media → Blocked, network drive → note (no media/NAS to test). 114 tests.
+- **System sleep (§8.14)**: Operations (apply, resume, undo) hold `ES_SYSTEM_REQUIRED` while running. 115 tests.
 
 ## Waiting / needs the user
 

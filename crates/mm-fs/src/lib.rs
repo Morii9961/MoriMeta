@@ -450,6 +450,31 @@ pub fn fill_volume(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Err(io::Error::other("volume did not fill up"))
 }
 
+/// Keeps the system from sleeping while an Operation runs (SAFETY_MODEL §8.14); the display may
+/// still turn off. The request belongs to the calling thread and ends when the guard is dropped.
+pub struct KeepAwake(());
+
+impl KeepAwake {
+    pub fn new() -> io::Result<Self> {
+        use windows_sys::Win32::System::Power::{
+            ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+        };
+        // SAFETY: plain flag call; a zero return means failure.
+        if unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) } == 0 {
+            return Err(io::Error::other("SetThreadExecutionState failed"));
+        }
+        Ok(Self(()))
+    }
+}
+
+impl Drop for KeepAwake {
+    fn drop(&mut self) {
+        use windows_sys::Win32::System::Power::{ES_CONTINUOUS, SetThreadExecutionState};
+        // SAFETY: as above; clears this thread's request.
+        unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+    }
+}
+
 /// 64 random bits as 16 hex digits (for `.mmtmp-` / `.mmbak-` names).
 pub fn random_token() -> io::Result<String> {
     let v = getrandom::u64().map_err(|e| io::Error::other(e.to_string()))?;
@@ -479,6 +504,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn keep_awake_is_held_until_dropped() {
+        use windows_sys::Win32::System::Power::{
+            ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+        };
+        let g = KeepAwake::new().unwrap();
+        // SAFETY: flag calls; each returns this thread's previous state.
+        let held = unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
+        assert_ne!(held & ES_SYSTEM_REQUIRED, 0);
+        drop(g);
+        let after = unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+        assert_eq!(after & ES_SYSTEM_REQUIRED, 0);
     }
 
     #[test]

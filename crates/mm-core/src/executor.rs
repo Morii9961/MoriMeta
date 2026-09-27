@@ -443,6 +443,8 @@ fn run(
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     let rows = store.files(op_id)?;
+    // Best effort: an Operation that cannot hold the system awake still runs.
+    let _awake = mm_fs::KeepAwake::new().ok();
     let journal = Journal(Mutex::new(store));
     let gate = VolumeGate::default();
     let sched = Mutex::new(Sched {
