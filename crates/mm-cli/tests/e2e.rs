@@ -3456,3 +3456,51 @@ fn inspect_and_aggregate_a_nef_with_its_sidecar() {
     lab.undo(&op);
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §8.9 (D-6 option): by default a write gives the file a new modification time;
+/// with `metadata.preserve_mtime` apply and undo keep it.
+#[test]
+fn preserve_mtime_option() {
+    let pkg = require!();
+    let lab = Lab::new("mtime", &pkg);
+    let mtimes = || -> Vec<std::time::SystemTime> {
+        lab.photos
+            .iter()
+            .map(|p| std::fs::metadata(p).unwrap().modified().unwrap())
+            .collect()
+    };
+    let written = |before: &[String]| -> Vec<usize> {
+        (0..lab.photos.len())
+            .filter(|&i| blake(&lab.photos[i]).as_deref() != Some(before[i].as_str()))
+            .collect()
+    };
+    let hashes = || -> Vec<String> { lab.photos.iter().map(|p| blake(p).unwrap()).collect() };
+
+    let (t0, h0) = (mtimes(), hashes());
+    std::thread::sleep(Duration::from_millis(50));
+    let op = lab.apply_ok(&lab.plan("Morii", "a.json"));
+    let w = written(&h0);
+    assert!(!w.is_empty());
+    let t1 = mtimes();
+    assert!(
+        w.iter().all(|&i| t1[i] != t0[i]),
+        "default: new modification times"
+    );
+    lab.undo(&op);
+
+    assert!(
+        lab.cli(&["setting", "metadata.preserve_mtime", "true"])
+            .status
+            .success()
+    );
+    let (t2, h2) = (mtimes(), hashes());
+    std::thread::sleep(Duration::from_millis(50));
+    let op = lab.apply_ok(&lab.plan("Morii", "b.json"));
+    let w = written(&h2);
+    assert!(!w.is_empty());
+    assert_eq!(mtimes(), t2, "kept through apply");
+    lab.undo(&op);
+    assert_eq!(mtimes(), t2, "kept through undo");
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

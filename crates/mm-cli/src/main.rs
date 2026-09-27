@@ -22,6 +22,8 @@
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
 //!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3)
+//!                             metadata.preserve_mtime = true keeps each written file's
+//!                             modification time (off by default, SAFETY_MODEL §8.9, D-6)
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
@@ -278,6 +280,10 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         disk_full,
         fill,
         space_reserve,
+        preserve_mtime: store
+            .setting("metadata.preserve_mtime")
+            .map_err(|e| e.to_string())?
+            .is_some_and(|v| v == "true"),
         ..Default::default()
     })
 }

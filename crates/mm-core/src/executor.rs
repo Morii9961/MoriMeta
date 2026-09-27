@@ -57,6 +57,9 @@ pub struct ExecOptions {
     pub cancel: Option<Arc<AtomicBool>>,
     /// Set `cancel` when this point is reached, as if the user pressed Cancel there (tests).
     pub cancel_at: Option<FaultPoint>,
+    /// Keep each written file's modification time (setting `metadata.preserve_mtime`, D-6; off
+    /// by default: incremental backup tools rely on it to see the change).
+    pub preserve_mtime: bool,
 }
 
 impl ExecOptions {
@@ -863,6 +866,15 @@ fn one_file(
             ));
         }
         None => return Ok(Outcome::Failed("plan entry has no action".into())),
+    }
+    if opts.preserve_mtime {
+        // D-6 option (SAFETY_MODEL §8.9): the replacement carries the file's modification time
+        // into ReplaceFileW, which keeps the rest (creation time, attributes)
+        let mtime = lock.metadata()?.modified()?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&f.temp)?
+            .set_modified(mtime)?;
     }
     mm_fs::flush_path(&f.temp)?;
     let h1s = mm_fs::hex(&mm_fs::hash_path(&f.temp)?);
