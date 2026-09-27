@@ -12,6 +12,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **Phase 1b scale (limited)**: 1,000 copies of 8 ExifTool fixtures, Creator apply → undo byte-identical (`docs/PHASE1B_SCALE_VALIDATION.md`); not a camera corpus or S4 result.
 - **G-1 fault matrix** (`docs/PHASE1B_FAULT_MATRIX.md`): journal write failures (real SQLITE_BUSY, once/persistent), simulated disk full → Operation pauses and resumes, undo-path crashes/IO errors, space pre-check (§6.2). 62 tests. Real disk full on a 64 MB NTFS VHDX (photo volume; backup/journal volume with real SQLITE_FULL): passed, run separately with `MM_E2E_SMALL_VOLUME`. Round 2: manifest / recover / resume write failures, undo random kills; fixed resume stranding re-registered files in a finished Operation. 66 tests.
 - **G-6**: undo recreates a deleted/moved file at its path from the backup (no-overwrite rename, journal role `recreate`); missing folder → Blocked; undoing a recreate moves the file into the backup store (journal role `remove`, never deleted), undoing that recreates it. 70 tests.
+- **G-7**: append-only `manifest.jsonl` (H0/H1 flushed) + `plan.json` per backup folder; `mm-cli rebuild-journal` re-imports operations missing from the database, then normal recovery. 73 tests.
 
 ## Waiting / needs the user
 
@@ -23,5 +24,5 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 ## Next engineering steps (no design dependency)
 
 - Worker pool + per-volume IO limits (ARCHITECTURE §7.5/§8), then S4 on real data.
-- More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; manifest per-file append (SAFETY_MODEL §6.1) + rewrite after a failed write, with manifest-only recovery (G-7).
+- More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
 - Time tools (Absolute/Shift/Sequence/Preserve) through the same Plan/transaction path.

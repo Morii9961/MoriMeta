@@ -1558,3 +1558,121 @@ fn move_to_backup_store_crashes_and_io_errors_recover() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+impl Lab {
+    /// Lose the Journal database (deleted, or moved away after corruption).
+    fn lose_database(&self) {
+        std::fs::remove_dir_all(self.data.join("db")).unwrap();
+    }
+
+    fn rebuild(&self) -> Value {
+        let o = self.cli(&["rebuild-journal"]);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        Lab::json(&o)
+    }
+}
+
+/// G-7: the Journal database is lost after completed Operations (an apply and its undo); both
+/// are rebuilt from their backup folders and the chain can still be undone.
+#[test]
+fn journal_rebuilt_after_database_loss_keeps_history_and_undo() {
+    let pkg = require!();
+    let lab = Lab::new("rebuild-done", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success());
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    let applied = lab.snapshot();
+    lab.undo(&op);
+    let undo_op = lab.last_op();
+    lab.assert_all_original();
+    let history = Lab::json(&lab.cli(&["history"]));
+
+    lab.lose_database();
+    assert!(
+        Lab::json(&lab.cli(&["history"]))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let r = lab.rebuild();
+    assert_eq!(r["imported"], serde_json::json!([op, undo_op]), "{r}");
+    assert_eq!(Lab::json(&lab.cli(&["history"])), history);
+    assert_eq!(lab.rebuild()["imported"], serde_json::json!([]));
+    assert!(lab.cli(&["fsck", &undo_op]).status.success());
+    // undo the undo from the rebuilt journal
+    lab.undo(&undo_op);
+    assert_eq!(lab.snapshot(), applied);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// G-7: the database is lost after a crash at several points of the transaction, including
+/// inside ReplaceFileW (original only under its bak name). Rebuild, recover, resume, undo.
+#[test]
+fn journal_rebuilt_after_crash_and_database_loss_recovers() {
+    let pkg = require!();
+    // (crash step, then simulate a termination inside ReplaceFileW)
+    for (step, mid_replace) in [
+        (2u8, false),
+        (4, false),
+        (7, false),
+        (7, true),
+        (8, false),
+        (9, false),
+    ] {
+        let case = format!("crash at 2:{step} mid_replace {mid_replace}, database lost");
+        let lab = Lab::new(&format!("rebuild-crash-{step}-{mid_replace}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--crash-at",
+                &format!("2:{step}"),
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(77), "{case}");
+        let op = lab.last_op();
+        let other = lab.plan("Someone", "p-other.json"); // while every path still exists
+        if mid_replace {
+            let show = lab.show(&op);
+            let row = show["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["seq"] == 2)
+                .unwrap();
+            std::fs::rename(&lab.photos[2], row["bak"].as_str().unwrap()).unwrap();
+        }
+        lab.lose_database();
+        let r = lab.rebuild();
+        assert_eq!(r["imported"], serde_json::json!([op]), "{case}: {r}");
+        assert_eq!(op_status(&lab, &op), "running", "{case}");
+        lab.assert_preimages(&op);
+        // no write before recovery
+        let refused = lab.cli(&["apply", other.to_str().unwrap()]);
+        assert!(
+            String::from_utf8_lossy(&refused.stdout).contains("RecoveryPending"),
+            "{case}"
+        );
+        assert!(lab.cli(&["recover"]).status.success(), "{case}");
+        lab.assert_recovered(&op);
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(
+            creators(&lab)
+                .iter()
+                .all(|c| c == &serde_json::json!(["Morii"])),
+            "{case}"
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

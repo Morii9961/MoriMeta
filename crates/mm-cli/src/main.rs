@@ -10,6 +10,8 @@
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
+//!   rebuild-journal           re-import operations missing from the database from their
+//!                             backup folders (manifest.jsonl, plan.json); then run recover
 //!   resume OP_ID [FAULTS]
 //!   plan-undo OP_ID --out PLAN.json
 //!   history | show OP_ID | fsck OP_ID
@@ -352,6 +354,16 @@ fn main() -> ExitCode {
                     executor::resume(&mut store, &mut eng, op, &opts).map_err(|e| e.to_string())?;
                 eng.close();
                 Ok(report_exit(&r))
+            }
+            "rebuild-journal" => {
+                let r = store.import_from_backups().map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    json!({"imported": r.imported,
+                           "skipped": r.skipped.iter().map(|(id, why)| json!({"id": id, "reason": why})).collect::<Vec<_>>(),
+                           "next": "run `recover` before any new write"})
+                );
+                Ok(ExitCode::SUCCESS)
             }
             "recover" => {
                 exec_options(&mut args, &mut store)?; // only the journal faults apply here

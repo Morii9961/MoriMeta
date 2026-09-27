@@ -15,7 +15,7 @@ scan → plan-creator → apply（逐文件事务）→ fsck → plan-undo → a
 | Crate | 新增内容 |
 |---|---|
 | `mm-domain` | `plan`（Plan / PlanEntry / TagOp / Expect / EntryAction，可序列化并持久化）、`snapshot`、`creator`（读取调和与写入规划；注册表 v0，暂定）、`cp1252` |
-| `mm-store` | SQLite Journal（WAL、`synchronous=FULL`、schema v1、拒绝更新版本的数据库）；`backups/<op>/manifest.json` 冗余记录 |
+| `mm-store` | SQLite Journal（WAL、`synchronous=FULL`、schema v1、拒绝更新版本的数据库）；`backups/<op>/` 下的 `manifest.jsonl`（只追加）、`manifest.json`（快照）、`plan.json`；数据库丢失时 `rebuild-journal` 据此重建 |
 | `mm-core` | `engine`（会话自动重启、按大小的超时）、`planner`（预检、指纹、规划）、`verify`（V1–V5 + "预览后被修改"检查）、`executor`（SAFETY_MODEL §4.1 事务、10 个故障点、ReplaceFileW 失败处理、熔断、resume）、`recovery`（§10 判定表）、`undo`、`fsck` |
 | `mm-cli` | `scan`、`plan-creator`、`apply`、`recover`、`resume`、`plan-undo`、`history`、`show`、`fsck`；单实例锁；`--crash-at` 需 `MM_FAULT_INJECTION=1` |
 
@@ -42,7 +42,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | 撤销时文件已删除或移动（G-6） | 在原路径重建原件，移走的副本不动；预览后原路径出现新文件 → Conflict 且不覆盖；文件夹不存在 → Blocked 且不创建；重建事务在故障点 1、5–10 的终止与 IO 错误各 7 例；撤销“重建”→ 移入备份库 | 通过（17 例） |
 | 移入备份库（撤销一次“重建”） | 被 Operation 创建的文件从不删除，而是移入备份库；再撤销则重建；事务在故障点 1–4、7–10 的终止与 IO 错误各 8 例 | 通过（16 例） |
 
-2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。加入 G-6 后：69 个测试通过、0 失败；加入移入备份库后：70 个（均跳过真实磁盘满测试）。
+2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。加入 G-6 后：69 个测试通过、0 失败；加入移入备份库后：70 个；加入 G-7 后：73 个（均跳过真实磁盘满测试）。
 
 第二轮发现并修正：`resume` 重新登记待重试文件时若 Journal 写失败，已改回 `planned` 的文件会滞留在已结束（`cancelled`）的 Operation 中，恢复与 `resume` 都不再处理它们；现改为先设 `running`。
 
@@ -66,7 +66,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
 | G-5 | 字段注册表 v0 暂定（仅 creator） | S3 第三方测试后冻结 v1 |
 | G-6 | 已实现：撤销时文件已被删除或移动 → 从备份在原路径重建（不覆盖的重命名提交，Journal 角色 `recreate`）。撤销这次重建：把文件移入备份库（锁定 → 复制到备份库并核对 → Ready → 不覆盖地改名为登记的 bak 名 → 核对后删除 bak；Journal 角色 `remove`），再撤销又重建，撤销链可以无限往复。重建的文件不保留原创建时间等属性 | Phase 3 的 sidecar 新建/撤销复用该事务 |
-| G-7 | 数据库丢失时仅凭 manifest 恢复：未实现。manifest 目前只在开始、结束、恢复时重写（SAFETY_MODEL §6.1 要求执行中追加），写入失败后不补写 | Phase 4 前，与 manifest 写入策略一起处理 |
+| G-7 | 已实现：`manifest.jsonl` 只追加记录（H0/H1 先刷盘）+ `plan.json`；`mm-cli rebuild-journal` 导入数据库中缺失的 Operation，再按正常恢复处理。已测：完成的 apply 与 undo 链重建后可继续撤销；在故障点 2、4、7、8、9 崩溃及 `ReplaceFileW` 中途状态下丢失数据库，重建、恢复、继续、撤销全部逐字节还原；截断的最后一行被忽略，中间行损坏则不导入。未测：数据库损坏而非丢失（需先移走损坏文件）、备份目录部分缺失；每个文件多两次刷盘的性能开销待 S4 测量 | 产品 UI 中的入口待 Phase 2 |
 | G-8 | `resume` 要求应用与 ExifTool 版本不变；版本变化时只能撤销或重新规划 | 设计如此（ARCHITECTURE §11） |
 | G-9 | 经 Git Bash 传入的非 ASCII 命令行参数会被代码页转换；CLI 提供 `--set-from UTF8_FILE` | 产品 UI 经 IPC 传值，不受影响 |
 | G-10 | 构建：GNU 工具链下 SQLite 需要 PATH 中有 MinGW gcc；MSVC 工具链无此要求 | README 说明 |

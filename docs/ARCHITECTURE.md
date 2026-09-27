@@ -359,7 +359,7 @@ enum TagOp { Set(TagRef, Value), Delete(TagRef), DeleteGroup(GroupRef), AddToLis
 ```text
 %LOCALAPPDATA%\MoriMeta\
 ├── db\morimeta.sqlite            History、Journal、Plan 摘要、设置（WAL）
-├── backups\<operation-id>\       manifest.json + 00000001.<ext> …（保留扩展名：ExifTool 以备份为写入源；可配置到其他位置）
+├── backups\<operation-id>\       manifest.jsonl（只追加）+ manifest.json（快照）+ plan.json + 00000001.<ext> …（保留扩展名：ExifTool 以备份为写入源；可配置到其他位置）
 ├── presets\*.json                用户 Preset（schema_version）
 ├── config\settings.json          设置（config_version）；迁移前自动保留 .bak
 ├── logs\morimeta-YYYYMMDD.log    滚动日志（脱敏）

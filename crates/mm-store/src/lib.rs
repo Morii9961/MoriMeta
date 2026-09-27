@@ -4,11 +4,17 @@
 //! Every state change is its own committed transaction; with `synchronous=FULL` a commit returns
 //! only after the WAL is flushed, which is what I-8 requires ("record before irreversible action").
 
+mod mlog;
+
+use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::json;
+use serde_json::{Value, json};
+
+pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
 pub const SCHEMA_VERSION: i32 = 1;
 
@@ -236,6 +242,8 @@ pub struct Store {
     fault: Option<WriteFault>,
     blocker: Option<Connection>,
     manifest_blocker: Option<PathBuf>,
+    /// Open `manifest.jsonl` of each Operation written by this process.
+    logs: HashMap<String, std::fs::File>,
 }
 
 impl Drop for Store {
@@ -285,7 +293,30 @@ impl Store {
             fault: None,
             blocker: None,
             manifest_blocker: None,
+            logs: HashMap::new(),
         })
+    }
+
+    /// Append one record to the Operation's `manifest.jsonl`; `durable` flushes it to disk.
+    fn log(&mut self, op_id: &str, line: Value, durable: bool) -> Result<()> {
+        if !self.logs.contains_key(op_id) {
+            let f = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(self.backup_dir(op_id).join(MANIFEST_LOG))?;
+            self.logs.insert(op_id.to_owned(), f);
+        }
+        let f = self
+            .logs
+            .get_mut(op_id)
+            .ok_or_else(|| StoreError::NotFound(op_id.into()))?;
+        let mut s = line.to_string();
+        s.push('\n');
+        f.write_all(s.as_bytes())?;
+        if durable {
+            f.sync_data()?;
+        }
+        Ok(())
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -330,9 +361,9 @@ impl Store {
     pub fn begin_operation(&mut self, op: &NewOperation, files: &[NewFile]) -> Result<PathBuf> {
         let dir = self.backup_dir(&op.id);
         std::fs::create_dir_all(&dir)?;
+        let now = now_ms();
         self.write(WriteTarget::Begin, |conn| {
             let tx = conn.transaction()?;
-            let now = now_ms();
             tx.execute(
                 "INSERT INTO operations(id, kind, title, status, created_ms, plan_json, app_version, exiftool_version, registry_version, undo_of, backup_dir)
                  VALUES(?1, ?2, ?3, 'running', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -348,6 +379,31 @@ impl Store {
             tx.commit()?;
             Ok(())
         })?;
+        // the backup folder describes itself: executable plan, then the append-only record
+        {
+            let mut p = std::fs::File::create(dir.join(PLAN_FILE))?;
+            p.write_all(op.plan_json.as_bytes())?;
+            p.sync_data()?;
+        }
+        self.log(
+            &op.id,
+            json!({"t": "op", "manifest_version": 1, "id": op.id, "kind": op.kind, "title": op.title,
+                   "created_ms": now, "app_version": op.app_version,
+                   "exiftool_version": op.exiftool_version, "registry_version": op.registry_version,
+                   "undo_of": op.undo_of}),
+            false,
+        )?;
+        for f in files {
+            self.log(
+                &op.id,
+                json!({"t": "file", "seq": f.seq, "path": f.path, "role": f.role,
+                       "temp": f.temp_path, "bak": f.bak_path, "backup": f.backup_path}),
+                false,
+            )?;
+        }
+        if let Some(f) = self.logs.get(&op.id) {
+            f.sync_data()?;
+        }
         self.write_manifest(&op.id)?;
         Ok(dir)
     }
@@ -372,7 +428,14 @@ impl Store {
         if n != 1 {
             return Err(StoreError::NotFound(format!("{op_id}#{seq}")));
         }
-        Ok(())
+        // H0 and H1 must be on disk outside the database before a commit can follow
+        let durable = matches!(state, FileState::BackedUp | FileState::Ready);
+        self.log(
+            op_id,
+            json!({"t": "state", "seq": seq, "state": state.as_str(), "h0": u.h0, "h1": u.h1,
+                   "new_file_id": u.new_file_id, "error": u.error}),
+            durable,
+        )
     }
 
     /// Register fresh temp/bak/backup names for a file that is about to be retried (resume).
@@ -398,17 +461,28 @@ impl Store {
         if n != 1 {
             return Err(StoreError::NotFound(format!("{op_id}#{seq}")));
         }
-        Ok(())
+        // the new names are registered before anything is created under them
+        self.log(
+            op_id,
+            json!({"t": "paths", "seq": seq, "temp": temp, "bak": bak, "backup": backup}),
+            true,
+        )
     }
 
     pub fn finish_operation(&mut self, op_id: &str, status: OpStatus) -> Result<()> {
+        let now = now_ms();
         self.write(WriteTarget::Finish, |conn| {
             conn.execute(
                 "UPDATE operations SET status = ?2, finished_ms = ?3 WHERE id = ?1",
-                params![op_id, status.as_str(), now_ms()],
+                params![op_id, status.as_str(), now],
             )?;
             Ok(())
         })?;
+        self.log(
+            op_id,
+            json!({"t": "status", "status": status.as_str(), "finished_ms": now}),
+            true,
+        )?;
         self.write_manifest(op_id)?;
         Ok(())
     }
@@ -418,7 +492,11 @@ impl Store {
             "UPDATE operations SET status = ?2 WHERE id = ?1",
             params![op_id, status.as_str()],
         )?;
-        Ok(())
+        self.log(
+            op_id,
+            json!({"t": "status", "status": status.as_str()}),
+            false,
+        )
     }
 
     pub fn operation(&self, op_id: &str) -> Result<Option<OperationRow>> {
@@ -516,9 +594,11 @@ impl Store {
             "manifest_version": 1,
             "operation": {"id": op.id, "kind": op.kind, "title": op.title, "status": op.status,
                           "created_ms": op.created_ms, "finished_ms": op.finished_ms, "undo_of": op.undo_of,
-                          "exiftool_version": op.exiftool_version, "app_version": op.app_version},
+                          "exiftool_version": op.exiftool_version, "app_version": op.app_version,
+                          "registry_version": op.registry_version},
             "files": files.iter().map(|f| json!({
                 "seq": f.seq, "path": f.path, "role": f.role, "backup": f.backup_path,
+                "temp": f.temp_path, "bak": f.bak_path,
                 "state": f.state.as_str(), "h0": f.h0, "h1": f.h1})).collect::<Vec<_>>(),
         });
         let dir = PathBuf::from(&op.backup_dir);
@@ -703,6 +783,66 @@ mod tests {
         s.set_state("op1", 0, FileState::Ready, &FileUpdate::default())
             .unwrap();
         assert_eq!(s.unfinished().unwrap(), vec!["op1".to_string()]);
+    }
+
+    #[test]
+    fn journal_is_rebuilt_from_manifest_log_after_database_loss() {
+        let d = dir("rebuild");
+        let mut o = op("op1");
+        o.plan_json = r#"{"plan":"executable"}"#.into();
+        o.undo_of = Some("op0".into());
+        let (before_op, before_files) = {
+            let mut s = Store::open(&d).unwrap();
+            s.begin_operation(&o, &[file(0), file(1), file(2)]).unwrap();
+            let up = |h0: Option<&str>, h1: Option<&str>| FileUpdate {
+                h0: h0.map(Into::into),
+                h1: h1.map(Into::into),
+                ..Default::default()
+            };
+            s.set_state("op1", 0, FileState::BackedUp, &up(Some("a0"), None))
+                .unwrap();
+            s.set_state("op1", 0, FileState::Ready, &up(None, Some("a1")))
+                .unwrap();
+            s.set_state("op1", 0, FileState::Committed, &FileUpdate::default())
+                .unwrap();
+            s.set_state("op1", 1, FileState::Cancelled, &FileUpdate::default())
+                .unwrap();
+            s.set_paths("op1", 1, "t2", "b2", "k2").unwrap();
+            s.set_state("op1", 1, FileState::BackedUp, &up(Some("c0"), None))
+                .unwrap();
+            (
+                s.operation("op1").unwrap().unwrap(),
+                s.files("op1").unwrap(),
+            )
+        };
+        // the database is lost; the backup folder remains
+        std::fs::remove_dir_all(d.join("db")).unwrap();
+        let log = d.join("backups").join("op1").join(MANIFEST_LOG);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(br#"{"t":"state","seq":2,"sta"#) // torn by a crash while appending
+            .unwrap();
+        let mut s = Store::open(&d).unwrap();
+        assert!(s.operations().unwrap().is_empty());
+        let r = s.import_from_backups().unwrap();
+        assert_eq!(r.imported, vec!["op1".to_string()]);
+        assert!(r.skipped.is_empty(), "{:?}", r.skipped);
+        assert_eq!(s.operation("op1").unwrap().unwrap(), before_op);
+        assert_eq!(s.files("op1").unwrap(), before_files);
+        assert_eq!(s.unfinished().unwrap(), vec!["op1".to_string()]);
+        // already present: nothing imported twice
+        assert!(s.import_from_backups().unwrap().imported.is_empty());
+        // a damaged line before the end makes the record unusable instead of guessed
+        drop(s);
+        std::fs::remove_dir_all(d.join("db")).unwrap();
+        let text = std::fs::read_to_string(&log).unwrap();
+        std::fs::write(&log, text.replacen("\"t\":\"state\"", "\"t\":\"sta", 1)).unwrap();
+        let mut s = Store::open(&d).unwrap();
+        let r = s.import_from_backups().unwrap();
+        assert!(r.imported.is_empty());
+        assert_eq!(r.skipped.len(), 1, "{:?}", r.skipped);
     }
 
     #[test]
