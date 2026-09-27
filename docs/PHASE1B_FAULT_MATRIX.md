@@ -37,6 +37,7 @@
 | resume | Journal 写入失败 | 重新登记待重试文件时 | 1 | **发现缺陷并修正**（见下） |
 | Undo | 随机终止 | 50–750 ms | 12 | 通过（第二轮新增） |
 | Undo（重建已删除文件，G-6） | 进程终止、IO 错误 | 故障点 1、5–10 × 文件 2 | 14 | 通过（第三轮新增）：原路径始终只为“不存在”或完整原件 |
+| Undo（移入备份库，撤销一次重建） | 进程终止、IO 错误 | 故障点 1–4、7–10 × 文件 2 | 16 | 通过（第四轮新增）：内容始终在原路径、bak 名或备份库之一，最终只在原路径或备份库 |
 
 `cargo test --workspace`（2026-09-27，本机，`ReplaceFileW` 可用）：第一轮 62 个、第二轮 66 个测试通过、0 失败；两次运行中 `real_disk_full_on_small_volume` 均因未设置 `MM_E2E_SMALL_VOLUME` 而跳过。第一轮之后在 64 MB 测试卷上以 `MM_E2E_SMALL_VOLUME` 单独运行该测试：通过（两个场景）；该卷随后已卸载，第二轮未重跑。`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
 

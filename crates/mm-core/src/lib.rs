@@ -65,6 +65,9 @@ pub const ROLE_EMBEDDED: &str = "embedded";
 /// Journal role of a file an Undo creates again at its path because it was deleted or moved
 /// (SAFETY_MODEL §7.2). Its pre-image is "absent": the row has no H0.
 pub const ROLE_RECREATE: &str = "recreate";
+/// Journal role of a file an Undo moves into the backup store because the undone Operation
+/// created it (SAFETY_MODEL §4.3, §7.2). Its post-image is "absent": the row has no H1.
+pub const ROLE_REMOVE: &str = "remove";
 
 /// Absolute path without the verbatim prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\h\s` → `\\h\s`).
 pub fn normalize(p: &Path) -> Result<PathBuf, CoreError> {

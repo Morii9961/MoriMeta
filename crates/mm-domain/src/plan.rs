@@ -102,6 +102,9 @@ pub enum EntryAction {
         h0: String,
         size: u64,
     },
+    /// Undo of a file that the undone Operation created (SAFETY_MODEL §4.3, §7.2): move it into
+    /// the backup store instead of deleting it, only if its content is still `h`.
+    MoveToBackupStore { h: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

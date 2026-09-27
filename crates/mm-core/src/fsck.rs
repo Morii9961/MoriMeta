@@ -4,7 +4,7 @@ use std::path::Path;
 
 use mm_store::{FileState, Store};
 
-use crate::{CoreError, ROLE_RECREATE, hash_opt};
+use crate::{CoreError, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
 
 #[derive(Debug, Clone)]
 pub struct FsckReport {
@@ -26,6 +26,15 @@ pub fn fsck(store: &Store, op_id: &str) -> Result<FsckReport, CoreError> {
             problems.push(format!("{id}: bak file left behind"));
         }
         match f.state {
+            FileState::Done if f.role == ROLE_REMOVE => {
+                // moved into the backup store: the path is expected to be empty
+                if cur.is_some() {
+                    problems.push(format!("{id}: a file exists at this path again"));
+                }
+                if hash_opt(Path::new(&f.backup_path)) != f.h0 {
+                    problems.push(format!("{id}: backup missing or damaged"));
+                }
+            }
             FileState::Done => {
                 if cur.is_none() {
                     problems.push(format!("{id}: missing (done)"));

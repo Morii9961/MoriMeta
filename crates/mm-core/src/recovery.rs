@@ -6,7 +6,7 @@ use std::path::Path;
 
 use mm_store::{FileRow, FileState, FileUpdate, OpStatus, Store};
 
-use crate::{CoreError, ROLE_RECREATE, hash_opt};
+use crate::{CoreError, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
 
 #[derive(Debug, Clone)]
 pub struct RecoveredFile {
@@ -83,6 +83,9 @@ pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
     if f.role == ROLE_RECREATE {
         return decide_recreate(f);
     }
+    if f.role == ROLE_REMOVE {
+        return decide_remove(f);
+    }
     let path = Path::new(&f.path);
     let temp = Path::new(&f.temp_path);
     let bak = Path::new(&f.bak_path);
@@ -152,6 +155,52 @@ pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
                 )
             }
         }
+        other => (other, "terminal".into()),
+    }
+}
+
+/// A file an Undo moves into the backup store: the commit renames the path to the registered bak
+/// name, so the pre-image H0 is at the path (not committed), at the bak name, or — once the bak
+/// has been removed after its hash check — only in the backup store.
+fn decide_remove(f: &FileRow) -> (FileState, String) {
+    let path = Path::new(&f.path);
+    let bak = Path::new(&f.bak_path);
+    let backup = Path::new(&f.backup_path);
+    let cur = hash_opt(path);
+    let h0 = f.h0.as_deref();
+    match f.state {
+        FileState::Planned if cur.is_none() => (
+            FileState::Attention,
+            "file missing before it was moved; nothing deleted".into(),
+        ),
+        FileState::Planned => {
+            let _ = std::fs::remove_file(backup); // a partial copy at most
+            (FileState::NotStarted, "not started".into())
+        }
+        FileState::BackedUp | FileState::Ready | FileState::Committed
+            if cur.is_some() && cur.as_deref() == h0 =>
+        {
+            remove_if_hash(backup, h0);
+            (FileState::NotStarted, "not moved".into())
+        }
+        FileState::Ready | FileState::Committed
+            if cur.is_none() && h0.is_some() && hash_opt(bak).as_deref() == h0 =>
+        {
+            remove_if_hash(bak, h0);
+            (FileState::Done, "move had completed".into())
+        }
+        FileState::Ready | FileState::Committed
+            if cur.is_none() && h0.is_some() && hash_opt(backup).as_deref() == h0 =>
+        {
+            (
+                FileState::Done,
+                "move had completed (content in the backup store)".into(),
+            )
+        }
+        FileState::BackedUp | FileState::Ready | FileState::Committed => (
+            FileState::Attention,
+            "unexpected content; nothing deleted (backup kept)".into(),
+        ),
         other => (other, "terminal".into()),
     }
 }

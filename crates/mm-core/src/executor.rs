@@ -5,7 +5,8 @@
 //!   1 before lock · 2 after lock/fingerprint · 3 after backup copy · 4 after BackedUp recorded ·
 //!   5 after temp written · 6 after verification · 7 after Ready recorded · 8 after ReplaceFileW ·
 //!   9 after Committed recorded · 10 after bak removed (before Done recorded)
-//! (recreating a deleted file uses 1 and 5–10: there is no original to lock or back up)
+//! (recreating a deleted file uses 1 and 5–10: there is no original to lock or back up;
+//! moving a created file into the backup store uses 1–4 and 7–10: there is no temporary output)
 //!
 //! A full volume (SAFETY_MODEL §8.13) pauses the Operation: the file in progress is settled with
 //! the recovery table, it and every later file become `Cancelled` (original unchanged, retried
@@ -25,7 +26,8 @@ use mm_store::{FileState, FileUpdate, NewFile, NewOperation, OpStatus, Store};
 use crate::engine::Engine;
 use crate::verify::{self, VerifyError};
 use crate::{
-    APP_VERSION, CoreError, ROLE_EMBEDDED, ROLE_RECREATE, fingerprint_of_handle, hash_opt, new_id,
+    APP_VERSION, CoreError, ROLE_EMBEDDED, ROLE_RECREATE, ROLE_REMOVE, fingerprint_of_handle,
+    hash_opt, new_id,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,6 +218,7 @@ pub fn start(
             path: e.path.clone(),
             role: match e.action {
                 Some(EntryAction::Recreate { .. }) => ROLE_RECREATE,
+                Some(EntryAction::MoveToBackupStore { .. }) => ROLE_REMOVE,
                 _ => ROLE_EMBEDDED,
             }
             .into(),
@@ -470,6 +473,9 @@ fn one_file(
     if let Some(EntryAction::Recreate { backup, h0, .. }) = entry.action.as_ref() {
         return recreate(store, op_id, seq, Path::new(backup), h0, f, opts);
     }
+    if let Some(EntryAction::MoveToBackupStore { h }) = entry.action.as_ref() {
+        return move_to_backup_store(store, op_id, entry, h, f, opts);
+    }
     fault(opts, seq, 1)?;
     // 1 lock + fingerprint
     let mut lock = match mm_fs::open_lock(&f.path) {
@@ -588,9 +594,9 @@ fn one_file(
             }
             fault(opts, seq, 5)?;
         }
-        Some(EntryAction::Recreate { .. }) => {
+        Some(EntryAction::Recreate { .. } | EntryAction::MoveToBackupStore { .. }) => {
             return Err(CoreError::Internal(
-                "recreate reached the in-place path".into(),
+                "recreate / move reached the in-place path".into(),
             ));
         }
         None => return Ok(Outcome::Failed("plan entry has no action".into())),
@@ -657,6 +663,118 @@ fn one_file(
     }
     if hash_opt(&f.bak).as_deref() == Some(h0s.as_str()) {
         remove_if_exists(&f.bak);
+    }
+    fault(opts, seq, 10)?;
+    store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;
+    Ok(Outcome::Done)
+}
+
+/// Undo of a file the undone Operation created (SAFETY_MODEL §4.3, §7.2): never deleted, moved
+/// into the backup store. The content is copied through the lock handle into the backup store and
+/// verified (it is the pre-image H0 of this Operation), recorded, and only then is the path renamed
+/// to its registered bak name (the commit) and the bak removed after a hash check (I-9). Fault
+/// points 1–4 and 7–10 as in the file header.
+fn move_to_backup_store(
+    store: &mut Store,
+    op_id: &str,
+    entry: &PlanEntry,
+    want: &str,
+    f: &FilePaths,
+    opts: &ExecOptions,
+) -> Result<Outcome, CoreError> {
+    let seq = entry.seq;
+    fault(opts, seq, 1)?;
+    let mut lock = match mm_fs::open_lock(&f.path) {
+        Ok(l) => l,
+        Err(e) if e.raw_os_error() == Some(32) || e.raw_os_error() == Some(33) => {
+            return Ok(Outcome::Skipped("file is in use by another program".into()));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Outcome::Conflict("file no longer exists".into()));
+        }
+        Err(e) => return Ok(Outcome::Failed(format!("cannot open: {e}"))),
+    };
+    let fp = fingerprint_of_handle(&lock)?;
+    if !crate::planner::same_file(&fp, &entry.fingerprint) {
+        return Ok(Outcome::Conflict(
+            "file changed since the preview (size, time or identity)".into(),
+        ));
+    }
+    let probe = mm_fs::probe(&f.path)?;
+    if probe.read_only {
+        return Ok(Outcome::Skipped("read-only attribute is set".into()));
+    }
+    if probe.links > 1 || probe.reparse_point {
+        return Ok(Outcome::Skipped("hard link or reparse point".into()));
+    }
+    fault(opts, seq, 2)?;
+    lock.rewind()?;
+    let h0 = match mm_fs::copy_new_hashing(&mut lock, &f.backup) {
+        Ok(h) => mm_fs::hex(&h),
+        Err(e) if mm_fs::is_disk_full(&e) => {
+            return Ok(Outcome::DiskFull(format!(
+                "backup volume is full ({e}); file unchanged"
+            )));
+        }
+        Err(e) => return Ok(Outcome::Failed(format!("backup failed: {e}"))),
+    };
+    fault(opts, seq, 3)?;
+    if h0 != want {
+        remove_if_exists(&f.backup);
+        return Ok(Outcome::Conflict(
+            "file changed after the operation; not removed".into(),
+        ));
+    }
+    if hash_opt(&f.backup).as_deref() != Some(h0.as_str()) {
+        remove_if_exists(&f.backup);
+        return Ok(Outcome::Failed("backup verification failed".into()));
+    }
+    store.set_state(
+        op_id,
+        seq,
+        FileState::BackedUp,
+        &FileUpdate {
+            h0: Some(h0.clone()),
+            ..Default::default()
+        },
+    )?;
+    fault(opts, seq, 4)?;
+    store.set_state(op_id, seq, FileState::Ready, &FileUpdate::default())?;
+    fault(opts, seq, 7)?;
+    if mm_fs::file_id_of_path(&f.path).ok() != Some(mm_fs::file_id(&lock)?) {
+        return Ok(Outcome::Conflict(
+            "file was renamed or replaced during the operation".into(),
+        ));
+    }
+    // the commit: a rename that never replaces; the lock handle shares DELETE, so it is allowed
+    match mm_fs::move_no_replace(&f.path, &f.bak) {
+        Ok(()) => {}
+        Err(mm_fs::Win32Error(80 | 183)) => {
+            return Ok(Outcome::Failed(
+                "backup name already exists next to the file".into(),
+            ));
+        }
+        Err(mm_fs::Win32Error(c @ (32 | 33))) => {
+            return Ok(Outcome::Skipped(format!(
+                "file is in use by another program (Win32 {c})"
+            )));
+        }
+        Err(code) => {
+            return Ok(Outcome::Failed(format!(
+                "could not move the file ({code}); file unchanged"
+            )));
+        }
+    }
+    fault(opts, seq, 8)?;
+    store.set_state(op_id, seq, FileState::Committed, &FileUpdate::default())?;
+    fault(opts, seq, 9)?;
+    drop(lock);
+    if hash_opt(&f.bak).as_deref() == Some(h0.as_str()) {
+        remove_if_exists(&f.bak);
+    } else {
+        return Ok(Outcome::Attention(
+            "moved file differs from its backup; nothing deleted".into(),
+        ));
     }
     fault(opts, seq, 10)?;
     store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;
