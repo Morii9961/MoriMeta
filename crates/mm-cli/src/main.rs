@@ -404,8 +404,9 @@ fn main() -> ExitCode {
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_creator(&mut eng, &paths, &edit, &title)
-                    .map_err(|e| e.to_string())?;
+                let plan =
+                    planner::plan_creator(&mut eng, &paths, &edit, &title, &Default::default())
+                        .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
@@ -458,8 +459,15 @@ fn main() -> ExitCode {
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_capture_time(&mut eng, &paths, &tool, digitized, &title)
-                    .map_err(|e| e.to_string())?;
+                let plan = planner::plan_capture_time(
+                    &mut eng,
+                    &paths,
+                    &tool,
+                    digitized,
+                    &title,
+                    &Default::default(),
+                )
+                .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
@@ -479,7 +487,7 @@ fn main() -> ExitCode {
                 });
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_gps(&mut eng, &paths, &edit, &title)
+                let plan = planner::plan_gps(&mut eng, &paths, &edit, &title, &Default::default())
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
@@ -496,8 +504,9 @@ fn main() -> ExitCode {
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_copyright(&mut eng, &paths, &edit, &title)
-                    .map_err(|e| e.to_string())?;
+                let plan =
+                    planner::plan_copyright(&mut eng, &paths, &edit, &title, &Default::default())
+                        .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)

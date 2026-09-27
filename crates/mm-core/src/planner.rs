@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
@@ -20,6 +22,51 @@ use mm_fs::VolumeKind;
 
 use crate::engine::Engine;
 use crate::{CoreError, fingerprint, new_id, normalize};
+
+/// Which part of planning a [`PlanProgress`] is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanStage {
+    /// Fingerprints, environment checks, sidecar pairing.
+    Files,
+    /// Reading metadata with ExifTool, in chunks.
+    Metadata,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlanProgress {
+    pub stage: PlanStage,
+    pub done: usize,
+    pub total: usize,
+}
+
+pub type PlanProgressFn = Arc<dyn Fn(&PlanProgress) + Send + Sync>;
+
+/// Progress and cancellation of Plan creation (ARCHITECTURE §5.3 `PlanProgress`): the adapter
+/// runs planning in the background and may cancel it; nothing has been written either way.
+#[derive(Clone, Default)]
+pub struct PlanCtl {
+    pub progress: Option<PlanProgressFn>,
+    pub cancel: Option<Arc<AtomicBool>>,
+}
+
+impl PlanCtl {
+    fn report(&self, stage: PlanStage, done: usize, total: usize) -> Result<(), CoreError> {
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::SeqCst))
+        {
+            return Err(CoreError::Cancelled);
+        }
+        if let Some(p) = &self.progress {
+            p(&PlanProgress { stage, done, total });
+        }
+        Ok(())
+    }
+}
+
+/// Files between two progress reports while inspecting them.
+const PROGRESS_EVERY: usize = 100;
 
 /// Environment checks at planning time (SAFETY_MODEL §8). Repeated at execution.
 fn precheck(p: &std::path::Path) -> Result<(), String> {
@@ -44,8 +91,11 @@ pub fn plan_creator(
     inputs: &[PathBuf],
     edit: &CreatorEdit,
     title: &str,
+    ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    plan_field(engine, inputs, title, |t| creator::plan_target(t, edit))
+    plan_field(engine, inputs, title, ctl, |t| {
+        creator::plan_target(t, edit)
+    })
 }
 
 pub fn plan_copyright(
@@ -53,8 +103,11 @@ pub fn plan_copyright(
     inputs: &[PathBuf],
     edit: &CopyrightEdit,
     title: &str,
+    ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    plan_field(engine, inputs, title, |t| copyright::plan_target(t, edit))
+    plan_field(engine, inputs, title, ctl, |t| {
+        copyright::plan_target(t, edit)
+    })
 }
 
 pub fn plan_gps(
@@ -62,8 +115,9 @@ pub fn plan_gps(
     inputs: &[PathBuf],
     edit: &GpsEdit,
     title: &str,
+    ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    plan_field(engine, inputs, title, |t| gps::plan_target(t, edit))
+    plan_field(engine, inputs, title, ctl, |t| gps::plan_target(t, edit))
 }
 
 /// A time tool as the user specified it (METADATA_MODEL §5.2); the anchor of Preserve Relative
@@ -92,9 +146,10 @@ pub fn plan_capture_time(
     tool: &TimeTool,
     digitized: bool,
     title: &str,
+    ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
     let keep_subsec = matches!(tool, TimeTool::Shift(_) | TimeTool::PreserveRelative { .. });
-    plan_with(engine, inputs, title, |readable, entries| {
+    plan_with(engine, inputs, title, ctl, |readable, entries| {
         // a sidecar is ordered and anchored by the name of its RAW
         let shown = |i: usize| {
             entries[i]
@@ -172,9 +227,10 @@ fn plan_field(
     engine: &mut Engine,
     inputs: &[PathBuf],
     title: &str,
+    ctl: &PlanCtl,
     field: impl Fn(&Target) -> FieldPlan,
 ) -> Result<Plan, CoreError> {
-    plan_with(engine, inputs, title, |targets, _| {
+    plan_with(engine, inputs, title, ctl, |targets, _| {
         Ok(targets.iter().map(|(_, t)| field(t)).collect())
     })
 }
@@ -323,13 +379,17 @@ fn plan_with(
     engine: &mut Engine,
     inputs: &[PathBuf],
     title: &str,
+    ctl: &PlanCtl,
     field_all: impl FnOnce(&[(usize, Target)], &[PlanEntry]) -> Result<Vec<FieldPlan>, CoreError>,
 ) -> Result<Plan, CoreError> {
     let mut entries: Vec<PlanEntry> = Vec::new();
     let mut seen = HashSet::new();
     let mut pending: Vec<Pending> = Vec::new();
     let mut volumes: HashMap<PathBuf, VolumeKind> = HashMap::new();
-    for input in inputs {
+    for (i, input) in inputs.iter().enumerate() {
+        if i % PROGRESS_EVERY == 0 {
+            ctl.report(PlanStage::Files, i, inputs.len())?;
+        }
         let path = normalize(input)?;
         let fp_in = fingerprint(&path)?;
         let mut entry = PlanEntry {
@@ -448,7 +508,12 @@ fn plan_with(
         to_read.extend(p.raw.iter().cloned());
         to_read.extend(p.own.iter().cloned());
     }
-    let mut snaps = engine.read_snapshots(&to_read)?.into_iter();
+    ctl.report(PlanStage::Files, inputs.len(), inputs.len())?;
+    let mut snaps = engine
+        .read_snapshots_with(&to_read, &mut |done, total| {
+            ctl.report(PlanStage::Metadata, done, total)
+        })?
+        .into_iter();
     let mut reads: Vec<(usize, Reads)> = Vec::new();
     for p in pending {
         let raw = p

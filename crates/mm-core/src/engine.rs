@@ -99,8 +99,19 @@ impl Engine {
         &mut self,
         paths: &[PathBuf],
     ) -> Result<Vec<Result<Snapshot, String>>, CoreError> {
+        self.read_snapshots_with(paths, &mut |_, _| Ok(()))
+    }
+
+    /// [`Engine::read_snapshots`], calling `between(done, total)` before each chunk of 100 files
+    /// and at the end; an error from it stops the read.
+    pub fn read_snapshots_with(
+        &mut self,
+        paths: &[PathBuf],
+        between: &mut dyn FnMut(usize, usize) -> Result<(), CoreError>,
+    ) -> Result<Vec<Result<Snapshot, String>>, CoreError> {
         let mut results = Vec::with_capacity(paths.len());
         for chunk in paths.chunks(100) {
+            between(results.len(), paths.len())?;
             let mut c = Command::read_json();
             c.push(Line::option("-G1"));
             numeric_gps_then_all(&mut c);
@@ -127,6 +138,7 @@ impl Engine {
                 });
             }
         }
+        between(results.len(), paths.len())?;
         Ok(results)
     }
 

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, ExecProgress, FaultPoint, ProgressSink};
-use mm_core::planner;
+use mm_core::planner::{self, PlanCtl, PlanProgress, PlanStage};
 use mm_core::service::{EntryFilter, OperationGate, PAGE_SIZE, PlanBook, ServiceError, Session};
 use mm_core::undo;
 use mm_domain::creator::CreatorEdit;
@@ -101,6 +101,7 @@ impl Lab {
             &self.files,
             &CreatorEdit::Set(vec!["Morii".into()]),
             "Creator",
+            &Default::default(),
         )
         .unwrap()
     }
@@ -139,6 +140,7 @@ fn preview_exclusion_confirmation_execution_and_undo() {
         &session.paths(&r.added).unwrap(),
         &CreatorEdit::Set(vec!["Morii".into()]),
         "Creator",
+        &Default::default(),
     )
     .unwrap();
     let (id, v1) = book.insert(plan);
@@ -375,6 +377,52 @@ fn cancel_before_a_recreate_creates_nothing() {
     )
     .unwrap();
     assert_eq!(rest.status, OpStatus::Completed, "{rest:?}");
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
+
+/// ARCHITECTURE §5.3 `PlanProgress`: planning reports the file inspection every 100 files and the
+/// metadata read per chunk of 100; Cancel stops it with nothing written.
+#[test]
+fn plan_progress_and_cancel() {
+    let Some(mut lab) = Lab::new("plan-progress", 250) else {
+        return;
+    };
+    let events = Arc::new(Mutex::new(Vec::<PlanProgress>::new()));
+    let ev = events.clone();
+    let ctl = PlanCtl {
+        progress: Some(Arc::new(move |p: &PlanProgress| {
+            ev.lock().unwrap().push(*p)
+        })),
+        cancel: None,
+    };
+    let edit = CreatorEdit::Set(vec!["Morii".into()]);
+    let plan = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl).unwrap();
+    assert_eq!(plan.executable().count(), 250);
+    let ev = events.lock().unwrap().clone();
+    let of = |stage: PlanStage| -> Vec<usize> {
+        ev.iter()
+            .filter(|p| p.stage == stage && p.total == 250)
+            .map(|p| p.done)
+            .collect()
+    };
+    assert_eq!(of(PlanStage::Files), [0, 100, 200, 250], "{ev:?}");
+    assert_eq!(of(PlanStage::Metadata), [0, 100, 200, 250], "{ev:?}");
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    let c = cancel.clone();
+    let ctl = PlanCtl {
+        progress: Some(Arc::new(move |p: &PlanProgress| {
+            if p.stage == PlanStage::Metadata && p.done >= 100 {
+                c.store(true, Ordering::SeqCst);
+            }
+        })),
+        cancel: Some(cancel),
+    };
+    let r = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl);
+    assert!(matches!(r, Err(mm_core::CoreError::Cancelled)), "{r:?}");
+    // the engine is still usable after a cancelled plan
+    assert_eq!(lab.plan_creator().executable().count(), 250);
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }

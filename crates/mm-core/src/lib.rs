@@ -29,6 +29,8 @@ pub enum CoreError {
     VersionMismatch(String),
     /// The space pre-check failed (SAFETY_MODEL §6.2); nothing was registered or written.
     InsufficientSpace(String),
+    /// Cancelled by the user before anything was written (Plan creation).
+    Cancelled,
     Internal(String),
 }
 
