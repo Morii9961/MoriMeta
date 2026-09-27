@@ -215,6 +215,20 @@ fn policy(p: &Path) -> Policy {
     }
 }
 
+/// Whether a folder import takes the file in: a format this build plans for, except XMP files
+/// (they come with their RAW, §3.1) and the transaction's own temporary and backup names
+/// (`IMG_1.mmtmp-….JPG`), which recovery handles.
+pub fn importable(p: &Path) -> bool {
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if name.contains(".mmtmp-") || name.contains(".mmbak-") {
+        return false;
+    }
+    matches!(policy(p), Policy::Embedded | Policy::RawSidecar)
+}
+
 /// The sidecar of `raw` (SAFETY_MODEL §3.1): `<stem>.xmp` in any letter case (the existing name
 /// is used), unless another RAW with the same stem makes the ownership ambiguous. A darktable
 /// `<file>.<ext>.xmp` is recognised and left alone. Returns (path, exists, notes).
@@ -327,6 +341,7 @@ fn plan_with(
             changes: vec![],
             action: None,
             notes: vec![],
+            excluded: false,
         };
         let mut job = None;
         match policy(&path) {

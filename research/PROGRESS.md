@@ -20,6 +20,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **NEF + XMP sidecar** for all four fields: FormatPolicy, §3.1 pairing, sidecar-first reading, W-S writes only, new sidecars written from nothing (role `create`, undo = move to backup store), V4 only for image files. NEF byte-identical throughout. 111 tests; plus the 3 real Z8/D850 NEFs of the corpus through all four fields and back (112).
 - **Environment rules (SAFETY_MODEL §8)**: C2PA Content Credentials → Blocked (synthetic JUMBF test), removable media → Blocked, network drive → note (no media/NAS to test). 114 tests.
 - **System sleep (§8.14)**: Operations (apply, resume, undo) hold `ES_SYSTEM_REQUIRED` while running. 115 tests.
+- **Backend interface (Phase 2, ARCHITECTURE §5.1/§5.1a)**: `mm-core::service` — Session/AssetId (File ID dedup), PlanBook (immutable versions, exclusion → new version, filtered paging), single-use confirmation tokens bound to a version, OperationGate. Excluded entries kept in the Plan with their status. Folder import from the directory listing only (junctions not entered, OFFLINE/recall-on-access placeholders not read, the transaction's `.mmtmp-`/`.mmbak-` names skipped). 123 tests (one runs the whole flow with ExifTool).
 
 ## Waiting / needs the user
 
@@ -32,4 +33,4 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 - S4 on real data with the worker pool (needs D-13 corpus); parallel scan/plan; group-commit of journal writes if S4 shows the serialized flushes dominate.
 - More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
-- Third-party reading of the sidecars is V-03/V-07 (needs LR/C1/NX Studio, D-13). Backend interface for Phase 2 (Handle model, Plan/Preview paging).
+- Third-party reading of the sidecars is V-03/V-07 (needs LR/C1/NX Studio, D-13). Phase 2 backend: asynchronous Plan creation with progress, history/recovery queries for the adapter; decide whether unsupported formats appear in the Session (now only counted).

@@ -31,6 +31,7 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
                 changes: vec![],
                 action,
                 notes,
+                excluded: false,
             });
         }
     }

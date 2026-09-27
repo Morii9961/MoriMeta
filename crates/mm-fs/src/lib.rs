@@ -12,11 +12,11 @@ use std::path::{Path, PathBuf};
 
 use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, GetLastError, HANDLE};
 use windows_sys::Win32::Storage::FileSystem::{
-    BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo,
-    FlushFileBuffers, GetDiskFreeSpaceExW, GetDriveTypeW, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    ReplaceFileW,
+    BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FileIdInfo, FlushFileBuffers, GetDiskFreeSpaceExW, GetDriveTypeW,
+    GetFileInformationByHandle, GetFileInformationByHandleEx, GetVolumePathNameW,
+    MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -450,6 +450,68 @@ pub fn fill_volume(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Err(io::Error::other("volume did not fill up"))
 }
 
+/// What a folder import found (ARCHITECTURE §6.1), from the directory listing alone: no file is
+/// opened, so a cloud placeholder is not downloaded by looking at it.
+#[derive(Debug, Default)]
+pub struct Walk {
+    pub files: Vec<PathBuf>,
+    /// Directory symbolic links and junctions: listed, not entered (SAFETY_MODEL §8.6).
+    pub not_followed: Vec<PathBuf>,
+    /// Cloud files that are not on this computer (SAFETY_MODEL §8.3): not read by default.
+    pub placeholders: Vec<PathBuf>,
+    pub errors: Vec<(PathBuf, String)>,
+}
+
+/// Every file under `root`, depth first, in name order within a folder.
+pub fn walk(root: &Path) -> Walk {
+    use std::os::windows::fs::MetadataExt;
+    let mut w = Walk::default();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let mut entries: Vec<_> = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd
+                .filter_map(|e| match e {
+                    Ok(e) => Some(e),
+                    Err(err) => {
+                        w.errors.push((dir.clone(), err.to_string()));
+                        None
+                    }
+                })
+                .collect(),
+            Err(err) => {
+                w.errors.push((dir.clone(), err.to_string()));
+                continue;
+            }
+        };
+        entries.sort_by_key(|e| e.file_name());
+        let mut subdirs = Vec::new();
+        for e in entries {
+            let path = e.path();
+            // from the listing (FindNextFileW), without opening or following the entry
+            let a = match e.metadata() {
+                Ok(m) => m.file_attributes(),
+                Err(err) => {
+                    w.errors.push((path, err.to_string()));
+                    continue;
+                }
+            };
+            if a & FILE_ATTRIBUTE_DIRECTORY != 0 {
+                if a & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                    w.not_followed.push(path);
+                } else {
+                    subdirs.push(path);
+                }
+            } else if a & (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_OFFLINE) != 0 {
+                w.placeholders.push(path);
+            } else {
+                w.files.push(path);
+            }
+        }
+        stack.extend(subdirs.into_iter().rev());
+    }
+    w
+}
+
 /// Keeps the system from sleeping while an Operation runs (SAFETY_MODEL §8.14); the display may
 /// still turn off. The request belongs to the calling thread and ends when the guard is dropped.
 pub struct KeepAwake(());
@@ -504,6 +566,54 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn walk_lists_without_following_links_or_reading_placeholders() {
+        use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, SetFileAttributesW};
+        let d = dir("walk");
+        let outside = dir("walk-outside");
+        std::fs::write(outside.join("elsewhere.jpg"), b"x").unwrap();
+        std::fs::create_dir_all(d.join("b").join("c")).unwrap();
+        std::fs::write(d.join("a.jpg"), b"a").unwrap();
+        std::fs::write(d.join("b").join("c").join("deep.nef"), b"n").unwrap();
+        let cloud = d.join("b").join("cloud.jpg");
+        std::fs::write(&cloud, b"c").unwrap();
+        // SAFETY: NUL-terminated path; OFFLINE is how a not-downloaded file is marked.
+        assert_ne!(
+            unsafe { SetFileAttributesW(wide(&cloud).as_ptr(), FILE_ATTRIBUTE_OFFLINE) },
+            0
+        );
+        let junction = d.join("j");
+        let ok = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J failed");
+        let w = walk(&d);
+        let rel = |v: &[PathBuf]| {
+            v.iter()
+                .map(|p| {
+                    p.strip_prefix(&d)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rel(&w.files), ["a.jpg", "b/c/deep.nef"]);
+        assert_eq!(rel(&w.placeholders), ["b/cloud.jpg"]);
+        assert_eq!(rel(&w.not_followed), ["j"]);
+        assert!(w.errors.is_empty(), "{:?}", w.errors);
+        // SAFETY: as above.
+        unsafe { SetFileAttributesW(wide(&cloud).as_ptr(), FILE_ATTRIBUTE_NORMAL) };
+        std::fs::remove_dir(&junction).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]

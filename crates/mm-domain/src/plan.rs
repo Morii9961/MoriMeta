@@ -176,6 +176,9 @@ pub struct PlanEntry {
     pub changes: Vec<FieldChange>,
     pub action: Option<EntryAction>,
     pub notes: Vec<String>,
+    /// Left out by the user in Preview (a new Plan version); keeps the status it would have had.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub excluded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,6 +206,8 @@ pub struct PlanSummary {
     pub no_change: usize,
     pub blocked: usize,
     pub unsupported: usize,
+    /// Left out by the user; not counted in the other groups.
+    pub excluded: usize,
     pub changes: usize,
 }
 
@@ -213,6 +218,10 @@ impl Plan {
             ..Default::default()
         };
         for e in &self.entries {
+            if e.excluded {
+                s.excluded += 1;
+                continue;
+            }
             match e.status {
                 EntryStatus::Ready => s.ready += 1,
                 EntryStatus::NoChange => s.no_change += 1,
@@ -228,6 +237,6 @@ impl Plan {
     pub fn executable(&self) -> impl Iterator<Item = &PlanEntry> {
         self.entries
             .iter()
-            .filter(|e| e.status == EntryStatus::Ready && e.action.is_some())
+            .filter(|e| e.status == EntryStatus::Ready && e.action.is_some() && !e.excluded)
     }
 }
