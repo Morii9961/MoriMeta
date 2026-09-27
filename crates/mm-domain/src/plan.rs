@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::snapshot::Snapshot;
+
 /// Identity of a file at planning time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fingerprint {
@@ -140,12 +142,35 @@ pub enum EntryAction {
     /// Undo of a file that the undone Operation created (SAFETY_MODEL §4.3, §7.2): move it into
     /// the backup store instead of deleting it, only if its content is still `h`.
     MoveToBackupStore { h: String },
+    /// A new file written from nothing by ExifTool (a new XMP sidecar, SAFETY_MODEL §4.3): it
+    /// holds only these tags and never replaces a file that exists at the path.
+    CreateFile {
+        ops: Vec<TagOp>,
+        expect: Vec<Expect>,
+    },
+}
+
+/// Where a field is written (SAFETY_MODEL §3 FormatPolicy).
+#[derive(Debug, Clone, Copy)]
+pub enum Target<'a> {
+    /// In the file itself (JPEG).
+    Embedded(&'a Snapshot),
+    /// In the XMP sidecar of a read-only RAW (`raw`, empty for a sidecar selected on its own);
+    /// `sidecar` is the existing sidecar, if any. Only XMP tags are written.
+    Sidecar {
+        raw: &'a Snapshot,
+        sidecar: Option<&'a Snapshot>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanEntry {
     pub seq: u32,
+    /// The file that is written (for a RAW: its XMP sidecar).
     pub path: String,
+    /// The read-only RAW whose sidecar `path` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
     pub fingerprint: Fingerprint,
     pub status: EntryStatus,
     pub changes: Vec<FieldChange>,

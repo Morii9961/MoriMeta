@@ -11,7 +11,7 @@
 //! Registry status: provisional (`creator::REGISTRY_VERSION`) until S3 freezes v1.
 
 use crate::iptc;
-use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp};
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp, Target};
 use crate::snapshot::Snapshot;
 use crate::value::{TextKind, validate_text};
 
@@ -182,6 +182,97 @@ pub fn plan(snap: &Snapshot, edit: &CopyrightEdit) -> FieldPlan {
     }
 }
 
+/// Effective copyright for a target: for a RAW, the sidecar's default-language `dc:rights` wins.
+pub fn read_target(t: &Target) -> CopyrightState {
+    match t {
+        Target::Embedded(s) => read(s),
+        Target::Sidecar { raw, sidecar } => match sidecar.and_then(|s| s.text(DC_RIGHTS)) {
+            Some(v) => CopyrightState {
+                effective: Some(v.clone()),
+                sources: vec![(format!("sidecar {DC_RIGHTS}"), v)],
+                conflicting: false,
+                other_languages: sidecar.map(|s| read(s).other_languages).unwrap_or_default(),
+            },
+            None => read(raw),
+        },
+    }
+}
+
+pub fn plan_target(t: &Target, edit: &CopyrightEdit) -> FieldPlan {
+    match t {
+        Target::Embedded(s) => plan(s, edit),
+        Target::Sidecar { raw, sidecar } => plan_sidecar(raw, *sidecar, edit),
+    }
+}
+
+/// Sidecar mode (METADATA_MODEL §8 W-S): only the default language of `dc:rights` in the
+/// sidecar; the RAW is never written, so a copyright the RAW itself holds cannot be cleared.
+fn plan_sidecar(raw: &Snapshot, sidecar: Option<&Snapshot>, edit: &CopyrightEdit) -> FieldPlan {
+    let before = read_target(&Target::Sidecar { raw, sidecar }).effective;
+    let in_sidecar = sidecar.and_then(|s| s.text(DC_RIGHTS));
+    let unchanged = FieldPlan {
+        status: EntryStatus::NoChange,
+        change: None,
+        ops: vec![],
+        expect: vec![],
+        notes: vec![],
+    };
+    let mut ops = Vec::new();
+    let mut expect = Vec::new();
+    let after = match edit {
+        CopyrightEdit::Set(v) => {
+            if let Err(e) = validate(v) {
+                return FieldPlan::blocked(e);
+            }
+            if in_sidecar.as_deref() == Some(v.as_str()) {
+                return unchanged;
+            }
+            set(&mut ops, &mut expect, DC_RIGHTS_WRITE, v);
+            Some(v.clone())
+        }
+        CopyrightEdit::Clear => {
+            if let Some(v) = read(raw).effective {
+                return FieldPlan::blocked(format!(
+                    "the RAW file itself holds copyright {v:?}; a sidecar can override it but not remove it"
+                ));
+            }
+            if in_sidecar.is_none() {
+                return unchanged;
+            }
+            ops.push(TagOp::Delete {
+                tag: DC_RIGHTS_WRITE.into(),
+            });
+            expect.push(Expect::Absent {
+                tag: DC_RIGHTS.into(),
+            });
+            None
+        }
+    };
+    let mut notes = vec!["written to the XMP sidecar; the RAW file is not modified".to_string()];
+    if let Some(v) = read(raw).effective.filter(|v| Some(v) != after.as_ref()) {
+        notes.push(format!(
+            "the RAW file itself keeps {v:?}; programs that ignore sidecars show that value"
+        ));
+    }
+    let kind = match (&before, &after) {
+        (None, Some(_)) => ChangeKind::Add,
+        (Some(_), None) => ChangeKind::Remove,
+        _ => ChangeKind::Modify,
+    };
+    FieldPlan {
+        status: EntryStatus::Ready,
+        change: Some(FieldChange {
+            field: FIELD.into(),
+            before: before.map(|v| vec![v]),
+            after: after.map(|v| vec![v]),
+            kind,
+        }),
+        ops,
+        expect,
+        notes,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +345,31 @@ mod tests {
         let c = plan(&s, &CopyrightEdit::Clear);
         assert_eq!(tags(&c), vec![EXIF, TIFF_COPYRIGHT_WRITE]);
         assert_eq!(c.change.unwrap().kind, ChangeKind::Remove);
+    }
+
+    #[test]
+    fn sidecar_mode_writes_only_the_default_language() {
+        let raw = snap(json!({"IFD0:Copyright": "Nikon owner"}));
+        let t = Target::Sidecar {
+            raw: &raw,
+            sidecar: None,
+        };
+        let p = plan_target(&t, &CopyrightEdit::Set("© Morii".into()));
+        assert_eq!(tags(&p), vec![DC_RIGHTS_WRITE]);
+        assert_eq!(p.change.unwrap().before, Some(vec!["Nikon owner".into()]));
+        assert!(matches!(
+            plan_target(&t, &CopyrightEdit::Clear).status,
+            EntryStatus::Blocked(_)
+        ));
+        let side = snap(json!({"XMP-dc:Rights": "© Morii"}));
+        let t2 = Target::Sidecar {
+            raw: &raw,
+            sidecar: Some(&side),
+        };
+        assert_eq!(
+            plan_target(&t2, &CopyrightEdit::Set("© Morii".into())).status,
+            EntryStatus::NoChange
+        );
     }
 
     #[test]

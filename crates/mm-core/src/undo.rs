@@ -6,7 +6,7 @@ use std::path::Path;
 use mm_domain::plan::{EntryAction, EntryStatus, Fingerprint, Plan, PlanEntry, PlanKind};
 use mm_store::{FileRow, FileState, Store};
 
-use crate::{CoreError, ROLE_RECREATE, ROLE_REMOVE, fingerprint, hash_opt, new_id};
+use crate::{CoreError, ROLE_CREATE, ROLE_RECREATE, ROLE_REMOVE, fingerprint, hash_opt, new_id};
 
 pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<Plan, CoreError> {
     let op = store
@@ -25,6 +25,7 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
             entries.push(PlanEntry {
                 seq,
                 path: f.path.clone(),
+                raw: None,
                 fingerprint,
                 status,
                 changes: vec![],
@@ -66,7 +67,7 @@ fn blocked(why: &str, fp: Fingerprint) -> Decision {
 fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
     let path = Path::new(&f.path);
     let missing = mm_fs::ensure_absent(path).is_ok();
-    if f.role == ROLE_RECREATE {
+    if f.role == ROLE_RECREATE || f.role == ROLE_CREATE {
         let Some(h1) = f.h1.clone() else {
             return Ok(None);
         };
@@ -84,7 +85,10 @@ fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
                 EntryStatus::Ready,
                 fp,
                 Some(EntryAction::MoveToBackupStore { h: h1 }),
-                vec!["the undo recreated this file; it will be moved into the backup store".into()],
+                vec![
+                    "the operation created this file; it will be moved into the backup store"
+                        .into(),
+                ],
             )
         } else {
             blocked("changed after the undo (conflict); not removed", fp)

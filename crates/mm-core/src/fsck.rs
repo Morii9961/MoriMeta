@@ -4,7 +4,7 @@ use std::path::Path;
 
 use mm_store::{FileState, Store};
 
-use crate::{CoreError, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
+use crate::{CoreError, ROLE_CREATE, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
 
 #[derive(Debug, Clone)]
 pub struct FsckReport {
@@ -53,7 +53,7 @@ pub fn fsck(store: &Store, op_id: &str) -> Result<FsckReport, CoreError> {
             | FileState::Conflict
             | FileState::Cancelled => {
                 // a file an Undo did not get to recreate is expected to be absent
-                if cur.is_none() && f.role != ROLE_RECREATE {
+                if cur.is_none() && f.role != ROLE_RECREATE && f.role != ROLE_CREATE {
                     problems.push(format!("{id}: missing"));
                 } else if f.h0.is_some() && f.state != FileState::Conflict && cur != f.h0 {
                     problems.push(format!(

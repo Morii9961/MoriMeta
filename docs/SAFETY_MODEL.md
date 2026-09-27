@@ -76,6 +76,8 @@
 | `DSC_0001.acr`（Lightroom Classic 15+） | 从不读写、移动或删除 [F-41]。 |
 | sidecar 是符号链接 / 多硬链接 / 只读 | 同主文件规则（§8）。 |
 
+实现状态（2026-09-27）：上表中 NEF + 已有/新建 sidecar、大小写沿用、同名多 RAW → `Blocked(AmbiguousSidecar)`、NEF+JPEG、darktable `.NEF.xmp` 只读已实现并测试（PHASE1_REPORT）；sidecar 为符号链接/硬链接/只读时按主文件规则 Blocked。新建 sidecar 由 ExifTool 从空写出，不以 RAW 为源（以 RAW 为源会复制大量标签）。
+
 更新已有 sidecar 时，全部 RDF 属性（含未知命名空间、结构、History）保留；**XML 注释与原有排版不保留**（SPIKE_REPORT §4）。对外只说"保留全部元数据属性"。
 
 ### 3.2 RAW Safe Mode

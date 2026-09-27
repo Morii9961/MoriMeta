@@ -2474,3 +2474,275 @@ fn gps_xmp_copy_and_signs() {
     assert_eq!(blake(&f).as_deref(), Some(original.as_str()));
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// ExifTool 13.59's `t/images/Nikon.nef`, verified identical to the copy inside the SHA-256-pinned
+/// source archive (2026-09-27).
+const NEF_BLAKE3: &str = "a869af4e74e002c31da32a76f96e67d5bda0a401a684f86850aa71ffc861aca7";
+
+impl Lab {
+    /// A copy of the pinned NEF fixture in the photo folder under `name`.
+    fn add_nef(&self, name: &str) -> PathBuf {
+        let src = timages().join("Nikon.nef");
+        assert_eq!(
+            blake(&src).as_deref(),
+            Some(NEF_BLAKE3),
+            "pinned fixture Nikon.nef changed"
+        );
+        let p = self.photos[0].parent().unwrap().join(name);
+        std::fs::copy(&src, &p).unwrap();
+        p
+    }
+
+    fn plan_on(&self, cmd: &[&str], files: &[&Path], name: &str) -> (PathBuf, Value) {
+        let out = self.dir.join(name);
+        let mut args: Vec<&str> = cmd.to_vec();
+        args.extend(["--out", out.to_str().unwrap()]);
+        let ps: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        args.extend(ps.iter().map(String::as_str));
+        let o = self.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, Lab::json(&o))
+    }
+
+    /// Every tag of an XMP file (lab copies only).
+    fn xmp_tags(&self, p: &Path) -> serde_json::Map<String, Value> {
+        let o = Command::new(self.pkg.join("exiftool.exe"))
+            .args(["-config", "", "-json", "-G1", "-XMP:all"])
+            .arg(p)
+            .output()
+            .unwrap();
+        let mut m = serde_json::from_slice::<Value>(&o.stdout).unwrap()[0]
+            .as_object()
+            .unwrap()
+            .clone();
+        m.remove("SourceFile");
+        m.remove("XMP-x:XMPToolkit");
+        m
+    }
+}
+
+/// SAFETY_MODEL §3, §4.2, §4.3: for a NEF only its XMP sidecar is written. A new sidecar holds
+/// only MoriMeta's fields; an existing one keeps everything else; undo of the creation moves the
+/// sidecar into the backup store; the NEF stays byte-identical throughout (I-10).
+#[test]
+fn nef_sidecar_is_created_updated_and_undone() {
+    let pkg = require!();
+    let lab = Lab::new("nef", &pkg);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+    let (p, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "c.json");
+    let e = &pj["entries"][0];
+    assert_eq!(e["status"]["status"], "ready", "{pj}");
+    assert_eq!(e["path"], xmp.to_str().unwrap(), "{pj}");
+    let op1 = lab.apply_ok(&p);
+    assert_eq!(
+        lab.xmp_tags(&xmp),
+        serde_json::json!({"XMP-dc:Creator": "Morii"})
+            .as_object()
+            .unwrap()
+            .clone(),
+        "a new sidecar holds only what was written"
+    );
+    let after_creator = blake(&xmp).unwrap();
+
+    let (p, _) = lab.plan_on(&["plan-copyright", "--set", "© Morii"], &[&nef], "r.json");
+    let op2 = lab.apply_ok(&p);
+    let t = lab.xmp_tags(&xmp);
+    assert_eq!(t["XMP-dc:Creator"], "Morii", "{t:?}");
+    assert_eq!(t["XMP-dc:Rights"], "© Morii", "{t:?}");
+    assert_eq!(
+        blake(&nef).as_deref(),
+        Some(NEF_BLAKE3),
+        "the NEF must not change"
+    );
+    assert!(lab.cli(&["fsck", &op2]).status.success());
+
+    lab.undo(&op2); // the update is undone byte for byte
+    assert_eq!(blake(&xmp).as_deref(), Some(after_creator.as_str()));
+    lab.undo(&op1); // the created sidecar goes into the backup store
+    assert!(!xmp.exists());
+    let undo1 = lab.last_op();
+    assert!(lab.cli(&["fsck", &undo1]).status.success());
+    lab.undo(&undo1); // and comes back
+    assert_eq!(blake(&xmp).as_deref(), Some(after_creator.as_str()));
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// Capture time and GPS for a NEF go to the sidecar; the NEF's own EXIF stays as it is.
+#[test]
+fn nef_time_and_gps_go_to_the_sidecar() {
+    let pkg = require!();
+    let lab = Lab::new("nef-time", &pkg);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+    let (p, pj) = lab.plan_on(&["plan-time", "--shift", "+01:00:00"], &[&nef], "t.json");
+    let before = pj["entries"][0]["changes"][0]["before"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let op = lab.apply_ok(&p);
+    let t = lab.xmp_tags(&xmp);
+    let want = {
+        let b = local(&before) + mm_domain::time::TimeDelta::try_hours(1).unwrap();
+        b.format("%Y:%m:%d %H:%M:%S").to_string()
+    };
+    for tag in [
+        "XMP-exif:DateTimeOriginal",
+        "XMP-photoshop:DateCreated",
+        "XMP-xmp:CreateDate",
+    ] {
+        assert!(
+            t[tag].as_str().unwrap().starts_with(&want),
+            "{tag}: {t:?} (want {want})"
+        );
+    }
+    // a second Shift starts from the sidecar's time, not from the NEF's unchanged EXIF
+    let (_, pj2) = lab.plan_on(&["plan-time", "--shift", "+01:00:00"], &[&nef], "t2.json");
+    assert!(
+        pj2["entries"][0]["changes"][0]["before"][0]
+            .as_str()
+            .unwrap()
+            .starts_with(&want),
+        "{pj2}"
+    );
+    let (p, _) = lab.plan_on(&["plan-gps", "--set", "35.5,139.25"], &[&nef], "g.json");
+    let op_g = lab.apply_ok(&p);
+    let t = lab.xmp_tags(&xmp);
+    assert!(t.contains_key("XMP-exif:GPSLatitude"), "{t:?}");
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    lab.undo(&op_g);
+    lab.undo(&op);
+    assert!(!xmp.exists());
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// SAFETY_MODEL §3.1 pairing: an existing sidecar is used whatever its letter case; a darktable
+/// `<file>.NEF.xmp` is never touched; two RAW files with one name make ownership ambiguous; a JPEG
+/// with the same name writes itself; a NEF and its sidecar selected together are one entry.
+#[test]
+fn nef_sidecar_pairing_rules() {
+    let pkg = require!();
+    let lab = Lab::new("nef-pair", &pkg);
+    let a = lab.add_nef("DSC_0002.NEF");
+    let a_xmp = a.with_file_name("DSC_0002.XMP");
+    let mk = Command::new(pkg.join("exiftool.exe"))
+        .args(["-config", "", "-XMP-dc:Title=Kept", "-o"])
+        .arg(&a_xmp)
+        .output()
+        .unwrap();
+    assert!(mk.status.success());
+    let b = lab.add_nef("DSC_0003.NEF");
+    let dt = b.with_file_name("DSC_0003.NEF.xmp");
+    std::fs::write(&dt, b"<darktable/>").unwrap();
+    let c = lab.add_nef("DSC_0004.NEF");
+    std::fs::write(c.with_file_name("DSC_0004.CR2"), b"another raw").unwrap();
+    let d = lab.add_nef("DSC_0005.NEF");
+    let d_jpg = d.with_file_name("DSC_0005.JPG");
+    std::fs::copy(&lab.photos[1], &d_jpg).unwrap();
+
+    let files: Vec<&Path> = vec![&a, &a_xmp, &b, &c, &d, &d_jpg];
+    let (p, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &files, "pair.json");
+    let entries = pj["entries"].as_array().unwrap();
+    assert_eq!(
+        entries.len(),
+        5,
+        "a NEF and its sidecar are one entry: {pj}"
+    );
+    let by_path = |s: &Path| {
+        entries
+            .iter()
+            .find(|e| e["path"] == s.to_str().unwrap())
+            .unwrap_or_else(|| panic!("no entry for {}: {pj}", s.display()))
+    };
+    assert_eq!(by_path(&a_xmp)["status"]["status"], "ready");
+    let b_entry = by_path(&b.with_file_name("DSC_0003.xmp"));
+    assert!(
+        b_entry["notes"].to_string().contains("darktable"),
+        "{b_entry}"
+    );
+    assert_eq!(by_path(&c)["status"]["status"], "blocked", "{pj}");
+    assert_eq!(by_path(&d_jpg)["status"]["status"], "ready");
+    assert_eq!(
+        by_path(&d.with_file_name("DSC_0005.xmp"))["status"]["status"],
+        "ready"
+    );
+    let op = lab.apply_ok(&p);
+    // the existing sidecar kept its other properties and its letter case
+    let t = lab.xmp_tags(&a_xmp);
+    assert_eq!(t["XMP-dc:Title"], "Kept", "{t:?}");
+    assert_eq!(t["XMP-dc:Creator"], "Morii", "{t:?}");
+    let names: Vec<String> = std::fs::read_dir(a.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.to_lowercase().starts_with("dsc_0002"))
+        .collect();
+    assert!(
+        names.contains(&"DSC_0002.XMP".to_string()) && names.len() == 2,
+        "{names:?}"
+    );
+    assert_eq!(std::fs::read(&dt).unwrap(), b"<darktable/>");
+    assert!(!c.with_file_name("DSC_0004.xmp").exists());
+    for nef in [&a, &b, &c, &d] {
+        assert_eq!(blake(nef).as_deref(), Some(NEF_BLAKE3));
+    }
+    lab.undo(&op);
+    assert!(!b.with_file_name("DSC_0003.xmp").exists());
+    assert_eq!(lab.xmp_tags(&a_xmp).get("XMP-dc:Creator"), None);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// Crash at every fault point of the create transaction (1, 5–10): the sidecar path only ever
+/// holds nothing or the complete verified sidecar; recovery, resume and undo finish the job.
+#[test]
+fn nef_sidecar_creation_crashes_recover() {
+    let pkg = require!();
+    for step in [1u8, 5, 6, 7, 8, 9, 10] {
+        let case = format!("create crash at 0:{step}");
+        let lab = Lab::new(&format!("nef-crash-{step}"), &pkg);
+        let nef = lab.add_nef("DSC_0001.NEF");
+        let xmp = nef.with_file_name("DSC_0001.xmp");
+        let (p, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "c.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                p.to_str().unwrap(),
+                "--crash-at",
+                &format!("0:{step}"),
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(77), "{case}");
+        let op = lab.last_op();
+        let complete = |when: &str| {
+            if xmp.exists() {
+                assert_eq!(
+                    lab.xmp_tags(&xmp).get("XMP-dc:Creator"),
+                    Some(&serde_json::json!("Morii")),
+                    "{case} {when}"
+                );
+            }
+        };
+        complete("before recovery");
+        assert!(lab.cli(&["recover"]).status.success(), "{case}");
+        complete("after recovery");
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(xmp.exists(), "{case}");
+        lab.undo(&op);
+        assert!(!xmp.exists(), "{case}");
+        assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

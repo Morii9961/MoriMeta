@@ -11,7 +11,7 @@
 //! Setting coordinates never changes the GPS time stamp; removal deletes every GPS tag, including
 //! the time stamp, in the GPS directory and in XMP (not place names, which are Location fields).
 
-use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp};
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp, Target};
 use crate::snapshot::Snapshot;
 
 pub const FIELD: &str = "gps";
@@ -348,6 +348,148 @@ pub fn plan(snap: &Snapshot, edit: &GpsEdit) -> FieldPlan {
     }
 }
 
+/// Effective position for a target: for a RAW, the sidecar's XMP GPS wins over the RAW's own.
+pub fn read_target(t: &Target) -> Option<GeoPoint> {
+    match t {
+        Target::Embedded(s) => read(s),
+        Target::Sidecar { raw, sidecar } => {
+            let from_sidecar = sidecar.and_then(|s| {
+                let (lat, lon) = (number(s, XMP_LAT)?, number(s, XMP_LON)?);
+                let alt = number(s, XMP_ALT).map(|a| {
+                    if s.text(XMP_ALT_REF).as_deref() == Some("1") {
+                        -a
+                    } else {
+                        a
+                    }
+                });
+                Some(GeoPoint { lat, lon, alt })
+            });
+            from_sidecar.or_else(|| read(raw))
+        }
+    }
+}
+
+pub fn plan_target(t: &Target, edit: &GpsEdit) -> FieldPlan {
+    match t {
+        Target::Embedded(s) => plan(s, edit),
+        Target::Sidecar { raw, sidecar } => plan_sidecar(raw, *sidecar, edit),
+    }
+}
+
+/// Sidecar mode (METADATA_MODEL §7): XMP GPS in the sidecar only. GPS inside a RAW cannot be
+/// removed, so removal is Unsupported for such a file as a whole (no partial write).
+fn plan_sidecar(raw: &Snapshot, sidecar: Option<&Snapshot>, edit: &GpsEdit) -> FieldPlan {
+    let before = read_target(&Target::Sidecar { raw, sidecar });
+    let empty = Snapshot::default();
+    let side = sidecar.unwrap_or(&empty);
+    let unchanged = FieldPlan {
+        status: EntryStatus::NoChange,
+        change: None,
+        ops: vec![],
+        expect: vec![],
+        notes: vec![],
+    };
+    let mut ops = Vec::new();
+    let mut expect = Vec::new();
+    let after = match edit {
+        GpsEdit::Set(p) => {
+            if let Err(e) = p.validate() {
+                return FieldPlan::blocked(e);
+            }
+            let alt_now = number(side, XMP_ALT).map(|a| {
+                if side.text(XMP_ALT_REF).as_deref() == Some("1") {
+                    -a
+                } else {
+                    a
+                }
+            });
+            if same(number(side, XMP_LAT), Some(p.lat), 1e-7)
+                && same(number(side, XMP_LON), Some(p.lon), 1e-7)
+                && same(alt_now, p.alt, 1e-3)
+            {
+                return unchanged;
+            }
+            near(
+                &mut ops,
+                &mut expect,
+                XMP_LAT,
+                format!("{:.7}", p.lat),
+                DEG_TOLERANCE,
+            );
+            near(
+                &mut ops,
+                &mut expect,
+                XMP_LON,
+                format!("{:.7}", p.lon),
+                DEG_TOLERANCE,
+            );
+            match p.alt {
+                Some(a) => {
+                    near(
+                        &mut ops,
+                        &mut expect,
+                        XMP_ALT,
+                        format!("{:.3}", a.abs()),
+                        ALT_TOLERANCE,
+                    );
+                    altitude_ref(&mut ops, &mut expect, XMP_ALT_REF, a < 0.0);
+                }
+                None => {
+                    for tag in [XMP_ALT, XMP_ALT_REF] {
+                        if side.contains(tag) {
+                            ops.push(TagOp::Delete { tag: tag.into() });
+                            expect.push(Expect::Absent { tag: tag.into() });
+                        }
+                    }
+                }
+            }
+            Some(*p)
+        }
+        GpsEdit::Remove => {
+            if read(raw).is_some() {
+                return FieldPlan {
+                    status: EntryStatus::Unsupported(
+                        "GPS inside a RAW file cannot be removed; nothing is written".into(),
+                    ),
+                    change: None,
+                    ops,
+                    expect,
+                    notes: vec![],
+                };
+            }
+            let keys: Vec<String> = side
+                .keys()
+                .filter(|k| k.starts_with("XMP-exif:GPS"))
+                .cloned()
+                .collect();
+            if keys.is_empty() {
+                return unchanged;
+            }
+            for k in keys {
+                ops.push(TagOp::Delete { tag: k.clone() });
+                expect.push(Expect::Absent { tag: k });
+            }
+            None
+        }
+    };
+    FieldPlan {
+        status: EntryStatus::Ready,
+        change: Some(FieldChange {
+            field: FIELD.into(),
+            before: before.map(|b| vec![b.display()]),
+            after: after.map(|a| vec![a.display()]),
+            kind: match (before.is_some(), after.is_some()) {
+                (_, false) => ChangeKind::Remove,
+                (false, true) => ChangeKind::Add,
+                (true, true) => ChangeKind::Modify,
+            },
+        }),
+        ops,
+        expect,
+        notes: vec!["written to the XMP sidecar; the RAW file is not modified".into()],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,6 +569,37 @@ mod tests {
         assert_eq!(
             plan(&snap(json!({"IFD0:Make": "X"})), &GpsEdit::Remove).status,
             EntryStatus::NoChange
+        );
+    }
+
+    #[test]
+    fn sidecar_mode_sets_xmp_and_cannot_remove_raw_gps() {
+        let raw = snap(json!({"GPS:GPSLatitude": 1.0, "GPS:GPSLatitudeRef": "N",
+            "GPS:GPSLongitude": 2.0, "GPS:GPSLongitudeRef": "E"}));
+        let t = Target::Sidecar {
+            raw: &raw,
+            sidecar: None,
+        };
+        let p = plan_target(
+            &t,
+            &GpsEdit::Set(GeoPoint::parse("-10.5,20.25,-3").unwrap()),
+        );
+        assert_eq!(tags(&p), vec![XMP_LAT, XMP_LON, XMP_ALT, XMP_ALT_REF]);
+        assert!(matches!(
+            plan_target(&t, &GpsEdit::Remove).status,
+            EntryStatus::Unsupported(_)
+        ));
+        // a sidecar on its own (no RAW GPS) may lose its XMP GPS
+        let empty = Snapshot::default();
+        let side = snap(json!({"XMP-exif:GPSLatitude": 1.0, "XMP-exif:GPSLongitude": 2.0}));
+        let t2 = Target::Sidecar {
+            raw: &empty,
+            sidecar: Some(&side),
+        };
+        assert_eq!(read_target(&t2).unwrap().lat, 1.0);
+        assert_eq!(
+            tags(&plan_target(&t2, &GpsEdit::Remove)),
+            vec![XMP_LAT, XMP_LON]
         );
     }
 

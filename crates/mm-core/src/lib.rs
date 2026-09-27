@@ -68,6 +68,9 @@ pub const ROLE_RECREATE: &str = "recreate";
 /// Journal role of a file an Undo moves into the backup store because the undone Operation
 /// created it (SAFETY_MODEL §4.3, §7.2). Its post-image is "absent": the row has no H1.
 pub const ROLE_REMOVE: &str = "remove";
+/// Journal role of a new file an Operation writes from nothing (a new XMP sidecar, SAFETY_MODEL
+/// §4.3). Like `recreate`, its pre-image is "absent"; undoing it moves it into the backup store.
+pub const ROLE_CREATE: &str = "create";
 
 /// Absolute path without the verbatim prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\h\s` → `\\h\s`).
 pub fn normalize(p: &Path) -> Result<PathBuf, CoreError> {

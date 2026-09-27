@@ -6,7 +6,7 @@
 //! Registry status: provisional (`REGISTRY_VERSION = 0`) until the S3 third-party checks freeze v1.
 
 use crate::iptc;
-use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp};
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp, Target};
 use crate::snapshot::Snapshot;
 use crate::value::{TextKind, validate_text};
 
@@ -207,6 +207,106 @@ pub fn plan(snap: &Snapshot, edit: &CreatorEdit) -> CreatorPlan {
     }
 }
 
+/// Effective creator for a target: for a RAW, the sidecar's `dc:creator` wins over the RAW's
+/// own values (as Lightroom and Camera Raw read them).
+pub fn read_target(t: &Target) -> CreatorState {
+    match t {
+        Target::Embedded(s) => read(s),
+        Target::Sidecar { raw, sidecar } => match sidecar.and_then(|s| s.list(DC_CREATOR)) {
+            Some(v) => CreatorState {
+                effective: Some(v.clone()),
+                sources: vec![(format!("sidecar {DC_CREATOR}"), v)],
+                conflicting: false,
+            },
+            None => read(raw),
+        },
+    }
+}
+
+pub fn plan_target(t: &Target, edit: &CreatorEdit) -> CreatorPlan {
+    match t {
+        Target::Embedded(s) => plan(s, edit),
+        Target::Sidecar { raw, sidecar } => plan_sidecar(raw, *sidecar, edit),
+    }
+}
+
+/// Sidecar mode (METADATA_MODEL §8 W-S): only `XMP-dc:Creator` in the sidecar; the RAW is never
+/// written (SAFETY_MODEL I-10), so a creator the RAW itself holds cannot be cleared.
+fn plan_sidecar(raw: &Snapshot, sidecar: Option<&Snapshot>, edit: &CreatorEdit) -> CreatorPlan {
+    let before = read_target(&Target::Sidecar { raw, sidecar }).effective;
+    let in_sidecar = sidecar.and_then(|s| s.list(DC_CREATOR));
+    let unchanged = FieldPlan {
+        status: EntryStatus::NoChange,
+        change: None,
+        ops: vec![],
+        expect: vec![],
+        notes: vec![],
+    };
+    let (ops, expect, after) = match edit {
+        CreatorEdit::Set(items) => {
+            if let Err(e) = validate(items) {
+                return FieldPlan::blocked(e);
+            }
+            if in_sidecar.as_ref() == Some(items) {
+                return unchanged;
+            }
+            (
+                vec![TagOp::Set {
+                    tag: DC_CREATOR.into(),
+                    values: items.clone(),
+                }],
+                vec![Expect::Equals {
+                    tag: DC_CREATOR.into(),
+                    values: items.clone(),
+                }],
+                Some(items.clone()),
+            )
+        }
+        CreatorEdit::Clear => {
+            if let Some(v) = read(raw).effective {
+                return FieldPlan::blocked(format!(
+                    "the RAW file itself holds creator {v:?}; a sidecar can override it but not remove it"
+                ));
+            }
+            if in_sidecar.is_none() {
+                return unchanged;
+            }
+            (
+                vec![TagOp::Delete {
+                    tag: DC_CREATOR.into(),
+                }],
+                vec![Expect::Absent {
+                    tag: DC_CREATOR.into(),
+                }],
+                None,
+            )
+        }
+    };
+    let mut notes = vec!["written to the XMP sidecar; the RAW file is not modified".to_string()];
+    if let Some(v) = read(raw).effective.filter(|v| Some(v) != after.as_ref()) {
+        notes.push(format!(
+            "the RAW file itself keeps {v:?}; programs that ignore sidecars show that value"
+        ));
+    }
+    let kind = match (&before, &after) {
+        (None, Some(_)) => ChangeKind::Add,
+        (Some(_), None) => ChangeKind::Remove,
+        _ => ChangeKind::Modify,
+    };
+    FieldPlan {
+        status: EntryStatus::Ready,
+        change: Some(FieldChange {
+            field: FIELD.into(),
+            before,
+            after,
+            kind,
+        }),
+        ops,
+        expect,
+        notes,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +382,38 @@ mod tests {
         let tags: Vec<&str> = p.ops.iter().map(|o| o.tag()).collect();
         assert_eq!(tags, vec![ARTIST, IPTC_BYLINE, IPTC_DIGEST]);
         assert_eq!(p.change.unwrap().kind, ChangeKind::Remove);
+    }
+
+    #[test]
+    fn sidecar_mode_writes_only_xmp_and_cannot_clear_the_raw() {
+        let raw = snap(json!({"IFD0:Artist": "Camera Owner"}));
+        let t = Target::Sidecar {
+            raw: &raw,
+            sidecar: None,
+        };
+        assert_eq!(read_target(&t).effective, Some(vec!["Camera Owner".into()]));
+        let p = plan_target(&t, &CreatorEdit::Set(vec!["Morii".into()]));
+        assert_eq!(p.status, EntryStatus::Ready);
+        assert_eq!(
+            p.ops.iter().map(|o| o.tag()).collect::<Vec<_>>(),
+            vec![DC_CREATOR]
+        );
+        assert!(p.notes.iter().any(|n| n.contains("keeps")));
+        assert!(matches!(
+            plan_target(&t, &CreatorEdit::Clear).status,
+            EntryStatus::Blocked(_)
+        ));
+        // the sidecar wins when reading; the same value again is no change
+        let side = snap(json!({"XMP-dc:Creator": ["Morii"]}));
+        let t2 = Target::Sidecar {
+            raw: &raw,
+            sidecar: Some(&side),
+        };
+        assert_eq!(read_target(&t2).effective, Some(vec!["Morii".into()]));
+        assert_eq!(
+            plan_target(&t2, &CreatorEdit::Set(vec!["Morii".into()])).status,
+            EntryStatus::NoChange
+        );
     }
 
     #[test]

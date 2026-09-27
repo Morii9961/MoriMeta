@@ -6,7 +6,7 @@ use std::path::Path;
 
 use mm_store::{FileRow, FileState, FileUpdate, OpStatus, Store};
 
-use crate::{CoreError, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
+use crate::{CoreError, ROLE_CREATE, ROLE_RECREATE, ROLE_REMOVE, hash_opt};
 
 #[derive(Debug, Clone)]
 pub struct RecoveredFile {
@@ -80,7 +80,7 @@ fn remove_if_hash(p: &Path, want: Option<&str>) -> bool {
 
 /// The decision table. Never deletes the original path; never overwrites anything.
 pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
-    if f.role == ROLE_RECREATE {
+    if f.role == ROLE_RECREATE || f.role == ROLE_CREATE {
         return decide_recreate(f);
     }
     if f.role == ROLE_REMOVE {

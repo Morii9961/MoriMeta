@@ -196,6 +196,30 @@ impl Engine {
         self.exec(&c, write_timeout(bytes))
     }
 
+    /// `-ex <ops> -o <out>` without a source: a new file (e.g. an XMP sidecar) holding only these
+    /// tags (SAFETY_MODEL §3.1, §4.3). `out` must not exist.
+    pub fn write_new(&mut self, ops: &[TagOp], out: &Path) -> Result<Output, CoreError> {
+        let mut c = Command::write();
+        for op in ops {
+            match op {
+                TagOp::Set { tag: t, values } => {
+                    let t = tag(t)?;
+                    for v in values {
+                        c.push(
+                            Line::assign(&t, v)
+                                .map_err(|e| CoreError::Input(format!("{}: {e}", t.as_str())))?,
+                        );
+                    }
+                }
+                // nothing to delete or digest in a file that does not exist yet
+                TagOp::Delete { .. } | TagOp::UpdateIptcDigest => {}
+            }
+        }
+        c.push(Line::option("-o"));
+        c.push(path_line(out)?);
+        self.exec(&c, write_timeout(0))
+    }
+
     pub fn close(mut self) {
         if let Some(s) = self.session.take() {
             s.close(Duration::from_secs(2));

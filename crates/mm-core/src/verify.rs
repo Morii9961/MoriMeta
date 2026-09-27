@@ -194,7 +194,14 @@ pub fn check_output(
     if !bad.is_empty() {
         return Err(VerifyError::Collateral(bad));
     }
-    // V4: image data unchanged
+    // V4: image data unchanged — an XMP file (sidecar) has none, and must not gain any
+    let is_xmp = |s: &Snapshot| s.text("File:FileType").as_deref() == Some("XMP");
+    if is_xmp(temp)
+        && !temp.contains("File:ImageDataHash")
+        && !source.contains("File:ImageDataHash")
+    {
+        return Ok(());
+    }
     let (hs, ht) = (
         source.text("File:ImageDataHash"),
         temp.text("File:ImageDataHash"),

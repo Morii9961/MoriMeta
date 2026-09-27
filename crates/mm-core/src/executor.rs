@@ -27,8 +27,8 @@ use mm_store::{FileState, FileUpdate, NewFile, NewOperation, OpStatus, Store};
 use crate::engine::Engine;
 use crate::verify::{self, VerifyError};
 use crate::{
-    APP_VERSION, CoreError, ROLE_EMBEDDED, ROLE_RECREATE, ROLE_REMOVE, fingerprint_of_handle,
-    hash_opt, new_id,
+    APP_VERSION, CoreError, ROLE_CREATE, ROLE_EMBEDDED, ROLE_RECREATE, ROLE_REMOVE,
+    fingerprint_of_handle, hash_opt, new_id,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,6 +228,7 @@ pub fn start(
             role: match e.action {
                 Some(EntryAction::Recreate { .. }) => ROLE_RECREATE,
                 Some(EntryAction::MoveToBackupStore { .. }) => ROLE_REMOVE,
+                Some(EntryAction::CreateFile { .. }) => ROLE_CREATE,
                 _ => ROLE_EMBEDDED,
             }
             .into(),
@@ -653,6 +654,9 @@ fn one_file(
     if let Some(EntryAction::MoveToBackupStore { h }) = entry.action.as_ref() {
         return move_to_backup_store(store, op_id, entry, h, f, opts);
     }
+    if let Some(EntryAction::CreateFile { ops, expect }) = entry.action.as_ref() {
+        return create_file(store, engine, op_id, seq, ops, expect, f, opts);
+    }
     fault(opts, seq, 1)?;
     // 1 lock + fingerprint
     let mut lock = match mm_fs::open_lock(&f.path) {
@@ -771,7 +775,11 @@ fn one_file(
             }
             fault(opts, seq, 5)?;
         }
-        Some(EntryAction::Recreate { .. } | EntryAction::MoveToBackupStore { .. }) => {
+        Some(
+            EntryAction::Recreate { .. }
+            | EntryAction::MoveToBackupStore { .. }
+            | EntryAction::CreateFile { .. },
+        ) => {
             return Err(CoreError::Internal(
                 "recreate / move reached the in-place path".into(),
             ));
@@ -1002,6 +1010,72 @@ fn recreate(
     }
     fault(opts, seq, 5)?;
     fault(opts, seq, 6)?;
+    commit_new(store, op_id, seq, f, h1, opts)
+}
+
+/// A new file written from nothing (a new XMP sidecar, SAFETY_MODEL §3.1, §4.3): ExifTool writes
+/// only the planned tags to a registered temporary name next to the path, the output is verified
+/// against an empty source (V1–V3, V5; there is no image data), and it is committed like a
+/// recreate: never replacing a file that has appeared at the path. Fault points 1 and 5–10.
+#[allow(clippy::too_many_arguments)]
+fn create_file(
+    store: &Journal,
+    engine: &mut Engine,
+    op_id: &str,
+    seq: u32,
+    ops: &[mm_domain::plan::TagOp],
+    expect: &[mm_domain::plan::Expect],
+    f: &FilePaths,
+    opts: &ExecOptions,
+) -> Result<Outcome, CoreError> {
+    fault(opts, seq, 1)?;
+    if mm_fs::ensure_absent(&f.path).is_err() {
+        return Ok(Outcome::Conflict(
+            "a file exists at this path now; not created".into(),
+        ));
+    }
+    let out = match engine.write_new(ops, &f.temp) {
+        Ok(o) => o,
+        Err(e) => {
+            remove_if_exists(&f.temp);
+            return Ok(Outcome::Failed(format!("ExifTool: {e}")));
+        }
+    };
+    if let Err(e) = verify::check_write_output(&out) {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Failed(format!("verification V1: {e}")));
+    }
+    if !f.temp.exists() {
+        return Ok(Outcome::Failed("ExifTool produced no output".into()));
+    }
+    fault(opts, seq, 5)?;
+    let reads = engine.read_full(&[f.temp.as_path()])?;
+    let Some(tmp) = reads[0].as_ref() else {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Failed(
+            "verification V5: output not readable".into(),
+        ));
+    };
+    if let Err(e) = verify::check_output(&Snapshot::default(), tmp, ops, expect) {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Failed(format!("verification: {e}")));
+    }
+    mm_fs::flush_path(&f.temp)?;
+    let h1 = mm_fs::hex(&mm_fs::hash_path(&f.temp)?);
+    fault(opts, seq, 6)?;
+    commit_new(store, op_id, seq, f, h1, opts)
+}
+
+/// Commit of a file that did not exist (recreate, create): Ready with its hash, then a rename
+/// that never replaces (I-6), Committed, post-check, Done. Fault points 7–10.
+fn commit_new(
+    store: &Journal,
+    op_id: &str,
+    seq: u32,
+    f: &FilePaths,
+    h1: String,
+    opts: &ExecOptions,
+) -> Result<Outcome, CoreError> {
     store.set_state(
         op_id,
         seq,
@@ -1018,13 +1092,13 @@ fn recreate(
         Err(mm_fs::Win32Error(80 | 183)) => {
             remove_if_exists(&f.temp);
             return Ok(Outcome::Conflict(
-                "a file appeared at this path; not recreated".into(),
+                "a file appeared at this path; nothing written there".into(),
             ));
         }
         Err(code) => {
             remove_if_exists(&f.temp);
             return Ok(Outcome::Failed(format!(
-                "could not recreate the file ({code}); nothing created"
+                "could not put the file in place ({code}); nothing created"
             )));
         }
     }
@@ -1044,7 +1118,7 @@ fn recreate(
     fault(opts, seq, 9)?;
     if hash_opt(&f.path).as_deref() != Some(h1.as_str()) {
         return Ok(Outcome::Attention(
-            "content after recreating differs from the backup".into(),
+            "content after creating differs from the verified output".into(),
         ));
     }
     fault(opts, seq, 10)?;
@@ -1085,8 +1159,13 @@ fn commit_failed(f: &FilePaths, h0: &str, code: mm_fs::Win32Error) -> Outcome {
     ))
 }
 
-/// The field values shown in the Preview must still be the source's values.
+/// The field values shown in the Preview must still be the source's values. A sidecar's Preview
+/// shows values that may come from its RAW, so for XMP targets the fingerprint of the sidecar
+/// (checked under the lock) is what guards against a change since the Preview.
 fn before_matches(entry: &PlanEntry, src: &Snapshot) -> Result<(), VerifyError> {
+    if entry.raw.is_some() || entry.path.to_ascii_lowercase().ends_with(".xmp") {
+        return Ok(());
+    }
     for ch in &entry.changes {
         let now = match ch.field.as_str() {
             creator::FIELD => creator::read(src).effective,

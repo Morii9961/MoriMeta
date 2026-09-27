@@ -14,7 +14,7 @@
 use chrono::{NaiveDate, NaiveDateTime};
 
 use crate::iptc;
-use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp};
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp, Target};
 use crate::snapshot::Snapshot;
 use crate::time::{CaptureTime, SubSec, TimeOpError, parse_offset};
 
@@ -332,6 +332,112 @@ pub fn plan(
     }
 }
 
+/// Effective capture time for a target: for a RAW, the sidecar's XMP time wins over the RAW's own
+/// EXIF time (which a sidecar cannot change).
+pub fn read_target(t: &Target) -> Result<Option<CaptureTime>, String> {
+    match t {
+        Target::Embedded(s) => read(s),
+        Target::Sidecar { raw, sidecar } => {
+            if let Some(sc) = sidecar {
+                for tag in [XMP_DTO, XMP_DATE_CREATED] {
+                    if let Some(v) = sc.text(tag) {
+                        match parse_stamp(&v) {
+                            Some(st) if st.time.is_some() => return Ok(from_stamp(&st)),
+                            Some(_) => {}
+                            None => return Err(format!("sidecar {tag}: unrecognised value {v:?}")),
+                        }
+                    }
+                }
+            }
+            read(raw)
+        }
+    }
+}
+
+pub fn plan_target(
+    t: &Target,
+    after: &Result<CaptureTime, TimeOpError>,
+    keep_subsec: bool,
+    digitized: bool,
+) -> FieldPlan {
+    match t {
+        Target::Embedded(s) => plan(s, after, keep_subsec, digitized),
+        Target::Sidecar { raw, sidecar } => plan_sidecar(raw, *sidecar, after, digitized),
+    }
+}
+
+/// Sidecar mode (METADATA_MODEL §5.3 Sidecar row): `XMP-exif:DateTimeOriginal`,
+/// `XMP-photoshop:DateCreated` and, with "digitized", `XMP-xmp:CreateDate`, each with the new
+/// time in full (fraction and offset as the tool's result has them). The exact tag set is
+/// provisional until the third-party checks of V-07.
+fn plan_sidecar(
+    raw: &Snapshot,
+    sidecar: Option<&Snapshot>,
+    after: &Result<CaptureTime, TimeOpError>,
+    digitized: bool,
+) -> FieldPlan {
+    let before = read_target(&Target::Sidecar { raw, sidecar })
+        .ok()
+        .flatten();
+    let after = match after {
+        Ok(a) => a,
+        Err(TimeOpError::NoValidSourceTime) => {
+            return FieldPlan::blocked(
+                "no valid capture time to start from; only Absolute can be applied".into(),
+            );
+        }
+        Err(TimeOpError::OutOfRange) => {
+            return FieldPlan::blocked("the result is outside years 0001–9999".into());
+        }
+        Err(e) => return FieldPlan::blocked(format!("{e}")),
+    };
+    let value = display(after);
+    let mut ops = Vec::new();
+    let mut expect = Vec::new();
+    let mut tags = vec![XMP_DTO, XMP_DATE_CREATED];
+    if digitized {
+        tags.push(XMP_CREATE);
+    }
+    for tag in tags {
+        if sidecar.and_then(|s| s.text(tag)).as_deref() == Some(value.as_str()) {
+            continue;
+        }
+        ops.push(TagOp::Set {
+            tag: tag.into(),
+            values: vec![value.clone()],
+        });
+        expect.push(Expect::Equals {
+            tag: tag.into(),
+            values: vec![value.clone()],
+        });
+    }
+    if ops.is_empty() {
+        return FieldPlan {
+            status: EntryStatus::NoChange,
+            change: None,
+            ops,
+            expect,
+            notes: vec![],
+        };
+    }
+    FieldPlan {
+        status: EntryStatus::Ready,
+        change: Some(FieldChange {
+            field: FIELD.into(),
+            before: before.as_ref().map(|b| vec![display(b)]),
+            after: Some(vec![value]),
+            kind: if before.is_some() {
+                ChangeKind::Modify
+            } else {
+                ChangeKind::Add
+            },
+        }),
+        ops,
+        expect,
+        notes: vec!["written to the XMP sidecar; the RAW file keeps its own EXIF time".into()],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,6 +553,43 @@ mod tests {
             !q.ops
                 .iter()
                 .any(|o| o.tag() == CREATE || o.tag() == SUBSEC_CREATE)
+        );
+    }
+
+    #[test]
+    fn sidecar_mode_reads_the_sidecar_first_and_writes_xmp_only() {
+        let raw = snap(json!({"ExifIFD:DateTimeOriginal": "2004:06:09 16:02:35",
+            "ExifIFD:OffsetTimeOriginal": "+09:00"}));
+        let t = Target::Sidecar {
+            raw: &raw,
+            sidecar: None,
+        };
+        assert_eq!(
+            display(&read_target(&t).unwrap().unwrap()),
+            "2004:06:09 16:02:35+09:00"
+        );
+        let after = at(ymd_hms(2004, 6, 9, 17, 2, 35), None, Some("+09:00"));
+        let p = plan_target(&t, &Ok(after), true, true);
+        assert_eq!(
+            p.ops.iter().map(|o| o.tag()).collect::<Vec<_>>(),
+            vec![XMP_DTO, XMP_DATE_CREATED, XMP_CREATE]
+        );
+        assert_eq!(value(&p, XMP_DTO), Some("2004:06:09 17:02:35+09:00"));
+        // once written, the sidecar is what is read, and the same time is no change
+        let side = snap(
+            json!({"XMP-exif:DateTimeOriginal": "2004:06:09 17:02:35+09:00",
+            "XMP-photoshop:DateCreated": "2004:06:09 17:02:35+09:00",
+            "XMP-xmp:CreateDate": "2004:06:09 17:02:35+09:00"}),
+        );
+        let t2 = Target::Sidecar {
+            raw: &raw,
+            sidecar: Some(&side),
+        };
+        let now = read_target(&t2).unwrap().unwrap();
+        assert_eq!(display(&now), "2004:06:09 17:02:35+09:00");
+        assert_eq!(
+            plan_target(&t2, &Ok(now), true, true).status,
+            EntryStatus::NoChange
         );
     }
 
