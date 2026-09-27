@@ -1,22 +1,24 @@
-# Progress (2026-09-26)
+# Progress (2026-09-27)
 
-docs/ are **v0.3 drafts** (not approved); evidence in `docs/SPIKE_REPORT.md`; raw results in `research/results/`.
+Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence: `docs/SPIKE_REPORT.md`, `docs/PHASE1_REPORT.md`.
 
 ## Done
 
-- **S0** ExifTool pinned to 13.59; cited findings reproduced by script (F-28 corrected, F-38/F-11 revised); direct `perl.exe exiftool.pl` equivalent to the launcher.
-- **S1** Rust stay_open protocol: 100,000/100,000 exact (`-ex` + JSONQ); injection, forged terminators, crash, hang, stderr flood, orphan prevention pass.
-- **S2** File transaction (NTFS + SMB loopback): lock handle + ReplaceFileW; 90 crash-point cases + 450 random kills, 0 invariant violations; ReplaceFileW is not atomic under process kill (recovered); existing file at bak name is overwritten (guard added).
-- **S3** ExifTool side: explicit mapping over MWG (MWG writes `?` silently); IPTC byte preflight; list-tag + tagsFromFile rule; time-field locations; sidecar preservation; MakerNotes serial behaviour; JUMBF detection; Windows property display; NEF ImageDataHash stable.
-- **S7** Clean Export JPEG: 53 sources, preview removal set = actual 53/53, all outputs pass segment + tag whitelist + ImageDataHash; 4/4 negative controls blocked.
-- **Docs v0.3**: all eight documents revised + SPIKE_REPORT.
-- **Phase 1a foundation** (`crates/`): mm-exiftool, mm-fs, mm-domain — 33 tests, clippy/fmt clean.
+- **Git baseline** + `tools/check_repo.py` (inclusion check) + `docs/REPOSITORY_CHECKLIST.md`, `README.md`, `docs/LICENSE_DECISION.md`.
+- **S0/S1/S2/S3(ExifTool side)/S7**: see SPIKE_REPORT. S2 remains partial (no exFAT, cloud-sync, power loss, real NAS).
+- **Phase 1a/1b**: mm-exiftool, mm-fs, mm-domain, mm-store (SQLite journal), mm-core (planner, verification, transaction, recovery, resume, undo, fsck), mm-cli. JPEG + Creator end to end; crash (20 points + random kills) and injected IO errors (10 steps) all recover; undo byte-identical. 53 tests.
+- **S3/S4 preparation**: `research/s3/compat_corpus.py` + `tests/compat-lab/`; `research/s4/bench.py` + `tests/perf/`.
+- **S5 (automated part)**: `research/spikes/s5-ui` — Tauri 2.12 + React; numbers in SPIKE_REPORT §5a.
 
-## Not done / needs the user
+## Waiting / needs the user
 
-- S3 third-party software (LR Classic 15, Capture One, NX Studio, …), S4 performance on real corpus, S5 UI tech check, S6 packaging/updater rehearsal.
-- exFAT, cloud-sync folders, power-loss (VM) testing.
-- Decisions: D-1 license, D-2 signing route, D-15 privacy scope, D-16, D-17, D-18 (see docs/DEVELOPMENT_PLAN.md §8).
-- Design: three visual directions for selection (Design Brief §21) before any product UI.
+- Design session files (`docs/DESIGN.md`, `DESIGN_SYSTEM.md`, `SCREEN_SPEC.md`, `INTERACTION_SPEC.md`): not touched, not committed; review against the architecture after handoff.
+- Decisions: D-1 license + repository owner (then public repo), D-2 signing, D-15 (interim direction (c)), D-18 (after S3 third-party results).
+- Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, exFAT media, a safe cloud-sync folder.
+- Commit identity for the public push (docs/REPOSITORY_CHECKLIST.md P-3).
 
-Toolchain: Rust 1.98.1 `x86_64-pc-windows-gnu`, per-user, PATH not modified: `%USERPROFILE%\.cargo\bin\cargo`.
+## Next engineering steps (no design dependency)
+
+- Worker pool + per-volume IO limits (ARCHITECTURE §7.5/§8), then S4 on real data.
+- Journal failure / real disk-full tests; manifest-only recovery; undo when the file was moved.
+- Time tools (Absolute/Shift/Sequence/Preserve) through the same Plan/transaction path.

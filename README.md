@@ -40,6 +40,19 @@ cargo test --workspace
 
 Integration tests that need ExifTool are skipped when it has not been fetched.
 
+The journal uses SQLite (bundled). With the MSVC toolchain nothing else is needed; with the GNU
+toolchain (`x86_64-pc-windows-gnu`) a MinGW `gcc` must be on `PATH` to compile it.
+
+`mm-cli` is a development driver for the core (not the product):
+
+```text
+cargo run --release -p mm-cli -- --data <dir> --exiftool <pinned ExifTool folder> plan-creator --set "Name" --out plan.json <photos...>
+cargo run --release -p mm-cli -- --data <dir> --exiftool <folder> apply plan.json
+cargo run --release -p mm-cli -- --data <dir> --exiftool <folder> plan-undo <op-id> --out undo.json
+```
+
+Only work on copies of photos: this is pre-alpha software.
+
 ## License
 
 Not chosen yet. MoriMeta will be released as open source; the choice between Apache-2.0 and GPL-3.0-or-later (or a combination) is pending ([`docs/LICENSE_DECISION.md`](docs/LICENSE_DECISION.md)). Until a `LICENSE` file is added, no license is granted.
