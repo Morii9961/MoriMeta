@@ -123,17 +123,22 @@ impl Lab {
     fn new(name: &str, pkg: &Path) -> Lab {
         let dir = std::env::temp_dir().join(format!("mm-e2e-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        Lab::at(pkg, dir.clone(), dir.join("photos"), dir.join("data"))
+        Lab::at(pkg, dir.clone(), dir.join("photos"), dir.join("data"), 1)
     }
 
     /// Photos and application data in chosen places (e.g. on a small test volume).
-    fn at(pkg: &Path, dir: PathBuf, photo_dir: PathBuf, data: PathBuf) -> Lab {
+    /// `copies` of every fixture (named `<n>-<fixture>` when more than one).
+    fn at(pkg: &Path, dir: PathBuf, photo_dir: PathBuf, data: PathBuf, copies: usize) -> Lab {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(&photo_dir).unwrap();
         let mut photos = Vec::new();
         let mut truth = BTreeMap::new();
-        for s in SAMPLES {
-            let p = photo_dir.join(s);
+        for (c, s) in (0..copies).flat_map(|c| SAMPLES.iter().map(move |s| (c, s))) {
+            let p = if copies == 1 {
+                photo_dir.join(s)
+            } else {
+                photo_dir.join(format!("{c}-{s}"))
+            };
             let src = timages().join(s);
             let want = FIXTURE_BLAKE3.iter().find(|(n, _)| n == s).unwrap().1;
             assert_eq!(
@@ -152,6 +157,18 @@ impl Lab {
             photos,
             truth,
         }
+    }
+
+    fn many(name: &str, pkg: &Path, copies: usize) -> Lab {
+        let dir = std::env::temp_dir().join(format!("mm-e2e-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        Lab::at(
+            pkg,
+            dir.clone(),
+            dir.join("photos"),
+            dir.join("data"),
+            copies,
+        )
     }
 
     /// Current content hash of every photo (the pre-images of the next Operation).
@@ -381,6 +398,9 @@ fn crash_at_every_step_recovers_resumes_and_undoes() {
         for step in 1u8..=10 {
             let lab = Lab::new(&format!("crash-{seq}-{step}"), &pkg);
             let plan = lab.plan("Morii", "p.json");
+            // planned while every path exists: with parallel workers the crash can land inside
+            // another file's ReplaceFileW (original only under its bak name until recovery)
+            let other = lab.plan("Someone", "p-other.json");
             let o = lab.cli_env(
                 &[
                     "apply",
@@ -399,7 +419,6 @@ fn crash_at_every_step_recovers_resumes_and_undoes() {
             let op = lab.last_op();
             lab.assert_preimages(&op);
             // no new write may start while recovery is pending
-            let other = lab.plan("Someone", "p-other.json");
             let refused = lab.cli(&["apply", other.to_str().unwrap()]);
             assert!(
                 !refused.status.success()
@@ -842,12 +861,15 @@ fn disk_full_pauses_the_operation_and_resume_completes_it() {
         let case = format!("disk full at 2:{step}");
         let lab = Lab::new(&format!("diskfull-{step}"), &pkg);
         let plan = lab.plan("Morii", "p.json");
+        // one worker: the exact "this file and every later one" pattern needs sequential order
         let o = lab.cli_env(
             &[
                 "apply",
                 plan.to_str().unwrap(),
                 "--disk-full-at",
                 &format!("2:{step}"),
+                "--workers",
+                "1",
             ],
             true,
         );
@@ -949,7 +971,7 @@ fn real_disk_full_on_small_volume() {
         } else {
             (base.join("photos"), on_small.join("data"))
         };
-        let lab = Lab::at(&pkg, base.clone(), photos, data);
+        let lab = Lab::at(&pkg, base.clone(), photos, data, 1);
         let plan = lab.plan("Morii", "p.json");
         let o = lab.cli_env(
             &[
@@ -1153,7 +1175,14 @@ fn resume_journal_failure_leaves_operation_recoverable() {
     let lab = Lab::new("resume-journal", &pkg);
     let plan = lab.plan("Morii", "p.json");
     let o = lab.cli_env(
-        &["apply", plan.to_str().unwrap(), "--disk-full-at", "2:4"],
+        &[
+            "apply",
+            plan.to_str().unwrap(),
+            "--disk-full-at",
+            "2:4",
+            "--workers",
+            "1",
+        ],
         true,
     );
     let op = Lab::json(&o)["op_id"].as_str().unwrap().to_owned();
@@ -1668,6 +1697,8 @@ fn journal_rebuilt_after_crash_and_database_loss_recovers() {
         let case = format!("crash at 2:{step} mid_replace {mid_replace}, database lost");
         let lab = Lab::new(&format!("rebuild-crash-{step}-{mid_replace}"), &pkg);
         let plan = lab.plan("Morii", "p.json");
+        // planned while every path exists (a parallel crash can leave one inside ReplaceFileW)
+        let other = lab.plan("Someone", "p-other.json");
         let o = lab.cli_env(
             &[
                 "apply",
@@ -1679,7 +1710,6 @@ fn journal_rebuilt_after_crash_and_database_loss_recovers() {
         );
         assert_eq!(o.status.code(), Some(77), "{case}");
         let op = lab.last_op();
-        let other = lab.plan("Someone", "p-other.json"); // while every path still exists
         if mid_replace {
             let show = lab.show(&op);
             let row = show["files"]
@@ -1911,6 +1941,121 @@ fn copyright_crash_recovers_and_resumes() {
                 .iter()
                 .all(|c| c["value"] == "© Morii 2026"),
             "step {step}"
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// Worker pool (ARCHITECTURE §7.5, §8): random termination while four file transactions run at
+/// the same time (24 files), so several files are in the middle of their transaction when the
+/// process dies. The same invariants as with one worker must hold.
+#[test]
+fn random_kills_with_four_workers_recover() {
+    let pkg = require!();
+    let iterations: u64 = std::env::var("MM_E2E_KILLS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let mut rng: u64 = 0x2026_0929;
+    for i in 0..iterations {
+        let lab = Lab::many(&format!("pkill-{i}"), &pkg, 3);
+        let plan = lab.plan("Morii", "p.json");
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let delay = Duration::from_millis(100 + (rng >> 33) % 1500);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+            .arg("--data")
+            .arg(&lab.data)
+            .arg("--exiftool")
+            .arg(&lab.pkg)
+            .args(["--workers", "4", "apply", plan.to_str().unwrap()])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(delay);
+        let _ = child.kill();
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(100));
+        let h = Lab::json(&lab.cli(&["history"]));
+        let Some(op) = h
+            .as_array()
+            .unwrap()
+            .last()
+            .map(|o| o["id"].as_str().unwrap().to_owned())
+        else {
+            lab.assert_all_original();
+            continue;
+        };
+        lab.assert_preimages(&op);
+        assert!(lab.cli(&["recover"]).status.success(), "kill {i}");
+        lab.assert_recovered(&op);
+        let res = lab.cli(&["--workers", "4", "resume", &op]);
+        assert!(
+            res.status.success(),
+            "kill {i}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(
+            creators(&lab)
+                .iter()
+                .all(|c| c == &serde_json::json!(["Morii"])),
+            "kill {i}"
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// With four workers a full volume stops new files; files already in flight finish. Every file
+/// ends done or cancelled (original unchanged), and resume completes the rest.
+#[test]
+fn disk_full_with_four_workers_pauses_and_resumes() {
+    let pkg = require!();
+    for step in [2u8, 4, 7] {
+        let case = format!("disk full at 5:{step}, four workers");
+        let lab = Lab::many(&format!("pdiskfull-{step}"), &pkg, 3);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--disk-full-at",
+                &format!("5:{step}"),
+                "--workers",
+                "4",
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(3), "{case}");
+        let r = Lab::json(&o);
+        let op = r["op_id"].as_str().unwrap().to_owned();
+        assert_eq!(r["status"], "cancelled", "{case}: {r}");
+        assert_eq!(state_of(&r, 5), "cancelled", "{case}: {r}");
+        for f in r["files"].as_array().unwrap() {
+            let st = f["state"].as_str().unwrap();
+            assert!(st == "done" || st == "cancelled", "{case}: {f}");
+            if st == "cancelled" {
+                let p = PathBuf::from(f["path"].as_str().unwrap());
+                assert_eq!(blake(&p).as_deref(), Some(lab.truth[&p].as_str()), "{case}");
+            }
+        }
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        let res = lab.cli(&["--workers", "4", "resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(
+            creators(&lab)
+                .iter()
+                .all(|c| c == &serde_json::json!(["Morii"])),
+            "{case}"
         );
         lab.undo(&op);
         lab.assert_all_original();

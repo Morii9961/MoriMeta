@@ -12,10 +12,11 @@
 //! the recovery table, it and every later file become `Cancelled` (original unchanged, retried
 //! by resume once space is freed), and the Operation ends `Cancelled`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::File;
 use std::io::Seek;
 use std::path::{Path, PathBuf};
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use mm_domain::plan::{EntryAction, Plan, PlanEntry, PlanKind};
@@ -178,6 +179,14 @@ fn names(
     ))
 }
 
+/// The ExifTool version of the engines (all the same program).
+fn engine_version(engines: &[Engine]) -> Result<String, CoreError> {
+    engines
+        .first()
+        .map(|e| e.version().to_owned())
+        .ok_or_else(|| CoreError::Internal("no ExifTool engine".into()))
+}
+
 /// Refuse to write while an interrupted Operation awaits recovery (SAFETY_MODEL §10).
 pub fn require_no_pending_recovery(store: &Store) -> Result<(), CoreError> {
     let pending = store.unfinished()?;
@@ -191,16 +200,16 @@ pub fn require_no_pending_recovery(store: &Store) -> Result<(), CoreError> {
 /// Start an Operation for every executable entry of `plan`.
 pub fn start(
     store: &mut Store,
-    engine: &mut Engine,
+    engines: &mut [Engine],
     plan: &Plan,
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
-    if plan.exiftool_version != engine.version() {
+    let version = engine_version(engines)?;
+    if plan.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
-            "plan made with ExifTool {}, running {}",
+            "plan made with ExifTool {}, running {version}",
             plan.exiftool_version,
-            engine.version()
         )));
     }
     check_space(
@@ -239,34 +248,32 @@ pub fn start(
             plan_json: serde_json::to_string(plan)
                 .map_err(|e| CoreError::Internal(e.to_string()))?,
             app_version: APP_VERSION.into(),
-            exiftool_version: engine.version().into(),
+            exiftool_version: version.clone(),
             registry_version: plan.registry_version,
             undo_of,
         },
         &files,
     )?;
     let seqs: Vec<u32> = files.iter().map(|f| f.seq).collect();
-    run(store, engine, &op_id, plan, &seqs, opts)
+    run(store, engines, &op_id, plan, &seqs, opts)
 }
 
 /// Continue an Operation after recovery or cancellation: retry every file in `not_started`.
 pub fn resume(
     store: &mut Store,
-    engine: &mut Engine,
+    engines: &mut [Engine],
     op_id: &str,
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
+    let version = engine_version(engines)?;
     let op = store
         .operation(op_id)?
         .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
-    if op.app_version != APP_VERSION || op.exiftool_version != engine.version() {
+    if op.app_version != APP_VERSION || op.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
             "operation made with app {} / ExifTool {}; running {} / {} — undo it or plan again",
-            op.app_version,
-            op.exiftool_version,
-            APP_VERSION,
-            engine.version()
+            op.app_version, op.exiftool_version, APP_VERSION, version
         )));
     }
     let plan: Plan = serde_json::from_str(&op.plan_json)
@@ -299,132 +306,204 @@ pub fn resume(
         )?;
         seqs.push(f.seq);
     }
-    run(store, engine, op_id, &plan, &seqs, opts)
+    run(store, engines, op_id, &plan, &seqs, opts)
 }
 
+/// The Journal shared by the workers: one SQLite connection, one writer at a time. Every write
+/// still returns only after SQLite has committed it (I-8); the workers only wait for each other.
+struct Journal<'s>(Mutex<&'s mut Store>);
+
+impl<'s> Journal<'s> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, &'s mut Store> {
+        // a worker that panicked cannot leave SQLite half-written: every write is a transaction
+        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn set_state(
+        &self,
+        op_id: &str,
+        seq: u32,
+        state: FileState,
+        u: &FileUpdate,
+    ) -> mm_store::Result<()> {
+        self.lock().set_state(op_id, seq, state, u)
+    }
+
+    fn row(&self, op_id: &str, seq: u32) -> Result<mm_store::FileRow, CoreError> {
+        self.lock()
+            .files(op_id)?
+            .into_iter()
+            .find(|r| r.seq == seq)
+            .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))
+    }
+}
+
+/// Per-volume IO permits (ARCHITECTURE §8.2): a file holds the permit of its volume for its whole
+/// transaction, so an HDD or removable volume is written one file at a time whatever the number
+/// of workers.
+#[derive(Default)]
+struct VolumeGate {
+    state: Mutex<HashMap<PathBuf, (usize, usize)>>,
+    freed: Condvar,
+}
+
+struct Permit<'g> {
+    gate: &'g VolumeGate,
+    root: PathBuf,
+}
+
+impl VolumeGate {
+    fn acquire(&self, path: &Path) -> Permit<'_> {
+        let root = mm_fs::volume_root(path).unwrap_or_default();
+        let mut s = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            let e = s.entry(root.clone()).or_insert_with(|| {
+                let limit = if root.as_os_str().is_empty() {
+                    1
+                } else {
+                    mm_fs::volume_kind(&root).io_limit()
+                };
+                (0, limit)
+            });
+            if e.0 < e.1 {
+                e.0 += 1;
+                return Permit { gate: self, root };
+            }
+            s = self.freed.wait(s).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+}
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        let mut s = self.gate.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(e) = s.get_mut(&self.root) {
+            e.0 -= 1;
+        }
+        self.gate.freed.notify_all();
+    }
+}
+
+/// Work shared by the workers: the files not yet started, the circuit breaker (SAFETY_MODEL
+/// §8.16, counted in completion order) and the first fatal (journal) error.
+struct Sched {
+    queue: VecDeque<u32>,
+    completed: usize,
+    failures_first20: usize,
+    consecutive_verify_failures: usize,
+    tripped: Option<String>,
+    fatal: Option<CoreError>,
+}
+
+/// What became of one file.
+struct Settled {
+    state: FileState,
+    verify_fail: bool,
+    /// Stop starting new files (a full volume).
+    stop: Option<String>,
+}
+
+impl Sched {
+    fn record(&mut self, s: &Settled) {
+        let n = self.completed;
+        self.completed += 1;
+        if n < 20 && s.state == FileState::Failed {
+            self.failures_first20 += 1;
+        }
+        self.consecutive_verify_failures = if s.verify_fail {
+            self.consecutive_verify_failures + 1
+        } else {
+            0
+        };
+        if let Some(why) = &s.stop {
+            self.tripped = Some(why.clone());
+        }
+        let sample = (n + 1).min(20);
+        if (sample >= 4 && self.failures_first20 * 2 >= sample && n < 20)
+            || self.consecutive_verify_failures >= 10
+        {
+            self.tripped = Some(
+                "stopped: too many failures (circuit breaker); check ExifTool and the files".into(),
+            );
+        }
+    }
+}
+
+/// Run the file transactions of `seqs` on one worker per engine (ARCHITECTURE §7.5, §8). Files are
+/// started in `seqs` order; once the Operation is stopped (full volume, circuit breaker) files not
+/// yet started become Cancelled and files in progress finish. A journal error stops every worker
+/// and leaves the Operation `running` for recovery.
 fn run(
     store: &mut Store,
-    engine: &mut Engine,
+    engines: &mut [Engine],
     op_id: &str,
     plan: &Plan,
     seqs: &[u32],
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     let rows = store.files(op_id)?;
-    let mut failures_first20 = 0usize;
-    let mut consecutive_verify_failures = 0usize;
-    let mut tripped: Option<String> = None;
-    for (n, seq) in seqs.iter().enumerate() {
-        let row = rows
-            .iter()
-            .find(|r| r.seq == *seq)
-            .cloned()
-            .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))?;
-        if tripped.is_some() {
-            store.set_state(
-                op_id,
-                *seq,
-                FileState::Cancelled,
-                &FileUpdate {
-                    error: tripped.clone(),
-                    ..Default::default()
-                },
-            )?;
-            continue;
-        }
-        let entry = plan
-            .entries
-            .iter()
-            .find(|e| e.seq == *seq)
-            .ok_or_else(|| CoreError::Internal(format!("missing plan entry {seq}")))?;
-        let files = FilePaths {
-            path: PathBuf::from(&row.path),
-            temp: PathBuf::from(&row.temp_path),
-            bak: PathBuf::from(&row.bak_path),
-            backup: PathBuf::from(&row.backup_path),
-        };
-        let outcome = match one_file(store, engine, op_id, entry, &files, opts) {
-            Ok(o) => o,
-            // An error in the middle of the transaction (IO, engine, journal): the lock is released;
-            // settle this file from the journal and the disk with the recovery table (SAFETY_MODEL §10).
-            // If the journal itself is failing, `?` stops the Operation in `running` state so that
-            // recovery handles it at the next start.
-            Err(e) => {
-                let now = store
-                    .files(op_id)?
-                    .into_iter()
-                    .find(|r| r.seq == *seq)
-                    .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))?;
-                let (to, action) = crate::recovery::decide(&now);
-                if e.is_disk_full() {
-                    tripped = Some(DISK_FULL_STOP.into()); // whatever became of this file
-                }
-                match to {
-                    FileState::NotStarted if e.is_disk_full() => {
-                        Outcome::DiskFull(format!("{e}; original unchanged"))
+    let journal = Journal(Mutex::new(store));
+    let gate = VolumeGate::default();
+    let sched = Mutex::new(Sched {
+        queue: seqs.iter().copied().collect(),
+        completed: 0,
+        failures_first20: 0,
+        consecutive_verify_failures: 0,
+        tripped: None,
+        fatal: None,
+    });
+    let lock = || sched.lock().unwrap_or_else(|p| p.into_inner());
+    std::thread::scope(|scope| {
+        for engine in engines.iter_mut() {
+            let (journal, gate, rows) = (&journal, &gate, &rows);
+            scope.spawn(move || {
+                loop {
+                    let next = {
+                        let mut s = lock();
+                        if s.fatal.is_some() {
+                            return;
+                        }
+                        s.queue.pop_front().map(|q| (q, s.tripped.clone()))
+                    };
+                    let Some((seq, tripped)) = next else {
+                        return;
+                    };
+                    let r = match tripped {
+                        Some(why) => journal
+                            .set_state(
+                                op_id,
+                                seq,
+                                FileState::Cancelled,
+                                &FileUpdate {
+                                    error: Some(why),
+                                    ..Default::default()
+                                },
+                            )
+                            .map(|()| None)
+                            .map_err(CoreError::from),
+                        None => {
+                            settle(journal, gate, engine, op_id, plan, rows, seq, opts).map(Some)
+                        }
+                    };
+                    let mut s = lock();
+                    match r {
+                        Ok(Some(settled)) => s.record(&settled),
+                        Ok(None) => {}
+                        Err(e) => {
+                            s.fatal.get_or_insert(e);
+                            return;
+                        }
                     }
-                    FileState::NotStarted => Outcome::Failed(format!("{e}; original unchanged")),
-                    FileState::Done => {
-                        // keep the error visible: the commit was confirmed from the disk, not
-                        // from a complete journal
-                        store.set_state(
-                            op_id,
-                            *seq,
-                            FileState::Done,
-                            &FileUpdate {
-                                error: Some(format!("{e}; commit confirmed on disk")),
-                                ..Default::default()
-                            },
-                        )?;
-                        Outcome::Done
-                    }
-                    _ => Outcome::Attention(format!("{e}; {action}")),
                 }
-            }
-        };
-        let (state, reason, verify_fail) = match outcome {
-            Outcome::Done => (FileState::Done, None, false),
-            Outcome::Failed(r) => {
-                let v = r.starts_with("verification");
-                (FileState::Failed, Some(r), v)
-            }
-            Outcome::Skipped(r) => (FileState::Skipped, Some(r), false),
-            Outcome::Conflict(r) => (FileState::Conflict, Some(r), false),
-            Outcome::Attention(r) => (FileState::Attention, Some(r), false),
-            Outcome::DiskFull(r) => {
-                tripped = Some(DISK_FULL_STOP.into());
-                (FileState::Cancelled, Some(r), false)
-            }
-        };
-        if state != FileState::Done {
-            store.set_state(
-                op_id,
-                *seq,
-                state,
-                &FileUpdate {
-                    error: reason,
-                    ..Default::default()
-                },
-            )?;
+            });
         }
-        // circuit breaker (SAFETY_MODEL §8.16)
-        if n < 20 && state == FileState::Failed {
-            failures_first20 += 1;
-        }
-        consecutive_verify_failures = if verify_fail {
-            consecutive_verify_failures + 1
-        } else {
-            0
-        };
-        let sample = (n + 1).min(20);
-        if (sample >= 4 && failures_first20 * 2 >= sample && n < 20)
-            || consecutive_verify_failures >= 10
-        {
-            tripped = Some(
-                "stopped: too many failures (circuit breaker); check ExifTool and the files".into(),
-            );
-        }
+    });
+    let sched = sched.into_inner().unwrap_or_else(|p| p.into_inner());
+    if let Some(e) = sched.fatal {
+        return Err(e);
     }
+    let store = journal.0.into_inner().unwrap_or_else(|p| p.into_inner());
+    let tripped = sched.tripped;
     let files = store.files(op_id)?;
     let status = if tripped.is_some() {
         OpStatus::Cancelled
@@ -450,6 +529,104 @@ fn run(
     })
 }
 
+/// One file's transaction under its volume permit, settled into a terminal journal state.
+#[allow(clippy::too_many_arguments)]
+fn settle(
+    journal: &Journal,
+    gate: &VolumeGate,
+    engine: &mut Engine,
+    op_id: &str,
+    plan: &Plan,
+    rows: &[mm_store::FileRow],
+    seq: u32,
+    opts: &ExecOptions,
+) -> Result<Settled, CoreError> {
+    let row = rows
+        .iter()
+        .find(|r| r.seq == seq)
+        .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))?;
+    let entry = plan
+        .entries
+        .iter()
+        .find(|e| e.seq == seq)
+        .ok_or_else(|| CoreError::Internal(format!("missing plan entry {seq}")))?;
+    let files = FilePaths {
+        path: PathBuf::from(&row.path),
+        temp: PathBuf::from(&row.temp_path),
+        bak: PathBuf::from(&row.bak_path),
+        backup: PathBuf::from(&row.backup_path),
+    };
+    let permit = gate.acquire(&files.path);
+    let result = one_file(journal, engine, op_id, entry, &files, opts);
+    drop(permit);
+    let mut stop = None;
+    let outcome = match result {
+        Ok(o) => o,
+        // An error in the middle of the transaction (IO, engine, journal): the lock is released;
+        // settle this file from the journal and the disk with the recovery table (SAFETY_MODEL §10).
+        // If the journal itself is failing, `?` stops the Operation in `running` state so that
+        // recovery handles it at the next start.
+        Err(e) => {
+            let now = journal.row(op_id, seq)?;
+            let (to, action) = crate::recovery::decide(&now);
+            if e.is_disk_full() {
+                stop = Some(DISK_FULL_STOP.to_string()); // whatever became of this file
+            }
+            match to {
+                FileState::NotStarted if e.is_disk_full() => {
+                    Outcome::DiskFull(format!("{e}; original unchanged"))
+                }
+                FileState::NotStarted => Outcome::Failed(format!("{e}; original unchanged")),
+                FileState::Done => {
+                    // keep the error visible: the commit was confirmed from the disk, not
+                    // from a complete journal
+                    journal.set_state(
+                        op_id,
+                        seq,
+                        FileState::Done,
+                        &FileUpdate {
+                            error: Some(format!("{e}; commit confirmed on disk")),
+                            ..Default::default()
+                        },
+                    )?;
+                    Outcome::Done
+                }
+                _ => Outcome::Attention(format!("{e}; {action}")),
+            }
+        }
+    };
+    let (state, reason, verify_fail) = match outcome {
+        Outcome::Done => (FileState::Done, None, false),
+        Outcome::Failed(r) => {
+            let v = r.starts_with("verification");
+            (FileState::Failed, Some(r), v)
+        }
+        Outcome::Skipped(r) => (FileState::Skipped, Some(r), false),
+        Outcome::Conflict(r) => (FileState::Conflict, Some(r), false),
+        Outcome::Attention(r) => (FileState::Attention, Some(r), false),
+        Outcome::DiskFull(r) => {
+            stop = Some(DISK_FULL_STOP.into());
+            (FileState::Cancelled, Some(r), false)
+        }
+    };
+    if state != FileState::Done {
+        journal.set_state(
+            op_id,
+            seq,
+            state,
+            &FileUpdate {
+                error: reason,
+                ..Default::default()
+            },
+        )?;
+    }
+    Ok(Settled {
+        state,
+        verify_fail,
+        stop,
+    })
+}
+
 struct FilePaths {
     path: PathBuf,
     temp: PathBuf,
@@ -462,7 +639,7 @@ fn remove_if_exists(p: &Path) {
 }
 
 fn one_file(
-    store: &mut Store,
+    store: &Journal,
     engine: &mut Engine,
     op_id: &str,
     entry: &PlanEntry,
@@ -675,7 +852,7 @@ fn one_file(
 /// to its registered bak name (the commit) and the bak removed after a hash check (I-9). Fault
 /// points 1–4 and 7–10 as in the file header.
 fn move_to_backup_store(
-    store: &mut Store,
+    store: &Journal,
     op_id: &str,
     entry: &PlanEntry,
     want: &str,
@@ -785,7 +962,7 @@ fn move_to_backup_store(
 /// is copied next to the path, recorded as Ready, then renamed onto the path without ever
 /// replacing a file that has appeared there. Fault points 1 and 5–10 as in the file header.
 fn recreate(
-    store: &mut Store,
+    store: &Journal,
     op_id: &str,
     seq: u32,
     backup: &Path,
@@ -929,4 +1106,71 @@ fn before_matches(entry: &PlanEntry, src: &Snapshot) -> Result<(), VerifyError> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn volume_gate_caps_concurrency_at_the_volume_limit() {
+        let path = std::env::temp_dir().join("any.jpg");
+        let root = mm_fs::volume_root(&path).unwrap();
+        let limit = mm_fs::volume_kind(&root).io_limit();
+        let gate = VolumeGate::default();
+        let mut held: Vec<Permit<'_>> = (0..limit).map(|_| gate.acquire(&path)).collect();
+        let got_one_more = AtomicBool::new(false);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let _p = gate.acquire(&path);
+                got_one_more.store(true, Ordering::SeqCst);
+            });
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(
+                !got_one_more.load(Ordering::SeqCst),
+                "a permit beyond the limit {limit} was granted"
+            );
+            held.pop(); // one transaction finishes
+            for _ in 0..50 {
+                if got_one_more.load(Ordering::SeqCst) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(
+                got_one_more.load(Ordering::SeqCst),
+                "the freed permit was not handed on"
+            );
+        });
+    }
+
+    #[test]
+    fn circuit_breaker_counts_in_completion_order() {
+        let mut s = Sched {
+            queue: VecDeque::new(),
+            completed: 0,
+            failures_first20: 0,
+            consecutive_verify_failures: 0,
+            tripped: None,
+            fatal: None,
+        };
+        let failed = Settled {
+            state: FileState::Failed,
+            verify_fail: false,
+            stop: None,
+        };
+        let done = Settled {
+            state: FileState::Done,
+            verify_fail: false,
+            stop: None,
+        };
+        for x in [&done, &failed, &done] {
+            s.record(x);
+        }
+        assert!(s.tripped.is_none()); // fewer than 4 samples
+        s.record(&failed); // 2 of 4 failed
+        assert!(s.tripped.is_some());
+    }
 }

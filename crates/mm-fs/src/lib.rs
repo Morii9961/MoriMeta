@@ -14,8 +14,9 @@ use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, GetLastError, 
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo,
-    FlushFileBuffers, GetDiskFreeSpaceExW, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
+    FlushFileBuffers, GetDiskFreeSpaceExW, GetDriveTypeW, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -281,6 +282,130 @@ pub fn volume_space(dir: &Path) -> io::Result<VolumeSpace> {
     Ok(VolumeSpace { free, total })
 }
 
+/// The mount point of the volume holding `p` (`C:\`, `\\server\share\`, or a mounted folder),
+/// as returned by GetVolumePathNameW with the verbatim prefix removed.
+pub fn volume_root(p: &Path) -> io::Result<PathBuf> {
+    let w = wide(p);
+    let mut buf = vec![0u16; 32_768];
+    // SAFETY: `w` is NUL-terminated; `buf` is writable for the length passed.
+    let ok = unsafe { GetVolumePathNameW(w.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let s = String::from_utf16_lossy(&buf[..n]);
+    let s = if let Some(r) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{r}")
+    } else if let Some(r) = s.strip_prefix(r"\\?\") {
+        r.to_owned()
+    } else {
+        s
+    };
+    Ok(PathBuf::from(s))
+}
+
+/// Storage class of a volume, for per-volume IO concurrency (ARCHITECTURE §8.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VolumeKind {
+    Ssd,
+    Hdd,
+    Network,
+    Removable,
+    /// Could not be determined: treated like an HDD.
+    Unknown,
+}
+
+impl VolumeKind {
+    /// Concurrent file transactions allowed on one volume of this kind.
+    pub fn io_limit(self) -> usize {
+        match self {
+            VolumeKind::Ssd => 4,
+            VolumeKind::Network => 2,
+            VolumeKind::Hdd | VolumeKind::Removable | VolumeKind::Unknown => 1,
+        }
+    }
+}
+
+/// Classify the volume whose mount point is `root` (from [`volume_root`]). A local fixed disk is
+/// an SSD only if the storage driver reports no seek penalty.
+pub fn volume_kind(root: &Path) -> VolumeKind {
+    const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_FIXED: u32 = 3;
+    const DRIVE_REMOTE: u32 = 4;
+    let mut w = wide(root);
+    w.pop();
+    if w.last() != Some(&(b'\\' as u16)) {
+        w.push(b'\\' as u16);
+    }
+    w.push(0);
+    // SAFETY: NUL-terminated wide string.
+    match unsafe { GetDriveTypeW(w.as_ptr()) } {
+        DRIVE_REMOTE => VolumeKind::Network,
+        DRIVE_REMOVABLE => VolumeKind::Removable,
+        DRIVE_FIXED => match seek_penalty(root) {
+            Some(false) => VolumeKind::Ssd,
+            Some(true) => VolumeKind::Hdd,
+            None => VolumeKind::Unknown,
+        },
+        _ => VolumeKind::Unknown,
+    }
+}
+
+/// IOCTL_STORAGE_QUERY_PROPERTY(StorageDeviceSeekPenaltyProperty) on `\\.\X:` (no access rights
+/// needed). None when the volume has no drive letter or the driver does not answer.
+fn seek_penalty(root: &Path) -> Option<bool> {
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, OPEN_EXISTING};
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::{
+        DEVICE_SEEK_PENALTY_DESCRIPTOR, IOCTL_STORAGE_QUERY_PROPERTY, PropertyStandardQuery,
+        STORAGE_PROPERTY_QUERY, StorageDeviceSeekPenaltyProperty,
+    };
+    let s = root.to_string_lossy();
+    let letter = s.chars().next().filter(|c| c.is_ascii_alphabetic())?;
+    if !s[1..].starts_with(':') {
+        return None;
+    }
+    let dev: Vec<u16> = format!(r"\\.\{letter}:")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: plain Win32 calls; the handle is closed before returning; buffers outlive the call.
+    unsafe {
+        let h = CreateFileW(
+            dev.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+        if h == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let query = STORAGE_PROPERTY_QUERY {
+            PropertyId: StorageDeviceSeekPenaltyProperty,
+            QueryType: PropertyStandardQuery,
+            AdditionalParameters: [0],
+        };
+        let mut out: DEVICE_SEEK_PENALTY_DESCRIPTOR = std::mem::zeroed();
+        let mut got = 0u32;
+        let ok = DeviceIoControl(
+            h,
+            IOCTL_STORAGE_QUERY_PROPERTY,
+            &query as *const _ as *const _,
+            std::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32,
+            &mut out as *mut _ as *mut _,
+            std::mem::size_of::<DEVICE_SEEK_PENALTY_DESCRIPTOR>() as u32,
+            &mut got,
+            std::ptr::null_mut(),
+        );
+        windows_sys::Win32::Foundation::CloseHandle(h);
+        (ok != 0 && got as usize >= std::mem::size_of::<DEVICE_SEEK_PENALTY_DESCRIPTOR>())
+            .then_some(out.IncursSeekPenalty)
+    }
+}
+
 /// Largest volume [`fill_volume`] agrees to fill.
 pub const FILL_MAX_VOLUME: u64 = 2 << 30;
 
@@ -464,6 +589,21 @@ mod tests {
         assert_eq!(w("C:/a/b.jpg"), r"\\?\C:\a\b.jpg");
         assert_eq!(w(r"\\nas\share\x.jpg"), r"\\?\UNC\nas\share\x.jpg");
         assert_eq!(w(r"\\?\C:\x"), r"\\?\C:\x");
+    }
+
+    #[test]
+    fn volume_root_and_kind_of_a_local_folder() {
+        let d = dir("vol");
+        let root = volume_root(&d.join("x.jpg")).unwrap();
+        assert!(d.starts_with(&root), "{} / {}", d.display(), root.display());
+        // a local fixed disk: SSD or HDD when the driver answers; never network or removable
+        let k = volume_kind(&root);
+        assert!(
+            matches!(k, VolumeKind::Ssd | VolumeKind::Hdd | VolumeKind::Unknown),
+            "{k:?}"
+        );
+        assert!(k.io_limit() >= 1);
+        eprintln!("{} -> {k:?}", root.display());
     }
 
     #[test]

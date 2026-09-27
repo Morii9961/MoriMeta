@@ -14,6 +14,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **G-6**: undo recreates a deleted/moved file at its path from the backup (no-overwrite rename, journal role `recreate`); missing folder → Blocked; undoing a recreate moves the file into the backup store (journal role `remove`, never deleted), undoing that recreates it. 70 tests.
 - **G-7**: append-only `manifest.jsonl` (H0/H1 flushed) + `plan.json` per backup folder; `mm-cli rebuild-journal` re-imports operations missing from the database, then normal recovery. 73 tests.
 - **Copyright field** (scenario D's field): EXIF Copyright, XMP dc:rights x-default (other languages kept; ExifTool drops them without a language code), existing IPTC CopyrightNotice with the shared IPTC charset/length rules; `mm-cli plan-copyright`. 82 tests.
+- **Worker pool**: N file transactions in parallel (`--workers`, default clamp(cores/2,1,4)), one ExifTool session each, journal serialized behind a lock, per-volume IO permits (SSD 4 / HDD 1 / network 2 / removable 1). Stop (disk full, breaker) = no new files, in-flight ones finish. 200 tiny files: 10.8 s -> 4.9 s (debug, NVMe; not S4). 87 tests.
 
 ## Waiting / needs the user
 
@@ -24,6 +25,6 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 ## Next engineering steps (no design dependency)
 
-- Worker pool + per-volume IO limits (ARCHITECTURE §7.5/§8), then S4 on real data.
+- S4 on real data with the worker pool (needs D-13 corpus); parallel scan/plan; group-commit of journal writes if S4 shows the serialized flushes dominate.
 - More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
 - Time tools (Absolute/Shift/Sequence/Preserve) through the same Plan/transaction path.

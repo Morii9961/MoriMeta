@@ -312,6 +312,7 @@ enum TagOp { Set(TagRef, Value), Delete(TagRef), DeleteGroup(GroupRef), AddToLis
 
 ### 7.5 进程池
 
+- 实现状态（2026-09-27，Phase 1b）：执行器已按 N 个 worker 并行（`mm-cli --workers N`，默认以逻辑核数 / 2 近似物理核数 / 2），每个 worker 一个 ExifTool Session；同步线程实现（尚未引入 tokio）；Journal 为单个 SQLite 连接加锁串行写入，每次写入仍在提交后才返回（I-8）；每卷 IO 许可按 §8.2 以 `GetDriveTypeW` 与 seek-penalty 查询判定介质，文件在整个事务期间持有其卷的许可。扫描与规划仍为单 Session。
 - `ExifToolPool`：N 个 Session，默认 `N = clamp(physical_cores / 2, 1, 4)`，可在设置中调整；读写共用池，但写入任务优先。
 - 每个 Session 独立 tokio 任务，串行处理命令；池负责分派、健康检查、重启与关闭（`-stay_open\nFalse`）。
 - 应用退出：等待进行中的命令完成（最多数秒）后关闭；强制退出时直接 kill（安全，因为 ExifTool 从不直接写原文件）。

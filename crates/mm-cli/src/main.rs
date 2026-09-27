@@ -4,6 +4,8 @@
 //!   --data DIR          application data (db, backups, run); default %LOCALAPPDATA%\MoriMeta-dev
 //!   --exiftool DIR      pinned ExifTool package (folder containing exiftool_files); or MM_EXIFTOOL_PKG
 //!   --engine MODE       launcher | perl   (ARCHITECTURE ADR-03 A/B)
+//!   --workers N         parallel file transactions (default clamp(cores/2, 1, 4)); each has its
+//!                       own ExifTool session, and each volume limits its own concurrency
 //!
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
@@ -50,6 +52,7 @@ struct Global {
     data: PathBuf,
     exiftool: Option<PathBuf>,
     engine: String,
+    workers: usize,
 }
 
 fn usage() -> ExitCode {
@@ -96,6 +99,32 @@ fn engine_config(g: &Global) -> Result<EngineConfig, String> {
         }),
         other => Err(format!("unknown engine mode {other}")),
     }
+}
+
+/// ARCHITECTURE §7.5: clamp(physical cores / 2, 1, 4); logical cores / 2 approximates it.
+fn default_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+/// `n` ExifTool sessions for the executor's workers, started side by side.
+fn start_engines(g: &Global, n: usize) -> Result<Vec<Engine>, String> {
+    let cfg = engine_config(g)?;
+    std::thread::scope(|s| {
+        let handles: Vec<_> = (0..n)
+            .map(|_| s.spawn(|| Engine::start(cfg.clone())))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .map_err(|_| "ExifTool start panicked".to_string())?
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
+    })
 }
 
 /// Single-instance lock (SAFETY_MODEL §8.17): an exclusive handle held for the process lifetime.
@@ -293,6 +322,11 @@ fn main() -> ExitCode {
         data,
         exiftool: take_opt(&mut args, "--exiftool").map(PathBuf::from),
         engine: take_opt(&mut args, "--engine").unwrap_or_else(|| "launcher".into()),
+        workers: match take_opt(&mut args, "--workers").map(|v| v.parse::<usize>()) {
+            None => default_workers(),
+            Some(Ok(n)) if (1..=16).contains(&n) => n,
+            Some(_) => return fail("--workers takes 1..16"),
+        },
     };
     if args.is_empty() {
         return usage();
@@ -370,19 +404,20 @@ fn main() -> ExitCode {
                 let plan: Plan =
                     serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
                         .map_err(|e| format!("plan file: {e}"))?;
-                let mut eng = with_engine(&g)?;
-                let r = executor::start(&mut store, &mut eng, &plan, &opts)
+                let n = g.workers.min(plan.executable().count().max(1));
+                let mut engines = start_engines(&g, n)?;
+                let r = executor::start(&mut store, &mut engines, &plan, &opts)
                     .map_err(|e| e.to_string())?;
-                eng.close();
+                engines.into_iter().for_each(Engine::close);
                 Ok(report_exit(&r))
             }
             "resume" => {
                 let opts = exec_options(&mut args, &mut store)?;
                 let op = args.first().ok_or("resume OP_ID")?;
-                let mut eng = with_engine(&g)?;
-                let r =
-                    executor::resume(&mut store, &mut eng, op, &opts).map_err(|e| e.to_string())?;
-                eng.close();
+                let mut engines = start_engines(&g, g.workers)?;
+                let r = executor::resume(&mut store, &mut engines, op, &opts)
+                    .map_err(|e| e.to_string())?;
+                engines.into_iter().for_each(Engine::close);
                 Ok(report_exit(&r))
             }
             "rebuild-journal" => {

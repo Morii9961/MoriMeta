@@ -249,7 +249,7 @@ op_undo_plan(op, scope)
 | 8.10 | 长路径与特殊文件名 | 内部统一 `\\?\` 形式；ExifTool 13.59 在 334 字符中文路径与 emoji 文件名上读写正常（S0），`Blocked(UnsupportedFileName)` 规则取消，保留回归测试 |
 | 8.11 | Lightroom / darktable 等的覆盖 | 无法技术阻止；在 RAW 相关 Preview 与帮助中说明 |
 | 8.12 | C2PA 内容凭证 | 导入时检测 JUMBF（S3：可检测）；修改会使凭证失效（APP11 原样保留但签名不再匹配）；Preview 显著警告并默认排除 |
-| 8.13 | 磁盘满 | 预检（§6.2）；执行中出现 `DiskFull` → 暂停 Operation |
+| 8.13 | 磁盘满 | 预检（§6.2）；执行中出现 `DiskFull` → 暂停 Operation（不再启动新文件，进行中的文件照常结算；未开始的文件为 Cancelled，可继续） |
 | 8.14 | 系统睡眠 | 执行期间 `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` |
 | 8.15 | 断电 | 提交前刷盘；恢复以磁盘实际哈希判定状态（§10）；**尚未做断电测试**（A-3） |
 | 8.16 | 系统性故障 | 熔断：前 20 个文件中失败率 ≥ 50%，或连续 10 个验证失败 → 暂停并询问 |

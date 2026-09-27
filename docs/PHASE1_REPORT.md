@@ -33,6 +33,7 @@ Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF
 | 逐步崩溃 | 故障点 1–10 × 文件序号 0、3，共 20 例：每例检查恢复前原内容仍在（路径/bak/备份库）→ 恢复待决时新写入被拒绝 → `recover` → 路径只为 H0 或 H1、无残留、fsck 干净 → `resume` 完成 → 撤销后逐字节一致 | 20/20 通过 |
 | 随机终止 | 随机时刻终止 `mm-cli apply`，其后同上（默认 12 次，`MM_E2E_KILLS` 可调） | 12/12 通过 |
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
+| 并行执行（worker pool） | 4 个 worker、24 个文件：随机终止 8 次（每次多个文件处于事务中）→ 恢复、继续、撤销逐字节一致；4 个 worker 下的磁盘满：每个文件只为 done 或 cancelled（原内容不变），继续后全部完成；卷许可单元测试（超过卷上限的第 N+1 个事务等待）；熔断按完成顺序计数 | 通过 |
 | Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
 | 注入 IO 错误 | 在文件 #2 的故障点 1–10 各注入一次 IO 错误（`--fail-at`）：Operation 不停留在 running；提交前出错 → 该文件 failed 且内容为 H0；提交后出错 → done；其他文件 done；无残留、fsck 干净；撤销后逐字节一致 | 10/10 通过 |
@@ -45,7 +46,9 @@ Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF
 | 撤销时文件已删除或移动（G-6） | 在原路径重建原件，移走的副本不动；预览后原路径出现新文件 → Conflict 且不覆盖；文件夹不存在 → Blocked 且不创建；重建事务在故障点 1、5–10 的终止与 IO 错误各 7 例；撤销“重建”→ 移入备份库 | 通过（17 例） |
 | 移入备份库（撤销一次“重建”） | 被 Operation 创建的文件从不删除，而是移入备份库；再撤销则重建；事务在故障点 1–4、7–10 的终止与 IO 错误各 8 例 | 通过（16 例） |
 
-2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。加入 G-6 后：69 个测试通过、0 失败；加入移入备份库后：70 个；加入 G-7 后：73 个（均跳过真实磁盘满测试）。
+2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（该次运行中真实磁盘满测试被跳过）；之后在 Morii 创建的 64 MB NTFS 测试卷上单独运行真实磁盘满测试（照片卷满、备份/Journal 卷满），两个场景通过，其中 SQLite 真实返回了 `SQLITE_FULL`。第二轮加入 manifest、recover、resume 写失败与 Undo 随机终止后：66 个测试通过、0 失败（真实磁盘满测试跳过，测试卷已卸载）。加入 G-6 后：69 个测试通过、0 失败；加入移入备份库后：70 个；加入 G-7 后：73 个；加入 Copyright 后 82 个；加入并行执行后 87 个（全量连续运行两次均通过；均跳过真实磁盘满测试）。
+
+并行执行的一次简测（有限证据）：200 份夹具副本（8 种 × 25，每份 0.25–10 KB），debug 构建，本机 NVMe SSD，Creator 写入：1 个 worker 10.8 秒，4 个 worker 4.9 秒，200/200 完成。约 2.2 倍而非 4 倍，主要受共享 Journal 串行刷盘限制；大文件与 HDD/NAS 上的表现待 S4。引入并行后，崩溃测试会自然出现“另一个文件正处于 `ReplaceFileW` 中途”的状态；两处测试在崩溃后才规划第二个 Operation，因该路径暂时不存在而规划失败（一处间歇出现），已改为崩溃前规划——这是测试的前提问题，恢复本身对该状态的处理已被测试覆盖。
 
 2026-09-27 事件记录：为 Copyright 字段核对 ExifTool 行为时，一次 PowerShell 5.1 下的探查命令丢失了空参数 `-config ""`，ExifTool 把 `-o` 当作配置文件名，结果**就地改写了锁定的测试夹具 `Writer.jpg`**（留下 `Writer.jpg_original`）。发现后已用 `_original` 恢复，8 个夹具的 SHA-256 与 [PHASE1B_SCALE_VALIDATION.md](PHASE1B_SCALE_VALIDATION.md) 记录一致。改写发生在 G-7 测试与提交之后、其后未运行任何测试，因此没有已记录的结果受影响。此后端到端测试在复制夹具前核对其 BLAKE3，夹具一旦变化即停止测试。
 
