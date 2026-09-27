@@ -1,0 +1,13 @@
+# Normalise text files to LF in the repository; Windows checkouts may convert.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# never diff or merge binaries as text
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.nef binary
+*.zip binary

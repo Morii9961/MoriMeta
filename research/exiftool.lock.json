@@ -1,0 +1,23 @@
+{
+  "comment": "Pinned ExifTool used by all MoriMeta research scripts and spikes. SHA-256 values were copied from https://exiftool.org/checksums.txt on 2026-09-26 and are verified on every fetch; a mismatch aborts.",
+  "version": "13.59",
+  "selection_rule": "Latest ExifTool release that contains all known security fixes (13.59 is marked 'Security update' in history.html; the newest production release, 13.55, predates it).",
+  "artifacts": {
+    "windows_x64": {
+      "file": "exiftool-13.59_64.zip",
+      "urls": [
+        "https://exiftool.org/exiftool-13.59_64.zip",
+        "https://sourceforge.net/projects/exiftool/files/exiftool-13.59_64.zip/download"
+      ],
+      "sha256": "44b512b25af500724ba579d0a53c8fc5851628b692dd5e5d94ae4a15c2cba9ec"
+    },
+    "source": {
+      "file": "Image-ExifTool-13.59.tar.gz",
+      "urls": [
+        "https://exiftool.org/Image-ExifTool-13.59.tar.gz",
+        "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download"
+      ],
+      "sha256": "668ea3acececb7235fbd0f4900e72d5f12c9b07e5c778fd36cb1e9b5828fd65a"
+    }
+  }
+}

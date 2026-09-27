@@ -1,0 +1,19 @@
+# MoriMeta product workspace (Phase 1a foundation: parts that do not depend on pending decisions).
+# License is intentionally unset until D-1 is decided; dependencies are limited to permissive
+# licenses compatible with both Apache-2.0 and GPL-3.0-or-later.
+[workspace]
+resolver = "3"
+members = ["crates/mm-domain", "crates/mm-exiftool", "crates/mm-fs"]
+exclude = ["research"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+publish = false
+version = "0.0.0"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"

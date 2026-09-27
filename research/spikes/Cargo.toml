@@ -1,0 +1,8 @@
+# Research spikes (S1, S2, S7). Throwaway prototypes: not part of the product workspace.
+[workspace]
+resolver = "3"
+members = ["exiftool-session", "fs-txn", "jpeg-segments"]
+
+[workspace.package]
+edition = "2024"
+publish = false

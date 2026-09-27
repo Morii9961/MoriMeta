@@ -1,0 +1,23 @@
+{
+  "comment": "Public test samples used by research scripts. Files are NOT committed; fetch into research/.work/corpus and verify SHA-256. raw.pixls.us publishes samples under CC0 (RESEARCH_NOTES F-70).",
+  "files": [
+    {
+      "path": "nikon/Nikon_Z8_high_efficiency_low.NEF",
+      "url": "https://raw.pixls.us/data/Nikon/Z%208/Nikon_Z8_high_efficiency_low.NEF",
+      "sha256": "82df041542b8d328738443bb5ff3373b396e406ecc8cbe7dc3b35252790c53e7",
+      "license": "CC0 (raw.pixls.us)"
+    },
+    {
+      "path": "nikon/Nikon_Z8_raw_14_bit_lossless_compression.NEF",
+      "url": "https://raw.pixls.us/data/Nikon/Z%208/Nikon_Z8_raw_14_bit_lossless_compression.NEF",
+      "sha256": "c13a8675294456b9c979e6c1e556951654f35377b2870af2874bfb556f21ce40",
+      "license": "CC0 (raw.pixls.us)"
+    },
+    {
+      "path": "nikon/Nikon-D850-14bit-lossless-compressed.NEF",
+      "url": "https://raw.pixls.us/data/Nikon/D850/Nikon-D850-14bit-lossless-compressed.NEF",
+      "sha256": "0c9438258ddae5260b9f5a1aace6658a723f1cb1acace3a6cb507116dc6da4f2",
+      "license": "CC0 (raw.pixls.us)"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+[package]
+name = "mm-domain"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

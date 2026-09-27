@@ -1,0 +1,42 @@
+# build output
+/target/
+/research/spikes/target/
+
+# downloaded tools, corpora, lab directories (see research/README.md)
+/research/.work/
+
+# generated experiment results: contain absolute local paths and sample metadata
+# (serial numbers, tag values). Regenerate with the scripts in research/.
+/research/results/
+
+# photos and raw files never belong in the repository (test corpora are fetched by hash)
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.nef
+*.NEF
+*.dng
+*.DNG
+*.cr2
+*.cr3
+*.arw
+*.raf
+*.heic
+*.HEIC
+*.tif
+*.tiff
+*.xmp
+!research/fixtures/**/*.xmp
+
+# editor / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+
+# python bytecode
+__pycache__/
+*.pyc
