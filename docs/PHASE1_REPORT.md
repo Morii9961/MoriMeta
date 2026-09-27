@@ -40,12 +40,16 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 验证机制拦截的真实问题：`Pentax.jpg` 写入后 MakerNotes 中的预览图指针 `Pentax:PreviewImageStart` 移动，V3 判定为附带变化而拒绝提交（原文件未触碰）。修正：文件偏移类标签（`…Offset`、`…Offsets`、`…Start`）在两侧都存在时视为版式派生；新增或消失仍判为附带变化；对应长度标签不得改变（单元测试覆盖）。
 
+2026-09-27 补充：1,000 份 ExifTool JPEG 测试夹具副本的 Creator 写入与逐字节 Undo 已通过；1,000/1,000 写入、复读、撤销及 SHA-256 对比一致，两次 `fsck` 均无问题。样本、环境、首次受限环境失败及结论边界见 [PHASE1B_SCALE_VALIDATION.md](PHASE1B_SCALE_VALIDATION.md)。
+
+本轮加入文件清单解析单测后，在允许 `ReplaceFileW` 的执行环境运行 `cargo test --workspace`：54 个测试通过，0 失败；`cargo fmt --all -- --check` 与 `cargo clippy --workspace --all-targets -- -D warnings` 通过。受限环境的错误 5 不计为产品测试结论。
+
 ## 3. 已知缺口（尚未实现或尚未验证）
 
 | # | 缺口 | 计划 |
 |---|---|---|
 | G-1 | 故障注入覆盖进程终止与注入 IO 错误；真实磁盘满（小卷）与 Journal 写入失败尚未单独测试 | 需要可创建小卷的环境（管理员权限或可移动介质） |
-| G-2 | 规模：端到端每次 8 个小文件；5,000 文件规模与真实大文件未做 | 等 S4 真实语料 |
+| G-2 | 1,000 个重复小样本 JPEG 的 Creator→Undo 已通过；5,000 文件、1,000 个不同相机原片与真实大文件仍未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
 | G-5 | 字段注册表 v0 暂定（仅 creator） | S3 第三方测试后冻结 v1 |

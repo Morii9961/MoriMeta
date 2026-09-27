@@ -6,8 +6,8 @@
 //!   --engine MODE       launcher | perl   (ARCHITECTURE ADR-03 A/B)
 //!
 //! Commands:
-//!   scan FILE...
-//!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] FILE...
+//!   scan [--files-from UTF8_FILE] FILE...
+//!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
 //!   recover
 //!   resume OP_ID [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
@@ -122,6 +122,28 @@ fn take_opt(args: &mut Vec<String>, name: &str) -> Option<String> {
     v
 }
 
+/// Expand a UTF-8 path list so large batches do not exceed the Windows command-line limit.
+/// Each nonempty line is one path; spaces are preserved and CRLF is accepted.
+fn file_paths(args: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
+    let list_file = take_opt(args, "--files-from");
+    let mut paths: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
+    if let Some(file) = list_file {
+        let contents = std::fs::read_to_string(&file).map_err(|e| format!("{file}: {e}"))?;
+        paths.extend(
+            contents
+                .trim_start_matches('\u{feff}')
+                .lines()
+                .map(|line| line.trim_end_matches('\r'))
+                .filter(|line| !line.is_empty())
+                .map(PathBuf::from),
+        );
+    }
+    if paths.is_empty() {
+        return Err("no input files".into());
+    }
+    Ok(paths)
+}
+
 fn report_json(r: &OpReport) -> Value {
     json!({
         "op_id": r.op_id,
@@ -194,7 +216,7 @@ fn main() -> ExitCode {
         match cmd.as_str() {
             "scan" => {
                 let mut eng = with_engine(&g)?;
-                let paths: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
+                let paths = file_paths(&mut args)?;
                 let snaps = eng.read_snapshots(&paths).map_err(|e| e.to_string())?;
                 let out: Vec<Value> = paths
                     .iter()
@@ -234,7 +256,7 @@ fn main() -> ExitCode {
                     _ => return Err("use either --set NAME (repeatable) or --clear".into()),
                 };
                 let mut eng = with_engine(&g)?;
-                let paths: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
+                let paths = file_paths(&mut args)?;
                 let plan = planner::plan_creator(&mut eng, &paths, &edit, &title)
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
@@ -328,5 +350,36 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(e) => fail(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_paths;
+    use std::path::PathBuf;
+
+    #[test]
+    fn file_list_accepts_utf8_bom_crlf_and_spaces() {
+        let list = std::env::temp_dir().join(format!(
+            "mm-cli-files-{}.txt",
+            mm_fs::random_token().unwrap()
+        ));
+        std::fs::write(&list, "\u{feff}first photo.jpg\r\n\r\n二枚目.jpg\r\n").unwrap();
+        let mut args = vec![
+            "direct.jpg".to_owned(),
+            "--files-from".to_owned(),
+            list.to_string_lossy().into_owned(),
+        ];
+        let paths = file_paths(&mut args).unwrap();
+        std::fs::remove_file(&list).unwrap();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("direct.jpg"),
+                PathBuf::from("first photo.jpg"),
+                PathBuf::from("二枚目.jpg")
+            ]
+        );
+        assert_eq!(args, ["direct.jpg"]);
     }
 }
