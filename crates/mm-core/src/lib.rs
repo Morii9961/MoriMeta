@@ -60,6 +60,12 @@ impl From<std::io::Error> for CoreError {
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Journal role of a file written in place (SAFETY_MODEL §4.1).
+pub const ROLE_EMBEDDED: &str = "embedded";
+/// Journal role of a file an Undo creates again at its path because it was deleted or moved
+/// (SAFETY_MODEL §7.2). Its pre-image is "absent": the row has no H0.
+pub const ROLE_RECREATE: &str = "recreate";
+
 /// Absolute path without the verbatim prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\h\s` → `\\h\s`).
 pub fn normalize(p: &Path) -> Result<PathBuf, CoreError> {
     let abs =

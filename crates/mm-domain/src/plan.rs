@@ -94,6 +94,14 @@ pub enum EntryAction {
         h0: String,
         h1: String,
     },
+    /// Undo of a file that was deleted or moved after the operation (SAFETY_MODEL §7.2): create
+    /// it again at its path from the verified backup `backup` (content hash `h0`, `size` bytes).
+    /// Never replaces a file that exists at the path by then.
+    Recreate {
+        backup: String,
+        h0: String,
+        size: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

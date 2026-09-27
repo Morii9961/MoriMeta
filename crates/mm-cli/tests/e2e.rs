@@ -111,9 +111,16 @@ impl Lab {
 
     /// Current content hash of every photo (the pre-images of the next Operation).
     fn snapshot(&self) -> BTreeMap<PathBuf, String> {
+        self.snapshot_where(|_| true)
+    }
+
+    /// Same, for the photos whose index passes `keep`.
+    fn snapshot_where(&self, keep: impl Fn(usize) -> bool) -> BTreeMap<PathBuf, String> {
         self.photos
             .iter()
-            .map(|p| (p.clone(), blake(p).unwrap()))
+            .enumerate()
+            .filter(|(i, _)| keep(*i))
+            .map(|(_, p)| (p.clone(), blake(p).unwrap()))
             .collect()
     }
 
@@ -1200,6 +1207,237 @@ fn random_kills_during_undo_recover() {
         }
         lab.assert_all_original();
         assert!(lab.leftovers().is_empty(), "undo kill {i}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+fn plan_entry(plan: &Value, seq: u64) -> Value {
+    plan["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["seq"] == seq)
+        .unwrap_or_else(|| panic!("no entry {seq} in {plan}"))
+        .clone()
+}
+
+/// G-6 / SAFETY_MODEL §7.2: Undo recreates a file that was deleted or moved after the operation,
+/// at its original path, from the verified backup; a moved copy elsewhere is not touched. Undoing
+/// that Undo does not remove the recreated file (explicitly Blocked for now).
+#[test]
+fn undo_recreates_deleted_and_moved_files() {
+    let pkg = require!();
+    let lab = Lab::new("recreate", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success());
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    let applied = lab.snapshot();
+    std::fs::remove_file(&lab.photos[2]).unwrap();
+    std::fs::create_dir_all(lab.dir.join("moved")).unwrap();
+    let moved = lab.dir.join("moved").join(SAMPLES[3]);
+    std::fs::rename(&lab.photos[3], &moved).unwrap();
+
+    let u = lab.dir.join("undo.json");
+    let p = lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()]);
+    assert!(p.status.success());
+    let pj = Lab::json(&p);
+    for seq in [2, 3] {
+        let e = plan_entry(&pj, seq);
+        assert_eq!(e["status"]["status"], "ready", "{e}");
+        assert!(
+            e["notes"][0].as_str().unwrap().contains("deleted or moved"),
+            "{e}"
+        );
+    }
+    let r = lab.cli(&["apply", u.to_str().unwrap()]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stdout));
+    let undo_op = Lab::json(&r)["op_id"].as_str().unwrap().to_owned();
+    lab.assert_all_original();
+    assert_eq!(
+        blake(&moved).as_deref(),
+        Some(applied[&lab.photos[3]].as_str()),
+        "the moved copy must stay as it was"
+    );
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    assert!(lab.cli(&["fsck", &undo_op]).status.success());
+    let states: Vec<String> = Lab::json(&lab.cli(&["show", &undo_op]))["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["state"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(states.iter().all(|s| s == "done"), "{states:?}");
+
+    // undoing the Undo: the recreated files are Blocked and left alone, the others change back
+    let uu = lab.dir.join("undo2.json");
+    let p2 = lab.cli(&["plan-undo", &undo_op, "--out", uu.to_str().unwrap()]);
+    assert!(p2.status.success());
+    let p2j = Lab::json(&p2);
+    for seq in [2, 3] {
+        let e = plan_entry(&p2j, seq);
+        assert_eq!(e["status"]["status"], "blocked", "{e}");
+        assert!(
+            e["status"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("recreated"),
+            "{e}"
+        );
+    }
+    let r2 = lab.cli(&["apply", uu.to_str().unwrap()]);
+    assert!(
+        r2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&r2.stdout)
+    );
+    for (i, p) in lab.photos.iter().enumerate() {
+        let want = if i == 2 || i == 3 {
+            &lab.truth[p]
+        } else {
+            &applied[p]
+        };
+        assert_eq!(blake(p).as_deref(), Some(want.as_str()), "{}", p.display());
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// A file that appears at the path between the Undo preview and its execution is never replaced
+/// (I-6); a folder that no longer exists is never created.
+#[test]
+fn undo_recreate_never_replaces_and_never_creates_folders() {
+    let pkg = require!();
+    let lab = Lab::new("recreate-guards", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success());
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    std::fs::remove_file(&lab.photos[2]).unwrap();
+    let u = lab.dir.join("undo.json");
+    assert!(
+        lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+            .status
+            .success()
+    );
+    std::fs::write(&lab.photos[2], b"a new file the user put here").unwrap();
+    let r = lab.cli(&["apply", u.to_str().unwrap()]);
+    assert_eq!(
+        r.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&r.stdout)
+    );
+    let rj = Lab::json(&r);
+    assert_eq!(state_of(&rj, 2), "conflict", "{rj}");
+    assert_eq!(
+        std::fs::read(&lab.photos[2]).unwrap(),
+        b"a new file the user put here"
+    );
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    assert!(
+        lab.cli(&["fsck", rj["op_id"].as_str().unwrap()])
+            .status
+            .success()
+    );
+
+    // the whole folder is gone: nothing is planned, nothing is created
+    let lab2 = Lab::new("recreate-folder", &pkg);
+    let plan2 = lab2.plan("Morii", "p.json");
+    let a2 = lab2.cli(&["apply", plan2.to_str().unwrap()]);
+    assert!(a2.status.success());
+    let op2 = Lab::json(&a2)["op_id"].as_str().unwrap().to_owned();
+    let folder = lab2.photos[0].parent().unwrap().to_path_buf();
+    let elsewhere = lab2.dir.join("photos-renamed");
+    std::fs::rename(&folder, &elsewhere).unwrap();
+    let u2 = lab2.dir.join("undo.json");
+    let p2 = lab2.cli(&["plan-undo", &op2, "--out", u2.to_str().unwrap()]);
+    assert!(p2.status.success());
+    for e in Lab::json(&p2)["entries"].as_array().unwrap() {
+        assert_eq!(e["status"]["status"], "blocked", "{e}");
+        assert!(
+            e["status"]["reason"].as_str().unwrap().contains("folder"),
+            "{e}"
+        );
+    }
+    lab2.cli(&["apply", u2.to_str().unwrap()]); // nothing executable
+    assert!(!folder.exists(), "a folder was created");
+    let _ = std::fs::remove_dir_all(&lab.dir);
+    let _ = std::fs::remove_dir_all(&lab2.dir);
+}
+
+/// Crash and IO error at every fault point of the recreate transaction (1, 5–10).
+#[test]
+fn recreate_crashes_and_io_errors_recover() {
+    let pkg = require!();
+    for (kind, step) in [1u8, 5, 6, 7, 8, 9, 10]
+        .into_iter()
+        .map(|s| ("crash", s))
+        .chain([1u8, 5, 6, 7, 8, 9, 10].into_iter().map(|s| ("fail", s)))
+    {
+        let case = format!("recreate {kind} at 2:{step}");
+        let lab = Lab::new(&format!("recreate-{kind}-{step}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+        assert!(a.status.success(), "{case}");
+        let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+        std::fs::remove_file(&lab.photos[2]).unwrap();
+        let others = lab.snapshot_where(|i| i != 2);
+        let target = lab.photos[2].clone();
+        let original = lab.truth[&target].clone();
+        let u = lab.dir.join("undo.json");
+        assert!(
+            lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+                .status
+                .success(),
+            "{case}"
+        );
+        let flag = if kind == "crash" {
+            "--crash-at"
+        } else {
+            "--fail-at"
+        };
+        let o = lab.cli_env(
+            &["apply", u.to_str().unwrap(), flag, &format!("2:{step}")],
+            true,
+        );
+        let undo_op = lab.last_op();
+        assert_ne!(undo_op, op, "{case}");
+        // the recreated path only ever holds nothing or the complete original
+        let absent_or_original = |when: &str| {
+            let cur = blake(&target);
+            assert!(
+                cur.is_none() || cur.as_deref() == Some(original.as_str()),
+                "{case} {when}: path holds something else"
+            );
+        };
+        if kind == "crash" {
+            assert_eq!(o.status.code(), Some(77), "{case}");
+            absent_or_original("before recovery");
+            lab.assert_preimages_of(&undo_op, &others);
+            assert!(lab.cli(&["recover"]).status.success(), "{case}");
+            absent_or_original("after recovery");
+            lab.assert_recovered_of(&undo_op, &others);
+            let res = lab.cli(&["resume", &undo_op]);
+            assert!(
+                res.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&res.stdout)
+            );
+            assert!(lab.cli(&["fsck", &undo_op]).status.success(), "{case}");
+        } else {
+            let r = Lab::json(&o);
+            assert_ne!(r["status"], "running", "{case}");
+            let want = if step <= 7 { "failed" } else { "done" };
+            assert_eq!(state_of(&r, 2), want, "{case}: {r}");
+            absent_or_original("after the error");
+            lab.assert_recovered_of(&undo_op, &others);
+            if step <= 7 {
+                assert!(blake(&target).is_none(), "{case}");
+                lab.undo(&op); // plans the recreate again
+            }
+        }
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }

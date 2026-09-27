@@ -219,11 +219,13 @@ op_undo_plan(op, scope)
        其他：                    Conflict（文件在之后被修改）
   → Preview（Conflict 默认排除；"强制恢复"先备份当前内容）
   → 执行：备份复制到同卷临时名 → 复核 == H0 → §4.1 的提交流程
+     （文件不存在时：复核后写 Ready，再以不覆盖的重命名提交，同 §4.3；此时原路径出现文件 → Conflict）
 ```
 
 - Undo 本身是一个 Operation，可以再次撤销。
 - 后续 Operation 修改过同一文件时，前一个 Operation 的 Undo 会进入 Conflict，自然要求"先撤销后面的"；UI 指出是哪个 Operation 修改了它。
 - 可以只撤销选定文件。
+- 实现状态（2026-09-27）：文件不存在时的重建已实现并测试（PHASE1_REPORT G-6）；所在文件夹已不存在时不创建文件夹，标为 Blocked；撤销一次“重建”（MoveToBackupStore）尚未实现，标为 Blocked。
 
 ---
 

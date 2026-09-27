@@ -5,6 +5,7 @@
 //!   1 before lock · 2 after lock/fingerprint · 3 after backup copy · 4 after BackedUp recorded ·
 //!   5 after temp written · 6 after verification · 7 after Ready recorded · 8 after ReplaceFileW ·
 //!   9 after Committed recorded · 10 after bak removed (before Done recorded)
+//! (recreating a deleted file uses 1 and 5–10: there is no original to lock or back up)
 //!
 //! A full volume (SAFETY_MODEL §8.13) pauses the Operation: the file in progress is settled with
 //! the recovery table, it and every later file become `Cancelled` (original unchanged, retried
@@ -23,7 +24,9 @@ use mm_store::{FileState, FileUpdate, NewFile, NewOperation, OpStatus, Store};
 
 use crate::engine::Engine;
 use crate::verify::{self, VerifyError};
-use crate::{APP_VERSION, CoreError, fingerprint_of_handle, hash_opt, new_id};
+use crate::{
+    APP_VERSION, CoreError, ROLE_EMBEDDED, ROLE_RECREATE, fingerprint_of_handle, hash_opt, new_id,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FaultPoint {
@@ -112,7 +115,10 @@ fn check_space<'a>(
     let mut total = 0u64;
     let mut largest: BTreeMap<PathBuf, u64> = BTreeMap::new();
     for e in entries {
-        let size = e.fingerprint.size;
+        let size = match &e.action {
+            Some(EntryAction::Recreate { size, .. }) => *size,
+            _ => e.fingerprint.size,
+        };
         total = total.saturating_add(size);
         let dir = Path::new(&e.path)
             .parent()
@@ -208,7 +214,11 @@ pub fn start(
         files.push(NewFile {
             seq: e.seq,
             path: e.path.clone(),
-            role: "embedded".into(),
+            role: match e.action {
+                Some(EntryAction::Recreate { .. }) => ROLE_RECREATE,
+                _ => ROLE_EMBEDDED,
+            }
+            .into(),
             temp_path: temp.to_string_lossy().into_owned(),
             bak_path: bak.to_string_lossy().into_owned(),
             backup_path: backup.to_string_lossy().into_owned(),
@@ -457,6 +467,9 @@ fn one_file(
     opts: &ExecOptions,
 ) -> Result<Outcome, CoreError> {
     let seq = entry.seq;
+    if let Some(EntryAction::Recreate { backup, h0, .. }) = entry.action.as_ref() {
+        return recreate(store, op_id, seq, Path::new(backup), h0, f, opts);
+    }
     fault(opts, seq, 1)?;
     // 1 lock + fingerprint
     let mut lock = match mm_fs::open_lock(&f.path) {
@@ -575,6 +588,11 @@ fn one_file(
             }
             fault(opts, seq, 5)?;
         }
+        Some(EntryAction::Recreate { .. }) => {
+            return Err(CoreError::Internal(
+                "recreate reached the in-place path".into(),
+            ));
+        }
         None => return Ok(Outcome::Failed("plan entry has no action".into())),
     }
     mm_fs::flush_path(&f.temp)?;
@@ -639,6 +657,100 @@ fn one_file(
     }
     if hash_opt(&f.bak).as_deref() == Some(h0s.as_str()) {
         remove_if_exists(&f.bak);
+    }
+    fault(opts, seq, 10)?;
+    store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;
+    Ok(Outcome::Done)
+}
+
+/// Undo of a deleted or moved file (SAFETY_MODEL §7.2, committed like §4.3): the verified backup
+/// is copied next to the path, recorded as Ready, then renamed onto the path without ever
+/// replacing a file that has appeared there. Fault points 1 and 5–10 as in the file header.
+fn recreate(
+    store: &mut Store,
+    op_id: &str,
+    seq: u32,
+    backup: &Path,
+    h0: &str,
+    f: &FilePaths,
+    opts: &ExecOptions,
+) -> Result<Outcome, CoreError> {
+    fault(opts, seq, 1)?;
+    if mm_fs::ensure_absent(&f.path).is_err() {
+        return Ok(Outcome::Conflict(
+            "a file exists at this path again; not recreated".into(),
+        ));
+    }
+    let mut src = match File::open(backup) {
+        Ok(s) => s,
+        Err(e) => return Ok(Outcome::Failed(format!("backup unavailable: {e}"))),
+    };
+    // copy_new_hashing never overwrites, flushes the copy and removes it on error
+    let h1 = match mm_fs::copy_new_hashing(&mut src, &f.temp) {
+        Ok(h) => mm_fs::hex(&h),
+        Err(e) if mm_fs::is_disk_full(&e) => {
+            return Ok(Outcome::DiskFull(format!(
+                "photo volume is full ({e}); nothing created"
+            )));
+        }
+        Err(e) => {
+            return Ok(Outcome::Failed(format!(
+                "cannot write next to the path: {e}"
+            )));
+        }
+    };
+    if h1 != h0 {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Failed(
+            "backup content does not match its recorded hash".into(),
+        ));
+    }
+    fault(opts, seq, 5)?;
+    fault(opts, seq, 6)?;
+    store.set_state(
+        op_id,
+        seq,
+        FileState::Ready,
+        &FileUpdate {
+            h1: Some(h1.clone()),
+            ..Default::default()
+        },
+    )?;
+    fault(opts, seq, 7)?;
+    match mm_fs::move_no_replace(&f.temp, &f.path) {
+        Ok(()) => {}
+        // ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS: something appeared at the path (I-6)
+        Err(mm_fs::Win32Error(80 | 183)) => {
+            remove_if_exists(&f.temp);
+            return Ok(Outcome::Conflict(
+                "a file appeared at this path; not recreated".into(),
+            ));
+        }
+        Err(code) => {
+            remove_if_exists(&f.temp);
+            return Ok(Outcome::Failed(format!(
+                "could not recreate the file ({code}); nothing created"
+            )));
+        }
+    }
+    fault(opts, seq, 8)?;
+    let new_id = mm_fs::file_id_of_path(&f.path)
+        .ok()
+        .map(|i| crate::file_id_hex(&i));
+    store.set_state(
+        op_id,
+        seq,
+        FileState::Committed,
+        &FileUpdate {
+            new_file_id: new_id,
+            ..Default::default()
+        },
+    )?;
+    fault(opts, seq, 9)?;
+    if hash_opt(&f.path).as_deref() != Some(h1.as_str()) {
+        return Ok(Outcome::Attention(
+            "content after recreating differs from the backup".into(),
+        ));
     }
     fault(opts, seq, 10)?;
     store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;

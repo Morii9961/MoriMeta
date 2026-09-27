@@ -6,7 +6,7 @@ use std::path::Path;
 
 use mm_store::{FileRow, FileState, FileUpdate, OpStatus, Store};
 
-use crate::{CoreError, hash_opt};
+use crate::{CoreError, ROLE_RECREATE, hash_opt};
 
 #[derive(Debug, Clone)]
 pub struct RecoveredFile {
@@ -80,6 +80,9 @@ fn remove_if_hash(p: &Path, want: Option<&str>) -> bool {
 
 /// The decision table. Never deletes the original path; never overwrites anything.
 pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
+    if f.role == ROLE_RECREATE {
+        return decide_recreate(f);
+    }
     let path = Path::new(&f.path);
     let temp = Path::new(&f.temp_path);
     let bak = Path::new(&f.bak_path);
@@ -149,6 +152,36 @@ pub(crate) fn decide(f: &FileRow) -> (FileState, String) {
                 )
             }
         }
+        other => (other, "terminal".into()),
+    }
+}
+
+/// A file recreated by an Undo: its pre-image is "absent" and the commit is a rename that never
+/// replaces anything, so the path holds the recreated content (H1) only if the rename happened.
+/// Whatever else is at the path is not ours and is never touched.
+fn decide_recreate(f: &FileRow) -> (FileState, String) {
+    let temp = Path::new(&f.temp_path);
+    let cur = hash_opt(Path::new(&f.path));
+    let h1 = f.h1.as_deref();
+    match f.state {
+        FileState::Planned | FileState::BackedUp => {
+            let _ = std::fs::remove_file(temp); // registered random name; holds only backup data
+            (FileState::NotStarted, "not recreated".into())
+        }
+        FileState::Ready if cur.is_some() && cur.as_deref() == h1 => {
+            (FileState::Done, "recreate had completed".into())
+        }
+        FileState::Ready => {
+            remove_if_hash(temp, h1);
+            (FileState::NotStarted, "not recreated".into())
+        }
+        FileState::Committed if cur.is_some() && cur.as_deref() == h1 => {
+            (FileState::Done, "recreate had completed".into())
+        }
+        FileState::Committed => (
+            FileState::Attention,
+            "recreated file is missing or changed; nothing deleted (backup kept)".into(),
+        ),
         other => (other, "terminal".into()),
     }
 }
