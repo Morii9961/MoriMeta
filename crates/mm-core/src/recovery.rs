@@ -71,6 +71,58 @@ pub fn recover(store: &mut Store) -> Result<Vec<RecoveryReport>, CoreError> {
     Ok(reports)
 }
 
+/// Error text of a file the user chose to keep as found after an interruption.
+pub const KEPT_PREFIX: &str = "kept as found after an interruption: ";
+
+/// The user's choice for files recovery could not settle (SAFETY_MODEL §10 step 3): keep what is
+/// on disk. Each file becomes `Conflict` (terminal; this Operation never touches it again). Our
+/// own registered leftovers go only after their hash check, and a bak holding the pre-image only
+/// when the backup store has a verified copy of it (I-9). The backup stays, so the pre-image can
+/// still be restored through the undo Plan (a forced restore). Once no file needs attention, the
+/// Operation ends `recovered` and writes are allowed again.
+pub fn resolve_keep(store: &mut Store, op_id: &str, seqs: &[u32]) -> Result<(), CoreError> {
+    let files = store.files(op_id)?;
+    for &seq in seqs {
+        let f = files
+            .iter()
+            .find(|f| f.seq == seq)
+            .ok_or_else(|| CoreError::Input(format!("{op_id} has no file {seq}")))?;
+        if f.state != FileState::Attention {
+            return Err(CoreError::Input(format!(
+                "file {seq} of {op_id} does not need attention ({})",
+                f.state.as_str()
+            )));
+        }
+    }
+    for &seq in seqs {
+        let f = files.iter().find(|f| f.seq == seq).expect("checked above");
+        remove_if_hash(Path::new(&f.temp_path), f.h1.as_deref());
+        if f.h0.is_some() && hash_opt(Path::new(&f.backup_path)) == f.h0 {
+            remove_if_hash(Path::new(&f.bak_path), f.h0.as_deref());
+        }
+        store.set_state(
+            op_id,
+            seq,
+            FileState::Conflict,
+            &FileUpdate {
+                error: Some(format!(
+                    "{KEPT_PREFIX}{}",
+                    f.error.as_deref().unwrap_or("needed attention")
+                )),
+                ..Default::default()
+            },
+        )?;
+    }
+    if !store
+        .files(op_id)?
+        .iter()
+        .any(|f| f.state == FileState::Attention || !f.state.is_terminal())
+    {
+        store.finish_operation(op_id, OpStatus::Recovered)?;
+    }
+    Ok(())
+}
+
 fn remove_if_hash(p: &Path, want: Option<&str>) -> bool {
     match (want, hash_opt(p)) {
         (Some(w), Some(h)) if h == w => std::fs::remove_file(p).is_ok(),

@@ -26,6 +26,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - Cancel also checked before the commit of recreate / move-to-backup-store / new-sidecar files. 130 tests.
 - **Forced restore (§7.2)**: files changed after an Operation are Ready-but-excluded in its undo Plan; forcing backs up the current content first, so it can itself be undone. `plan-undo --force-conflicts`. Conflicts name the later Operations that wrote the file (or "changed outside MoriMeta"). 131 tests.
 - **Plan progress + cancel**: `PlanCtl` on every planner entry point; reports per 100 inspected files and per 100-file metadata chunk; cancel returns `CoreError::Cancelled`. 132 tests.
+- **NeedsAttention resolution (§10 step 3)**: `resolve --keep` turns attention files into kept conflicts (registered leftovers removed after hash checks), ends the Operation `recovered` and unblocks writes; the undo Plan can still force-restore their originals from the backup. 133 tests.
 
 ## Waiting / needs the user
 

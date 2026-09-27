@@ -325,6 +325,7 @@ op_field_changes(op_id, seq, field_id, before_json, after_json, kind);
 | 任意 | 原路径为其他内容 / 缺失且无 bak | NeedsAttention；不删除任何文件；备份库中的 H0 可供恢复 | 合成状态 S5、S6 |
 
 3. 向用户展示恢复摘要（PRODUCT_SPEC §6.15）：继续剩余文件 / 撤销已完成部分 / 保持现状。
+   - 实现（2026-09-27）：存在 NeedsAttention 文件时 Operation 保持 `interrupted`，一切新写入被拒绝，直到用户对这些文件选择“保持现状”（`recovery::resolve_keep`，`mm-cli resolve OP --keep SEQ…`）：文件标为 `Conflict`（本 Operation 不再触碰），登记的临时名在核对 H1 后删除，bak 只在备份库有核对无误的 H0 副本时删除；全部处理后 Operation 为 `recovered`，写入恢复。此后撤销 Plan 可用备份恢复该文件的原内容（强制恢复，默认排除；文件缺失则重建）。e2e：步骤 7 崩溃后文件被其他程序改写 → attention → 新写入被拒 → 保持现状 → 强制撤销后全部逐字节还原。
 4. 任何删除只针对 Journal 登记的临时名与 bak 名，且删除前核对哈希（I-9）。
 
 `mm-cli fsck` 可对任意 Operation 离线执行同样的判定。

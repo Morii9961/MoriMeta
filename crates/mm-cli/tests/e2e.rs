@@ -3043,3 +3043,68 @@ fn forced_restore_of_a_file_changed_later() {
     let _ = std::fs::remove_dir_all(&lab.dir);
     let _ = std::fs::remove_dir_all(&lab2.dir);
 }
+
+/// SAFETY_MODEL §10 step 3: a file recovery cannot settle keeps its Operation interrupted and
+/// blocks every write; the user keeps it as found, writes are allowed again, and the undo Plan
+/// can still restore its original from the backup (a forced restore).
+#[test]
+fn needs_attention_is_resolved_by_the_user() {
+    let pkg = require!();
+    let lab = Lab::new("attention", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(
+        &[
+            "--workers",
+            "1",
+            "apply",
+            plan.to_str().unwrap(),
+            "--crash-at",
+            "2:7",
+        ],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(77));
+    let op = lab.last_op();
+    // another program writes the file while the operation is interrupted
+    let target = lab.photos[2].clone();
+    let mut other = std::fs::read(&target).unwrap();
+    other.extend_from_slice(b"other program");
+    std::fs::write(&target, &other).unwrap();
+    let other_hash = blake(&target).unwrap();
+
+    let r = lab.cli(&["recover"]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stdout));
+    let state = |op: &str, i: usize| lab.show(op)["files"][i]["state"].clone();
+    assert_eq!(state(&op, 2), "attention");
+    assert_eq!(blake(&target).as_deref(), Some(other_hash.as_str()));
+    // every write waits for the person
+    let p2 = lab.plan("Mori", "p2.json");
+    let a = lab.cli(&["apply", p2.to_str().unwrap()]);
+    assert!(!a.status.success());
+    assert!(String::from_utf8_lossy(&a.stdout).contains("RecoveryPending"));
+
+    let r = lab.cli(&["resolve", &op, "--keep", "2"]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stdout));
+    assert_eq!(Lab::json(&r)["status"], "recovered");
+    assert_eq!(state(&op, 2), "conflict");
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    assert_eq!(
+        blake(&target).as_deref(),
+        Some(other_hash.as_str()),
+        "kept as found"
+    );
+
+    // the undo restores the two finished files, and the kept one only when forced
+    let u = lab.dir.join("u.json");
+    let o = lab.cli(&[
+        "plan-undo",
+        &op,
+        "--out",
+        u.to_str().unwrap(),
+        "--force-conflicts",
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    lab.apply_ok(&u);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

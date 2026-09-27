@@ -22,11 +22,16 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
     }
     let mut entries = Vec::new();
     for f in store.files(op_id)? {
-        if f.state != FileState::Done {
+        let kept = f.state == FileState::Conflict
+            && f.error
+                .as_deref()
+                .is_some_and(|e| e.starts_with(crate::recovery::KEPT_PREFIX));
+        if f.state != FileState::Done && !kept {
             continue; // never changed by this operation
         }
         let seq = entries.len() as u32;
-        if let Some((status, fingerprint, action, mut notes)) = undo_one(&f)? {
+        let decided = if kept { undo_kept(&f)? } else { undo_one(&f)? };
+        if let Some((status, fingerprint, action, mut notes)) = decided {
             let conflict = notes.iter().any(|n| n == FORCED_NOTE)
                 || matches!(&status, EntryStatus::Blocked(r) if r.contains("conflict"));
             if conflict {
@@ -188,6 +193,47 @@ pub const FORCED_NOTE: &str = "changed after the operation (conflict): excluded 
 /// A forced restore: excluded by default in the undo Plan.
 pub fn is_forced(e: &PlanEntry) -> bool {
     e.notes.iter().any(|n| n == FORCED_NOTE)
+}
+
+/// A file left as found after an interruption (recovery::resolve_keep): what it holds is unknown
+/// to the journal, so restoring its pre-image is always a forced restore, or a recreate if it is
+/// gone.
+fn undo_kept(f: &FileRow) -> Result<Option<Decision>, CoreError> {
+    let Some(h0) = f.h0.clone() else {
+        return Ok(None); // no complete backup was made
+    };
+    if f.role != crate::ROLE_EMBEDDED {
+        return Ok(None);
+    }
+    let path = Path::new(&f.path);
+    if mm_fs::ensure_absent(path).is_ok() {
+        return recreate(f, path, h0).map(Some);
+    }
+    let fp = fingerprint(path)?;
+    let cur = hash_opt(path);
+    Ok(Some(if cur.as_deref() == Some(h0.as_str()) {
+        (
+            EntryStatus::NoChange,
+            fp,
+            None,
+            vec!["already in its original state".into()],
+        )
+    } else if let Some(now) = cur
+        && hash_opt(Path::new(&f.backup_path)).as_deref() == Some(h0.as_str())
+    {
+        (
+            EntryStatus::Ready,
+            fp,
+            Some(EntryAction::Restore {
+                backup: f.backup_path.clone(),
+                h0,
+                h1: now,
+            }),
+            vec![FORCED_NOTE.into()],
+        )
+    } else {
+        blocked("backup missing or damaged", fp)
+    }))
 }
 
 /// The file is gone: recreate its pre-image `h0` at its path from the backup, if possible.

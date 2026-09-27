@@ -17,6 +17,8 @@
 //!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
+//!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
+//!                             disk (the backup stays; plan-undo --force-conflicts restores it)
 //!   rebuild-journal           re-import operations missing from the database from their
 //!                             backup folders (manifest.jsonl, plan.json); then run recover
 //!   resume OP_ID [FAULTS]
@@ -556,6 +558,23 @@ fn main() -> ExitCode {
                     })
                     .collect();
                 println!("{}", Value::Array(out));
+                Ok(ExitCode::SUCCESS)
+            }
+            "resolve" => {
+                let keep = take_flag(&mut args, "--keep");
+                let (Some(op), true) = (args.first().cloned(), keep) else {
+                    return Err("resolve OP_ID --keep SEQ...".into());
+                };
+                let seqs = args[1..]
+                    .iter()
+                    .map(|s| s.parse::<u32>().map_err(|_| format!("bad SEQ {s}")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                recovery::resolve_keep(&mut store, &op, &seqs).map_err(|e| e.to_string())?;
+                let o = store
+                    .operation(&op)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("no such operation")?;
+                println!("{}", json!({"id": op, "status": o.status}));
                 Ok(ExitCode::SUCCESS)
             }
             "plan-undo" => {
