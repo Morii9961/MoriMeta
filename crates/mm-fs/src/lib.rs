@@ -512,6 +512,68 @@ pub fn walk(root: &Path) -> Walk {
     w
 }
 
+/// Folders a cloud client keeps in sync (SAFETY_MODEL §8.3), best effort: OneDrive (the
+/// environment variables its client sets), Dropbox (its `info.json`), iCloud Drive (its default
+/// folder). Writing there works, but the client uploads every change and may create conflicted
+/// copies when the file changes elsewhere at the same time.
+pub fn sync_roots() -> Vec<(PathBuf, &'static str)> {
+    let mut roots = Vec::new();
+    for var in ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"] {
+        if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
+            let p = PathBuf::from(v);
+            if !roots.iter().any(|(r, _): &(PathBuf, &str)| r == &p) {
+                roots.push((p, "OneDrive"));
+            }
+        }
+    }
+    for base in ["APPDATA", "LOCALAPPDATA"] {
+        if let Some(b) = std::env::var_os(base) {
+            if let Ok(text) =
+                std::fs::read_to_string(PathBuf::from(b).join("Dropbox").join("info.json"))
+            {
+                for p in dropbox_paths(&text) {
+                    roots.push((p, "Dropbox"));
+                }
+            }
+        }
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE") {
+        let icloud = PathBuf::from(home).join("iCloudDrive");
+        if icloud.is_dir() {
+            roots.push((icloud, "iCloud Drive"));
+        }
+    }
+    roots
+}
+
+/// The `path` of every account in Dropbox's `info.json`.
+fn dropbox_paths(info_json: &str) -> Vec<PathBuf> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(info_json) else {
+        return vec![];
+    };
+    v.as_object()
+        .map(|o| {
+            o.values()
+                .filter_map(|acct| acct.get("path")?.as_str().map(PathBuf::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The sync client whose folder holds `p`: whole path components, letter case ignored.
+pub fn sync_provider(p: &Path, roots: &[(PathBuf, &'static str)]) -> Option<&'static str> {
+    let lower = |q: &Path| -> Vec<String> {
+        q.components()
+            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+            .collect()
+    };
+    let pc = lower(p);
+    roots.iter().find_map(|(r, name)| {
+        let rc = lower(r);
+        (!rc.is_empty() && pc.len() >= rc.len() && pc[..rc.len()] == rc[..]).then_some(*name)
+    })
+}
+
 /// Keeps the system from sleeping while an Operation runs (SAFETY_MODEL §8.14); the display may
 /// still turn off. The request belongs to the calling thread and ends when the guard is dropped.
 pub struct KeepAwake(());
@@ -614,6 +676,33 @@ mod tests {
         std::fs::remove_dir(&junction).unwrap();
         let _ = std::fs::remove_dir_all(&d);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn sync_folders_by_whole_components() {
+        let roots = vec![
+            (PathBuf::from(r"S:\Sync\m\OneDrive"), "OneDrive"),
+            (PathBuf::from(r"D:\Dropbox"), "Dropbox"),
+        ];
+        let at = |s: &str| sync_provider(Path::new(s), &roots);
+        assert_eq!(at(r"s:\sync\M\onedrive\Photos\a.jpg"), Some("OneDrive"));
+        assert_eq!(at(r"S:\Sync\m\OneDrive"), Some("OneDrive"));
+        assert_eq!(at(r"S:\Sync\m\OneDrive - Work\a.jpg"), None);
+        assert_eq!(at(r"S:\Sync\m\OneDriveX\a.jpg"), None);
+        assert_eq!(at(r"D:\Dropbox\x\y.NEF"), Some("Dropbox"));
+        assert_eq!(at(r"E:\Photos\a.jpg"), None);
+        let info = r#"{"personal": {"path": "S:\\Sync\\m\\Dropbox", "host": 1},
+                       "business": {"path": "S:\\Sync\\m\\Dropbox (Team)"}}"#;
+        let mut p = dropbox_paths(info);
+        p.sort();
+        assert_eq!(
+            p,
+            [
+                PathBuf::from(r"S:\Sync\m\Dropbox"),
+                PathBuf::from(r"S:\Sync\m\Dropbox (Team)")
+            ]
+        );
+        assert!(dropbox_paths("not json").is_empty());
     }
 
     #[test]

@@ -3504,3 +3504,67 @@ fn preserve_mtime_option() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §8.3 / §6.2: files in a synced folder get a note in the Plan (writing is still
+/// allowed); backups in a synced folder get a warning. The OneDrive client's environment variable
+/// is simulated for the child process.
+#[test]
+fn synced_folders_are_noted() {
+    let pkg = require!();
+    let lab = Lab::new("sync", &pkg);
+    let run = |args: &[&str], onedrive: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+            .env("OneDrive", onedrive)
+            .arg("--data")
+            .arg(&lab.data)
+            .arg("--exiftool")
+            .arg(&lab.pkg)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let out = lab.dir.join("p.json");
+    let photo = lab.photos[0].to_str().unwrap();
+    let o = run(
+        &[
+            "plan-creator",
+            "--set",
+            "Morii",
+            "--out",
+            out.to_str().unwrap(),
+            photo,
+        ],
+        &lab.dir,
+    );
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pj = Lab::json(&o);
+    assert_eq!(pj["entries"][0]["status"]["status"], "ready");
+    assert!(
+        pj["entries"][0]["notes"]
+            .to_string()
+            .contains("OneDrive folder"),
+        "{pj}"
+    );
+    let b = Lab::json(&run(&["backups"], &lab.dir));
+    assert!(b["warning"].as_str().unwrap().contains("OneDrive"), "{b}");
+    // elsewhere: no note, no warning
+    let elsewhere = lab.dir.join("not-synced");
+    let o = run(
+        &[
+            "plan-creator",
+            "--set",
+            "Morii",
+            "--out",
+            lab.dir.join("q.json").to_str().unwrap(),
+            photo,
+        ],
+        &elsewhere,
+    );
+    assert!(
+        !Lab::json(&o)["entries"][0]["notes"]
+            .to_string()
+            .contains("OneDrive")
+    );
+    assert!(Lab::json(&run(&["backups"], &elsewhere))["warning"].is_null());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

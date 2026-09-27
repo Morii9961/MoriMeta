@@ -461,6 +461,7 @@ fn plan_with(
     let mut seen = HashSet::new();
     let mut pending: Vec<Pending> = Vec::new();
     let mut volumes: HashMap<PathBuf, VolumeKind> = HashMap::new();
+    let sync_roots = mm_fs::sync_roots();
     for (i, input) in inputs.iter().enumerate() {
         if i % PROGRESS_EVERY == 0 {
             ctl.report(PlanStage::Files, i, inputs.len())?;
@@ -568,6 +569,14 @@ fn plan_with(
                     "on a network drive: allowed, but not verified on real NAS devices".into(),
                 ),
                 _ => {}
+            }
+            if job.is_some() {
+                if let Some(provider) = mm_fs::sync_provider(Path::new(&entry.path), &sync_roots) {
+                    entry.notes.push(format!(
+                        "in a {provider} folder: the change will be uploaded, and if the file is \
+                         edited elsewhere at the same time the sync client may keep a conflicted copy"
+                    ));
+                }
             }
         }
         entry.seq = entries.len() as u32;
