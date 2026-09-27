@@ -24,7 +24,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **Progress + Cancel (§5.3, SAFETY_MODEL §11)**: per-file `ExecProgress` callback in completion order; cooperative Cancel stops new files and abandons an in-place file before its commit (temp removed, original unchanged, resumable); after the commit it finishes. 125 tests.
 - **Backup retention (SAFETY_MODEL §6.3, D-7 values as parameters)**: usage + protection, prune plan (age, then size cap, oldest unprotected first), requested prune, keep mark; database marked before deletion, manifest.jsonl deleted first; pruned Operations refuse undo/resume; schema v2 migration. `mm-cli backups | prune | keep`. 129 tests.
 - Cancel also checked before the commit of recreate / move-to-backup-store / new-sidecar files. 130 tests.
-- **Forced restore (§7.2)**: files changed after an Operation are Ready-but-excluded in its undo Plan; forcing backs up the current content first, so it can itself be undone. `plan-undo --force-conflicts`. 131 tests.
+- **Forced restore (§7.2)**: files changed after an Operation are Ready-but-excluded in its undo Plan; forcing backs up the current content first, so it can itself be undone. `plan-undo --force-conflicts`. Conflicts name the later Operations that wrote the file (or "changed outside MoriMeta"). 131 tests.
 
 ## Waiting / needs the user
 

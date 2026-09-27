@@ -234,7 +234,7 @@ op_undo_plan(op, scope)
 - 后续 Operation 修改过同一文件时，前一个 Operation 的 Undo 会进入 Conflict，自然要求"先撤销后面的"；UI 指出是哪个 Operation 修改了它。
 - 可以只撤销选定文件。
 - 实现状态（2026-09-27）：文件不存在时的重建已实现并测试（PHASE1_REPORT G-6）；所在文件夹已不存在时不创建文件夹，标为 Blocked；撤销一次“重建”即 MoveToBackupStore：锁定后经锁句柄复制到备份库并复核，写 Ready，再以不覆盖的重命名把原路径改为登记的 bak 名（提交），核对哈希后删除 bak（I-9）；已实现并测试。
-- 强制恢复（2026-09-27）：之后被修改的文件在撤销 Plan 中为 Ready 但默认排除（`excluded`），其 Restore 以规划时的当前哈希为前提（执行前再变化 → Conflict）；执行时当前内容照常先备份，因此强制恢复可以再撤销（e2e：默认撤销不动该文件；强制后恢复原内容；撤销强制恢复后回到之后的修改）。Journal 角色仍为 `embedded`——其备份就是撤销 Operation 的前像，manifest 中不另设 PreImageBeforeForcedRestore。`mm-cli plan-undo --force-conflicts`；UI 通过 PlanBook 取消排除。
+- 强制恢复（2026-09-27）：之后被修改的文件在撤销 Plan 中为 Ready 但默认排除（`excluded`），其 Restore 以规划时的当前哈希为前提（执行前再变化 → Conflict）；执行时当前内容照常先备份，因此强制恢复可以再撤销（e2e：默认撤销不动该文件；强制后恢复原内容；撤销强制恢复后回到之后的修改）。Journal 角色仍为 `embedded`——其备份就是撤销 Operation 的前像，manifest 中不另设 PreImageBeforeForcedRestore。`mm-cli plan-undo --force-conflicts`；UI 通过 PlanBook 取消排除。冲突条目附注之后修改该文件的 Operation（标题与 id，按 Journal 登记顺序；没有则注明“在 MoriMeta 之外被修改”）。
 
 ---
 

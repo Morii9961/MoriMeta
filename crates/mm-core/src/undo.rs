@@ -26,7 +26,22 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
             continue; // never changed by this operation
         }
         let seq = entries.len() as u32;
-        if let Some((status, fingerprint, action, notes)) = undo_one(&f)? {
+        if let Some((status, fingerprint, action, mut notes)) = undo_one(&f)? {
+            let conflict = notes.iter().any(|n| n == FORCED_NOTE)
+                || matches!(&status, EntryStatus::Blocked(r) if r.contains("conflict"));
+            if conflict {
+                let later = store.later_writers(op_id, &f.path)?;
+                notes.push(if later.is_empty() {
+                    "changed outside MoriMeta".into()
+                } else {
+                    let who: Vec<String> =
+                        later.iter().map(|(id, t)| format!("{t} ({id})")).collect();
+                    format!(
+                        "changed later by: {}; undo those first to restore without forcing",
+                        who.join(", ")
+                    )
+                });
+            }
             entries.push(PlanEntry {
                 seq,
                 path: f.path.clone(),

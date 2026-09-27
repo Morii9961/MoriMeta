@@ -2999,6 +2999,10 @@ fn forced_restore_of_a_file_changed_later() {
         .clone();
     assert_eq!(e0["excluded"], true, "{e0}");
     assert_eq!(pj["summary"]["excluded"], 1, "{pj}");
+    assert!(
+        e0["notes"].to_string().contains("changed outside MoriMeta"),
+        "{e0}"
+    );
     // default: the other files are restored, the changed one is left alone
     lab.apply_ok(&u);
     assert_eq!(blake(&target).as_deref(), Some(later.as_str()));
@@ -3021,5 +3025,21 @@ fn forced_restore_of_a_file_changed_later() {
     // the forced restore is an Operation like any other: undo it
     lab.undo(&forced);
     assert_eq!(blake(&target).as_deref(), Some(later.as_str()));
+
+    // a later Operation changed the files: the undo of the earlier one names it
+    let lab2 = Lab::new("forced-by-op", &pkg);
+    let a = lab2.apply_ok(&lab2.plan("Morii", "a.json"));
+    let b = lab2.apply_ok(&lab2.plan("Mori", "b.json"));
+    let o = lab2.cli(&[
+        "plan-undo",
+        &a,
+        "--out",
+        lab2.dir.join("u.json").to_str().unwrap(),
+    ]);
+    let pj = Lab::json(&o);
+    for e in pj["entries"].as_array().unwrap() {
+        assert!(e["notes"].to_string().contains(&b), "{e}");
+    }
     let _ = std::fs::remove_dir_all(&lab.dir);
+    let _ = std::fs::remove_dir_all(&lab2.dir);
 }

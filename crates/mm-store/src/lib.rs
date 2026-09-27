@@ -564,6 +564,21 @@ impl Store {
         Ok(rows)
     }
 
+    /// Operations registered after `op_id` that finished writing `path` (id, title), oldest first:
+    /// who changed a file after it (SAFETY_MODEL §7.2).
+    pub fn later_writers(&self, op_id: &str, path: &str) -> Result<Vec<(String, String)>> {
+        let mut st = self.conn.prepare(
+            "SELECT o.id, o.title FROM op_files f JOIN operations o ON o.id = f.op_id
+             WHERE f.path = ?2 COLLATE NOCASE AND f.state = 'done'
+               AND o.rowid > (SELECT rowid FROM operations WHERE id = ?1)
+             ORDER BY o.rowid",
+        )?;
+        let rows = st
+            .query_map(params![op_id, path], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn files(&self, op_id: &str) -> Result<Vec<FileRow>> {
         let mut st = self.conn.prepare(
             "SELECT op_id, seq, path, role, temp_path, bak_path, backup_path, state, h0, h1, error
