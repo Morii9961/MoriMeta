@@ -1011,6 +1011,11 @@ fn move_to_backup_store(
     fault(opts, seq, 4)?;
     store.set_state(op_id, seq, FileState::Ready, &FileUpdate::default())?;
     fault(opts, seq, 7)?;
+    if opts.cancelled() {
+        return Ok(Outcome::Cancelled(
+            "cancelled before the commit; file unchanged".into(),
+        ));
+    }
     if mm_fs::file_id_of_path(&f.path).ok() != Some(mm_fs::file_id(&lock)?) {
         return Ok(Outcome::Conflict(
             "file was renamed or replaced during the operation".into(),
@@ -1171,6 +1176,12 @@ fn commit_new(
         },
     )?;
     fault(opts, seq, 7)?;
+    if opts.cancelled() {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Cancelled(
+            "cancelled before the commit; nothing created".into(),
+        ));
+    }
     match mm_fs::move_no_replace(&f.temp, &f.path) {
         Ok(()) => {}
         // ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS: something appeared at the path (I-6)

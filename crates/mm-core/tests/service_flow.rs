@@ -12,7 +12,7 @@ use mm_core::planner;
 use mm_core::service::{EntryFilter, OperationGate, PAGE_SIZE, PlanBook, ServiceError, Session};
 use mm_core::undo;
 use mm_domain::creator::CreatorEdit;
-use mm_domain::plan::Plan;
+use mm_domain::plan::{EntryAction, Plan};
 use mm_exiftool::EngineConfig;
 use mm_store::{FileState, OpStatus, Store};
 
@@ -320,5 +320,61 @@ fn cancel_abandons_before_the_commit_and_finishes_after() {
         assert_eq!(urep.status, OpStatus::Completed, "{urep:?}");
         assert_eq!(lab.hashes(), lab.before, "step {step}");
     }
+    lab.close();
+}
+
+/// Cancel before the commit of a recreate (undo of a deleted file, SAFETY_MODEL §7.2): nothing is
+/// created and no temporary file is left; resuming recreates it.
+#[test]
+fn cancel_before_a_recreate_creates_nothing() {
+    let Some(mut lab) = Lab::new("cancel-recreate", 3) else {
+        return;
+    };
+    let plan = lab.plan_creator();
+    let rep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &plan,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rep.status, OpStatus::Completed, "{rep:?}");
+    std::fs::remove_file(&lab.files[0]).unwrap();
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    let recreate = up
+        .entries
+        .iter()
+        .find(|e| matches!(e.action, Some(EntryAction::Recreate { .. })))
+        .expect("a recreate entry")
+        .seq;
+    let opts = ExecOptions {
+        cancel: Some(Arc::new(AtomicBool::new(false))),
+        cancel_at: Some(FaultPoint {
+            seq: recreate,
+            step: 5,
+        }),
+        ..Default::default()
+    };
+    let photos = lab.files[0].parent().unwrap().to_path_buf();
+    // run the recreate first so that the cancel lands inside it
+    let mut first = up.clone();
+    first.entries.sort_by_key(|e| e.seq != recreate);
+    let urep = executor::start(&mut lab.store, &mut lab.engines, &first, &opts).unwrap();
+    assert_eq!(urep.status, OpStatus::Cancelled, "{urep:?}");
+    assert!(!lab.files[0].exists());
+    assert_eq!(
+        std::fs::read_dir(&photos).unwrap().count(),
+        2,
+        "no temp left"
+    );
+    let rest = executor::resume(
+        &mut lab.store,
+        &mut lab.engines,
+        &urep.op_id,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rest.status, OpStatus::Completed, "{rest:?}");
+    assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }
