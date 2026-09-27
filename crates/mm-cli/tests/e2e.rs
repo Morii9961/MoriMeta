@@ -2969,3 +2969,57 @@ fn pruned_backups_keep_history_but_not_undo() {
     assert!(f.status.success(), "{}", String::from_utf8_lossy(&f.stdout));
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §7.2: a file changed after the Operation is excluded from its undo by default;
+/// forcing it restores the backup after backing up the current content, and undoing the forced
+/// restore brings the later change back.
+#[test]
+fn forced_restore_of_a_file_changed_later() {
+    let pkg = require!();
+    let lab = Lab::new("forced", &pkg);
+    let op1 = lab.apply_ok(&lab.plan("Morii", "p1.json"));
+    // another program changes one file afterwards (same content rewritten = new identity/time,
+    // then one byte appended so the content differs)
+    let target = lab.photos[0].clone();
+    let mut bytes = std::fs::read(&target).unwrap();
+    bytes.extend_from_slice(b"later");
+    std::fs::write(&target, &bytes).unwrap();
+    let later = blake(&target).unwrap();
+
+    let u = lab.dir.join("u.json");
+    let o = lab.cli(&["plan-undo", &op1, "--out", u.to_str().unwrap()]);
+    assert!(o.status.success());
+    let pj = Lab::json(&o);
+    let e0 = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["path"].as_str().unwrap().ends_with("Writer.jpg"))
+        .unwrap()
+        .clone();
+    assert_eq!(e0["excluded"], true, "{e0}");
+    assert_eq!(pj["summary"]["excluded"], 1, "{pj}");
+    // default: the other files are restored, the changed one is left alone
+    lab.apply_ok(&u);
+    assert_eq!(blake(&target).as_deref(), Some(later.as_str()));
+    for p in &lab.photos[1..] {
+        assert_eq!(blake(p).as_deref(), Some(lab.truth[p].as_str()));
+    }
+
+    // forced: a fresh plan (the files the first undo restored are no change now)
+    let f = lab.dir.join("f.json");
+    let o = lab.cli(&[
+        "plan-undo",
+        &op1,
+        "--out",
+        f.to_str().unwrap(),
+        "--force-conflicts",
+    ]);
+    assert!(o.status.success());
+    let forced = lab.apply_ok(&f);
+    assert_eq!(blake(&target).as_deref(), Some(lab.truth[&target].as_str()));
+    // the forced restore is an Operation like any other: undo it
+    lab.undo(&forced);
+    assert_eq!(blake(&target).as_deref(), Some(later.as_str()));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

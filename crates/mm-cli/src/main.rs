@@ -20,7 +20,9 @@
 //!   rebuild-journal           re-import operations missing from the database from their
 //!                             backup folders (manifest.jsonl, plan.json); then run recover
 //!   resume OP_ID [FAULTS]
-//!   plan-undo OP_ID --out PLAN.json
+//!   plan-undo OP_ID --out PLAN.json [--force-conflicts]
+//!                             files changed after the Operation are excluded unless forced (their
+//!                             current content is backed up first, so the forced restore can be undone)
 //!   history | show OP_ID | fsck OP_ID
 //!   backups [--now-ms MS]     backup usage, protection and what the retention policy would prune
 //!   prune [--requested] OP_ID...   remove backups (the policy's choice, or the user's with
@@ -315,7 +317,8 @@ fn plan_json(p: &Plan) -> Value {
         "summary": serde_json::to_value(p.summary()).unwrap_or_default(),
         "entries": p.entries.iter().map(|e| json!({
             "seq": e.seq, "path": e.path, "status": serde_json::to_value(&e.status).unwrap_or_default(),
-            "changes": serde_json::to_value(&e.changes).unwrap_or_default(), "notes": e.notes})).collect::<Vec<_>>(),
+            "changes": serde_json::to_value(&e.changes).unwrap_or_default(), "notes": e.notes,
+            "excluded": e.excluded})).collect::<Vec<_>>(),
     })
 }
 
@@ -548,9 +551,18 @@ fn main() -> ExitCode {
             }
             "plan-undo" => {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
-                let op = args.first().ok_or("plan-undo OP_ID --out PLAN.json")?;
+                let force = take_flag(&mut args, "--force-conflicts");
+                let op = args
+                    .first()
+                    .ok_or("plan-undo OP_ID --out PLAN.json [--force-conflicts]")?;
                 let eng = with_engine(&g)?;
-                let plan = undo::plan_undo(&store, op, eng.version()).map_err(|e| e.to_string())?;
+                let mut plan =
+                    undo::plan_undo(&store, op, eng.version()).map_err(|e| e.to_string())?;
+                if force {
+                    for e in plan.entries.iter_mut().filter(|e| undo::is_forced(e)) {
+                        e.excluded = false;
+                    }
+                }
                 eng.close();
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

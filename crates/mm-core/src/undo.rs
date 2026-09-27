@@ -34,9 +34,9 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
                 fingerprint,
                 status,
                 changes: vec![],
+                excluded: notes.iter().any(|n| n == FORCED_NOTE),
                 action,
                 notes,
-                excluded: false,
             });
         }
     }
@@ -146,9 +146,33 @@ fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
             None,
             vec!["already in its original state".into()],
         )
+    } else if let Some(now) = cur
+        && hash_opt(Path::new(&f.backup_path)).as_deref() == Some(h0.as_str())
+    {
+        // changed later: a forced restore, excluded unless the user includes it. The current
+        // content is backed up first like any pre-image, so the forced restore can be undone.
+        (
+            EntryStatus::Ready,
+            fp,
+            Some(EntryAction::Restore {
+                backup: f.backup_path.clone(),
+                h0,
+                h1: now,
+            }),
+            vec![FORCED_NOTE.into()],
+        )
     } else {
         blocked("changed after the operation (conflict); not restored", fp)
     }))
+}
+
+/// Note of an undo entry whose file changed after the Operation (SAFETY_MODEL §7.2).
+pub const FORCED_NOTE: &str = "changed after the operation (conflict): excluded unless included; \
+     forcing it backs up the current content first, so it can be undone";
+
+/// A forced restore: excluded by default in the undo Plan.
+pub fn is_forced(e: &PlanEntry) -> bool {
+    e.notes.iter().any(|n| n == FORCED_NOTE)
 }
 
 /// The file is gone: recreate its pre-image `h0` at its path from the backup, if possible.
