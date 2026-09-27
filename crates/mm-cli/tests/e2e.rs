@@ -2062,3 +2062,253 @@ fn disk_full_with_four_workers_pauses_and_resumes() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+impl Lab {
+    fn plan_time(&self, tool: &[&str], file: &str) -> (PathBuf, Value) {
+        let out = self.dir.join(file);
+        let mut args = vec!["plan-time"];
+        args.extend_from_slice(tool);
+        args.extend(["--out", out.to_str().unwrap()]);
+        let ps: Vec<String> = self
+            .photos
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        args.extend(ps.iter().map(String::as_str));
+        let o = self.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, Lab::json(&o))
+    }
+
+    fn times(&self) -> Vec<Option<String>> {
+        let ps: Vec<String> = self
+            .photos
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let mut args = vec!["scan"];
+        args.extend(ps.iter().map(String::as_str));
+        Lab::json(&self.cli(&args))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["capture_time"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    /// Tags of one file straight from ExifTool (read-only; lab copies only).
+    fn tags(&self, p: &Path) -> Value {
+        let o = Command::new(self.pkg.join("exiftool.exe"))
+            .args([
+                "-config",
+                "",
+                "-json",
+                "-G1",
+                "-a",
+                "-time:all",
+                "-SubSecTimeOriginal",
+            ])
+            .arg(p)
+            .output()
+            .unwrap();
+        serde_json::from_slice::<Value>(&o.stdout).unwrap()[0].clone()
+    }
+
+    fn apply_ok(&self, plan: &Path) -> String {
+        let a = self.cli(&["apply", plan.to_str().unwrap()]);
+        assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+        Lab::json(&a)["op_id"].as_str().unwrap().to_owned()
+    }
+}
+
+fn local(s: &str) -> mm_domain::time::NaiveDateTime {
+    mm_domain::time::parse_local(&s[..19]).unwrap()
+}
+
+/// The four MVP time tools (METADATA_MODEL §5.2) through Plan → apply → undo on the fixtures.
+#[test]
+fn time_tools_apply_and_undo() {
+    let pkg = require!();
+    let lab = Lab::new("time", &pkg);
+    let before = lab.times();
+    let writer = SAMPLES.iter().position(|s| *s == "Writer.jpg").unwrap();
+    assert_eq!(before[writer], None, "Writer.jpg has no capture time");
+
+    // Shift: files without a time are blocked; the others move by exactly one hour
+    let (p, pj) = lab.plan_time(&["--shift", "+01:00:00"], "shift.json");
+    assert_eq!(pj["entries"][writer]["status"]["status"], "blocked", "{pj}");
+    let op = lab.apply_ok(&p);
+    for (i, (b, a)) in before.iter().zip(lab.times()).enumerate() {
+        if i == writer {
+            assert_eq!(a, None);
+        } else {
+            let d = local(a.as_deref().unwrap()) - local(b.as_deref().unwrap());
+            assert_eq!(d.num_seconds(), 3600, "{}", SAMPLES[i]);
+        }
+    }
+    // other locations keep their shape: XMP.jpg's date-only XMP value stays date-only,
+    // GPS.jpg's IPTC date follows the new capture date
+    let xmp = &lab.tags(&lab.photos[SAMPLES.iter().position(|s| *s == "XMP.jpg").unwrap()]);
+    assert_eq!(xmp["XMP-photoshop:DateCreated"], "2001:05:19", "{xmp}");
+    let gps = &lab.tags(&lab.photos[SAMPLES.iter().position(|s| *s == "GPS.jpg").unwrap()]);
+    assert_eq!(gps["IPTC:DateCreated"], "2002:07:13", "{gps}");
+    assert_eq!(
+        gps["IFD0:ModifyDate"], "2002:07:19 13:28:10",
+        "ModifyDate is never changed"
+    );
+    assert!(lab.cli(&["fsck", &op]).status.success());
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // Absolute: every file, including the one without a time
+    let (p, _) = lab.plan_time(&["--absolute", "2026:09:27 10:00:00"], "abs.json");
+    let op = lab.apply_ok(&p);
+    assert!(
+        lab.times()
+            .iter()
+            .all(|t| t.as_deref() == Some("2026:09:27 10:00:00"))
+    );
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // Sequence by natural file name, one minute apart
+    let (p, _) = lab.plan_time(
+        &[
+            "--sequence",
+            "2026:01:01 00:00:00",
+            "--step",
+            "00:01:00",
+            "--order",
+            "name",
+        ],
+        "seq.json",
+    );
+    let op = lab.apply_ok(&p);
+    let mut by_name: Vec<(&str, String)> = SAMPLES
+        .iter()
+        .copied()
+        .zip(lab.times().into_iter().map(Option::unwrap))
+        .collect();
+    by_name.sort_by(|a, b| mm_domain::time::natural_cmp(a.0, b.0));
+    for (i, (_, t)) in by_name.iter().enumerate() {
+        assert_eq!(t, &format!("2026:01:01 00:{i:02}:00"), "{by_name:?}");
+    }
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // Preserve relative timing: the anchor gets the new time, every file moves by the same amount
+    let nikon = SAMPLES.iter().position(|s| *s == "Nikon.jpg").unwrap();
+    let anchor = lab.photos[nikon].to_string_lossy().into_owned();
+    let (p, _) = lab.plan_time(
+        &["--preserve", &anchor, "--to", "2026:01:01 12:00:00"],
+        "keep.json",
+    );
+    let op = lab.apply_ok(&p);
+    let after = lab.times();
+    assert_eq!(after[nikon].as_deref(), Some("2026:01:01 12:00:00"));
+    let delta = local("2026:01:01 12:00:00") - local(before[nikon].as_deref().unwrap());
+    for (i, (b, a)) in before.iter().zip(&after).enumerate() {
+        if let (Some(b), Some(a)) = (b, a) {
+            assert_eq!(local(a) - local(b), delta, "{}", SAMPLES[i]);
+        }
+    }
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// Offsets are never changed or invented; fractions are kept by Shift and dropped by Absolute;
+/// IPTC time keeps its own offset (ExifTool would otherwise use the computer's time zone).
+#[test]
+fn time_tools_keep_offsets_and_handle_fractions() {
+    let pkg = require!();
+    let lab = Lab::new("time-offsets", &pkg);
+    let f = lab.dir.join("photos").join("offsets.jpg");
+    let mk = Command::new(pkg.join("exiftool.exe"))
+        .args([
+            "-config",
+            "",
+            "-ExifIFD:SubSecTimeOriginal=07",
+            "-ExifIFD:OffsetTimeOriginal=+09:00",
+            "-XMP-exif:DateTimeOriginal=2001:08:01 12:57:23.07+09:00",
+            "-IPTC:DateCreated=2001:08:01",
+            "-IPTC:TimeCreated=12:57:23+09:00",
+            "-o",
+        ])
+        .arg(&f)
+        .arg(&lab.photos[SAMPLES.iter().position(|s| *s == "Nikon.jpg").unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        mk.status.success(),
+        "{}",
+        String::from_utf8_lossy(&mk.stderr)
+    );
+    let original = blake(&f).unwrap();
+    let plan = |tool: &[&str], name: &str| {
+        let out = lab.dir.join(name);
+        let mut args = vec!["plan-time"];
+        args.extend_from_slice(tool);
+        args.extend(["--out", out.to_str().unwrap(), f.to_str().unwrap()]);
+        let o = lab.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        out
+    };
+    let op = lab.apply_ok(&plan(&["--shift", "+2d01:00:00"], "s.json"));
+    let t = lab.tags(&f);
+    assert_eq!(t["ExifIFD:DateTimeOriginal"], "2001:08:03 13:57:23", "{t}");
+    assert_eq!(t["ExifIFD:SubSecTimeOriginal"], "07", "{t}");
+    assert_eq!(t["ExifIFD:OffsetTimeOriginal"], "+09:00", "{t}");
+    assert_eq!(
+        t["XMP-exif:DateTimeOriginal"], "2001:08:03 13:57:23.07+09:00",
+        "{t}"
+    );
+    assert_eq!(t["IPTC:DateCreated"], "2001:08:03", "{t}");
+    assert_eq!(t["IPTC:TimeCreated"], "13:57:23+09:00", "{t}");
+    lab.undo(&op);
+    assert_eq!(blake(&f).as_deref(), Some(original.as_str()));
+
+    let op = lab.apply_ok(&plan(&["--absolute", "2026:09:27 08:00:00"], "a.json"));
+    let t = lab.tags(&f);
+    assert_eq!(t["ExifIFD:DateTimeOriginal"], "2026:09:27 08:00:00", "{t}");
+    assert!(t.get("ExifIFD:SubSecTimeOriginal").is_none(), "{t}");
+    assert_eq!(t["ExifIFD:OffsetTimeOriginal"], "+09:00", "{t}");
+    assert_eq!(
+        t["XMP-exif:DateTimeOriginal"], "2026:09:27 08:00:00+09:00",
+        "{t}"
+    );
+    assert_eq!(t["IPTC:TimeCreated"], "08:00:00+09:00", "{t}");
+    lab.undo(&op);
+    assert_eq!(blake(&f).as_deref(), Some(original.as_str()));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// A crash in the middle of a Shift: recovery, and resume re-checks the capture time shown in
+/// the Preview against the file before writing it.
+#[test]
+fn time_shift_crash_recovers_and_resumes() {
+    let pkg = require!();
+    let lab = Lab::new("time-crash", &pkg);
+    let before = lab.times();
+    let (p, _) = lab.plan_time(&["--shift", "-00:30:00"], "s.json");
+    let o = lab.cli_env(&["apply", p.to_str().unwrap(), "--crash-at", "2:6"], true);
+    assert_eq!(o.status.code(), Some(77));
+    let op = lab.last_op();
+    lab.assert_preimages(&op);
+    assert!(lab.cli(&["recover"]).status.success());
+    lab.assert_recovered(&op);
+    let res = lab.cli(&["resume", &op]);
+    assert!(
+        res.status.success() || res.status.code() == Some(3),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    for (b, a) in before.iter().zip(lab.times()) {
+        if let (Some(b), Some(a)) = (b, a) {
+            assert_eq!((local(&a) - local(b)).num_seconds(), -1800);
+        }
+    }
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

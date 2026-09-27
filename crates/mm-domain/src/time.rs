@@ -7,7 +7,9 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use chrono::{Datelike, FixedOffset, NaiveDate, NaiveDateTime, TimeDelta};
+use chrono::{Datelike, FixedOffset, NaiveDate};
+/// The time types of this module's API, for callers without their own chrono dependency.
+pub use chrono::{NaiveDateTime, TimeDelta};
 
 /// Sub-second digits exactly as stored (e.g. "07", "670").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -348,6 +350,43 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
     ra.len().cmp(&rb.len()).then(zeros).then_with(|| a.cmp(b))
 }
 
+/// A Shift amount: `[+|-][<days>d]HH:MM:SS`, e.g. `+01:00:00`, `-00:30:00`, `+2d03:00:00`.
+pub fn parse_shift(s: &str) -> Option<TimeDelta> {
+    let (sign, rest) = match s.as_bytes().first()? {
+        b'+' => (1, &s[1..]),
+        b'-' => (-1, &s[1..]),
+        _ => (1, s),
+    };
+    let (days, hms) = match rest.split_once('d') {
+        Some((d, t)) => (d.parse::<i64>().ok()?, t),
+        None => (0, rest),
+    };
+    let parts: Vec<&str> = hms.split(':').collect();
+    let [h, m, sec] = parts.as_slice() else {
+        return None;
+    };
+    if m.len() != 2 || sec.len() != 2 || h.is_empty() {
+        return None;
+    }
+    let (h, m, sec): (i64, i64, i64) = (h.parse().ok()?, m.parse().ok()?, sec.parse().ok()?);
+    if m >= 60 || sec >= 60 || days < 0 {
+        return None;
+    }
+    let total = days
+        .checked_mul(86_400)?
+        .checked_add(h.checked_mul(3600)?)?
+        .checked_add(m * 60 + sec)?;
+    TimeDelta::try_seconds(total * sign)
+}
+
+/// A wall-clock time as typed for Absolute / Sequence: `YYYY:MM:DD HH:MM:SS`.
+pub fn parse_local(s: &str) -> Option<NaiveDateTime> {
+    (s.len() == 19)
+        .then(|| NaiveDateTime::parse_from_str(s, "%Y:%m:%d %H:%M:%S").ok())
+        .flatten()
+        .filter(in_exif_range)
+}
+
 /// Convenience for tests and callers: build a NaiveDateTime from components.
 pub fn ymd_hms(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
     NaiveDate::from_ymd_opt(y, mo, d)
@@ -376,6 +415,26 @@ mod tests {
                     .unwrap_or_else(|e| format!("{e:?}"))
             })
             .collect()
+    }
+
+    #[test]
+    fn shift_and_local_inputs() {
+        assert_eq!(parse_shift("+01:00:00"), TimeDelta::try_hours(1));
+        assert_eq!(parse_shift("-00:30:00"), TimeDelta::try_minutes(-30));
+        assert_eq!(
+            parse_shift("+2d03:00:05"),
+            TimeDelta::try_seconds(2 * 86_400 + 3 * 3600 + 5)
+        );
+        assert_eq!(parse_shift("12:00:00"), TimeDelta::try_hours(12));
+        for bad in ["", "+1:0:0", "+01:60:00", "1h", "+-1d00:00:00", "+01:00"] {
+            assert_eq!(parse_shift(bad), None, "{bad}");
+        }
+        assert_eq!(
+            parse_local("2026:09:27 10:11:12"),
+            Some(ymd_hms(2026, 9, 27, 10, 11, 12))
+        );
+        assert_eq!(parse_local("2026-09-27 10:11:12"), None);
+        assert_eq!(parse_local("0000:01:01 00:00:00"), None);
     }
 
     #[test]

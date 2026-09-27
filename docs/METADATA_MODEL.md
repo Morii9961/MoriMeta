@@ -157,6 +157,8 @@ struct CaptureTime {
 | 不修改 | `IFD0:ModifyDate` 与 `SubSecTime`（与 Lightroom 一致 [F-42]）、GPS 时间戳（UTC）、MakerNotes、文件系统时间（SAFETY_MODEL §8.9） | |
 
 S3 已核对：对 z8.jpg 执行 Absolute 时只改变上述标签，`IFD0:ModifyDate` 与 `SubSecTime` 保持不变。
+
+实现说明（2026-09-27，PHASE1_REPORT）：Embedded 目标中每个已有位置按自身形态写入新钟面时间——仅日期的值仍只写日期，各位置自身的偏移保持不变，亚秒按 §5.2 处理；`XMP-xmp:CreateDate` 按上表“已存在时更新”，与“同时修改数字化时间”选项无关。ExifTool 13.59 不带偏移写 `IPTC:TimeCreated` 时会填入本机时区，因此 IPTC 时间只以文件已有的偏移写入。
 **显示差异（S3）：** Windows 资源管理器按钟面时间显示"拍摄日期"，属性值按本机时区换算，**不使用 OffsetTimeOriginal**。
 
 ---

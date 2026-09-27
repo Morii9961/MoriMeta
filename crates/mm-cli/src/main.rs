@@ -10,6 +10,9 @@
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
+//!   plan-time (--absolute "YYYY:MM:DD HH:MM:SS" | --shift [+|-][Nd]HH:MM:SS
+//!              | --sequence "START" --step HH:MM:SS [--order time|name] | --preserve ANCHOR_FILE --to "TIME")
+//!             [--no-digitized] --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
@@ -40,10 +43,13 @@ use std::process::ExitCode;
 
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
+use mm_core::planner::TimeTool;
 use mm_core::{fsck, planner, recovery, undo};
+use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
 use mm_domain::plan::Plan;
+use mm_domain::time::{self, SequenceOrder};
 use mm_exiftool::EngineConfig;
 use mm_store::{FileState, Store, WriteFault, WriteTarget};
 use serde_json::{Value, json};
@@ -356,7 +362,12 @@ fn main() -> ExitCode {
                         Ok(s) => {
                             let c = creator::read(&s);
                             let r = copyright::read(&s);
+                            let t = match capture::read(&s) {
+                                Ok(t) => json!(t.map(|t| capture::display(&t))),
+                                Err(e) => json!({"invalid": e}),
+                            };
                             json!({"path": p, "creator": c.effective, "sources": c.sources, "conflicting": c.conflicting,
+                                   "capture_time": t,
                                    "copyright": {"value": r.effective, "sources": r.sources, "conflicting": r.conflicting,
                                                  "other_languages": r.other_languages}})
                         }
@@ -376,6 +387,60 @@ fn main() -> ExitCode {
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
                 let plan = planner::plan_creator(&mut eng, &paths, &edit, &title)
+                    .map_err(|e| e.to_string())?;
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-time" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
+                let title =
+                    take_opt(&mut args, "--title").unwrap_or_else(|| "Set capture time".into());
+                let digitized = !args.iter().any(|a| a == "--no-digitized");
+                args.retain(|a| a != "--no-digitized");
+                let local = |v: String| {
+                    time::parse_local(&v).ok_or(format!("{v:?}: use YYYY:MM:DD HH:MM:SS"))
+                };
+                let delta = |v: String| {
+                    time::parse_shift(&v).ok_or(format!("{v:?}: use [+|-][Nd]HH:MM:SS"))
+                };
+                let tools = [
+                    take_opt(&mut args, "--absolute").map(|v| Ok(TimeTool::Absolute(local(v)?))),
+                    take_opt(&mut args, "--shift").map(|v| Ok(TimeTool::Shift(delta(v)?))),
+                    take_opt(&mut args, "--sequence").map(|v| {
+                        let step =
+                            take_opt(&mut args, "--step").ok_or("--sequence needs --step")?;
+                        let order = match take_opt(&mut args, "--order").as_deref() {
+                            None | Some("time") => SequenceOrder::CaptureTimeThenName,
+                            Some("name") => SequenceOrder::NaturalFileName,
+                            Some(o) => return Err(format!("--order time | name, not {o}")),
+                        };
+                        Ok(TimeTool::Sequence {
+                            start: local(v)?,
+                            step: delta(step)?,
+                            order,
+                        })
+                    }),
+                    take_opt(&mut args, "--preserve").map(|anchor| {
+                        let to = take_opt(&mut args, "--to").ok_or("--preserve needs --to")?;
+                        Ok(TimeTool::PreserveRelative {
+                            anchor: PathBuf::from(anchor),
+                            new_local: local(to)?,
+                        })
+                    }),
+                ];
+                let mut given = tools.into_iter().flatten();
+                let tool = match (given.next(), given.next()) {
+                    (Some(t), None) => t?,
+                    _ => {
+                        return Err(
+                            "use exactly one of --absolute, --shift, --sequence, --preserve".into(),
+                        );
+                    }
+                };
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let plan = planner::plan_capture_time(&mut eng, &paths, &tool, digitized, &title)
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

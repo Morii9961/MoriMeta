@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use mm_domain::plan::{EntryAction, Plan, PlanEntry, PlanKind};
 use mm_domain::snapshot::Snapshot;
-use mm_domain::{copyright, creator};
+use mm_domain::{capture, copyright, creator};
 use mm_store::{FileState, FileUpdate, NewFile, NewOperation, OpStatus, Store};
 
 use crate::engine::Engine;
@@ -1091,6 +1091,10 @@ fn before_matches(entry: &PlanEntry, src: &Snapshot) -> Result<(), VerifyError> 
         let now = match ch.field.as_str() {
             creator::FIELD => creator::read(src).effective,
             copyright::FIELD => copyright::read(src).effective.map(|v| vec![v]),
+            capture::FIELD => capture::read(src)
+                .ok()
+                .flatten()
+                .map(|t| vec![capture::display(&t)]),
             // a field without this check must not be written unchecked
             other => {
                 return Err(VerifyError::Value(format!(

@@ -1,4 +1,4 @@
-# MoriMeta — Phase 1 Report（JPEG + Creator / Copyright 垂直链路）
+# MoriMeta — Phase 1 Report（JPEG + Creator / Copyright / 拍摄时间 垂直链路）
 
 > **Status:** 进行中 · 2026-09-27
 > 记录 Phase 1b 的实现范围、验证方式与已知缺口。安全措辞仍以 SAFETY_MODEL §0 的前提为准。
@@ -23,6 +23,8 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言；文件已有 IPTC 时写 `CopyrightNotice`（Latin 字符集不能表示或超过 128 字节 → 该文件的该字段 Blocked）；已有 `XMP-tiff:Copyright` 一并更新；读取优先级 XMP 默认语言 > EXIF > IPTC。实测（ExifTool 13.59，2026-09-27）：不带语言代码写 `XMP-dc:Rights` 会**删除其他语言的条目**，因此写入时明确使用 `XMP-dc:Rights-x-default`；读回键名不带后缀，V3 按此对应，其他语言条目若被改动仍判为附带变化（单元测试覆盖）。执行时“预览后字段值未变”的核对改为按字段分派，未知字段一律拒绝写入。
 
+拍摄时间写入规则（METADATA_MODEL §5）：四种工具（Absolute、Shift、Sequence、Preserve Relative Timing）以整个选择为单位规划（Sequence 需排序、Preserve 需锚点），`mm-cli plan-time`。写 `ExifIFD:DateTimeOriginal`，默认同时写 `ExifIFD:CreateDate`（`--no-digitized` 关闭）；已存在时更新 `IFD0:DateTimeOriginal`、`XMP-exif:DateTimeOriginal`、`XMP-photoshop:DateCreated`、`XMP-xmp:CreateDate`、IPTC `DateCreated`/`TimeCreated`，不新建。各位置保持自身形态：仅日期的值仍只写日期，各自的偏移不变（MVP 工具不改偏移，D-18），亚秒由 Shift/Preserve 保留、由 Absolute/Sequence 删除。原先与拍摄时间不一致的位置也改为新时间，Preview 为每个这样的位置给出说明。实测（ExifTool 13.59，2026-09-27）：各格式按写入值读回；但**不带偏移写 `IPTC:TimeCreated` 时 ExifTool 填入本机时区**（本机 `+08:00`），因此 IPTC 时间只以其已有偏移写入，无法识别时该文件 Blocked。
+
 ## 2. 验证
 
 `cargo test --workspace --release`：53 个测试全部通过（2026-09-27）。端到端测试 `crates/mm-cli/tests/e2e.rs` 使用锁定的 ExifTool 13.59 与 8 个 ExifTool 样本 JPEG（Writer、Nikon、Canon、XMP、Sony、Olympus、Pentax、GPS）：
@@ -33,6 +35,7 @@ Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF
 | 逐步崩溃 | 故障点 1–10 × 文件序号 0、3，共 20 例：每例检查恢复前原内容仍在（路径/bak/备份库）→ 恢复待决时新写入被拒绝 → `recover` → 路径只为 H0 或 H1、无残留、fsck 干净 → `resume` 完成 → 撤销后逐字节一致 | 20/20 通过 |
 | 随机终止 | 随机时刻终止 `mm-cli apply`，其后同上（默认 12 次，`MM_E2E_KILLS` 可调） | 12/12 通过 |
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
+| 拍摄时间（四种 MVP 工具） | Shift：无时间的文件 Blocked，其余各移 1 小时；XMP 仅日期值保持仅日期、IPTC 日期随新时间、`IFD0:ModifyDate` 不变；Absolute：含无时间的文件；Sequence：按自然文件名每分钟一张；Preserve：锚点得新时间、其余移动相同量；带亚秒/偏移/XMP/IPTC 的文件：Shift 保留亚秒与各处偏移，Absolute 去掉亚秒、保留偏移；Shift 中途崩溃后恢复与继续；全部撤销逐字节一致 | 通过（3 个端到端测试） |
 | 并行执行（worker pool） | 4 个 worker、24 个文件：随机终止 8 次（每次多个文件处于事务中）→ 恢复、继续、撤销逐字节一致；4 个 worker 下的磁盘满：每个文件只为 done 或 cancelled（原内容不变），继续后全部完成；卷许可单元测试（超过卷上限的第 N+1 个事务等待）；熔断按完成顺序计数 | 通过 |
 | Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
