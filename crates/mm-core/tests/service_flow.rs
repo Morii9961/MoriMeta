@@ -3,13 +3,16 @@
 //! interface. Works on copies of the ExifTool test images in a temporary folder.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use mm_core::engine::Engine;
-use mm_core::executor::ExecOptions;
+use mm_core::executor::{self, ExecOptions, ExecProgress, FaultPoint, ProgressSink};
 use mm_core::planner;
 use mm_core::service::{EntryFilter, OperationGate, PAGE_SIZE, PlanBook, ServiceError, Session};
 use mm_core::undo;
 use mm_domain::creator::CreatorEdit;
+use mm_domain::plan::Plan;
 use mm_exiftool::EngineConfig;
 use mm_store::{FileState, OpStatus, Store};
 
@@ -33,44 +36,96 @@ fn hash(p: &Path) -> String {
     mm_fs::hex(&mm_fs::hash_path(p).unwrap())
 }
 
+/// Copies of ExifTool test images in a temporary folder, one ExifTool session and a Store.
+struct Lab {
+    dir: PathBuf,
+    files: Vec<PathBuf>,
+    before: Vec<String>,
+    engines: Vec<Engine>,
+    store: Store,
+}
+
+impl Lab {
+    fn new(name: &str, copies: usize) -> Option<Lab> {
+        let Some(v) = version() else {
+            eprintln!("SKIP: no ExifTool lock file");
+            return None;
+        };
+        let pkg = repo().join(format!("research/.work/exiftool/{v}/win64/exiftool-{v}_64"));
+        let images = repo().join(format!(
+            "research/.work/exiftool/{v}/src/Image-ExifTool-{v}/t/images"
+        ));
+        if !pkg.join("exiftool_files").join("perl.exe").exists() || !images.exists() {
+            eprintln!("SKIP: pinned ExifTool not found");
+            return None;
+        }
+        let dir = std::env::temp_dir().join(format!("mm-service-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let photos = dir.join("photos");
+        std::fs::create_dir_all(&photos).unwrap();
+        let samples = ["Writer.jpg", "Nikon.jpg", "Canon.jpg"];
+        let files: Vec<PathBuf> = (0..copies)
+            .map(|i| {
+                let n = samples[i % samples.len()];
+                let p = photos.join(format!("{i:02}-{n}"));
+                std::fs::copy(images.join(n), &p).unwrap();
+                p
+            })
+            .collect();
+        let before = files.iter().map(|p| hash(p)).collect();
+        let run = dir.join("data").join("run");
+        let cfg = EngineConfig {
+            program: pkg.join("exiftool_files").join("perl.exe"),
+            script: Some(pkg.join("exiftool_files").join("exiftool.pl")),
+            cwd: run.join("exiftool-cwd"),
+            temp: run.join("tmp"),
+        };
+        std::fs::create_dir_all(&cfg.cwd).unwrap();
+        std::fs::create_dir_all(&cfg.temp).unwrap();
+        Some(Lab {
+            engines: vec![Engine::start(cfg).unwrap()],
+            store: Store::open(&dir.join("data")).unwrap(),
+            dir,
+            files,
+            before,
+        })
+    }
+
+    fn hashes(&self) -> Vec<String> {
+        self.files.iter().map(|p| hash(p)).collect()
+    }
+
+    fn plan_creator(&mut self) -> Plan {
+        planner::plan_creator(
+            &mut self.engines[0],
+            &self.files,
+            &CreatorEdit::Set(vec!["Morii".into()]),
+            "Creator",
+        )
+        .unwrap()
+    }
+
+    fn close(self) {
+        for e in self.engines {
+            e.close();
+        }
+        drop(self.store);
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[test]
 fn preview_exclusion_confirmation_execution_and_undo() {
-    let Some(v) = version() else {
-        eprintln!("SKIP: no ExifTool lock file");
+    let Some(lab) = Lab::new("flow", 3) else {
         return;
     };
-    let pkg = repo().join(format!("research/.work/exiftool/{v}/win64/exiftool-{v}_64"));
-    let images = repo().join(format!(
-        "research/.work/exiftool/{v}/src/Image-ExifTool-{v}/t/images"
-    ));
-    if !pkg.join("exiftool_files").join("perl.exe").exists() || !images.exists() {
-        eprintln!("SKIP: pinned ExifTool not found");
-        return;
-    }
-    let dir = std::env::temp_dir().join(format!("mm-service-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let photos = dir.join("photos");
-    std::fs::create_dir_all(&photos).unwrap();
-    let files: Vec<PathBuf> = ["Writer.jpg", "Nikon.jpg", "Canon.jpg"]
-        .iter()
-        .map(|n| {
-            let p = photos.join(n);
-            std::fs::copy(images.join(n), &p).unwrap();
-            p
-        })
-        .collect();
-    let before: Vec<String> = files.iter().map(|p| hash(p)).collect();
-    let run = dir.join("data").join("run");
-    let cfg = EngineConfig {
-        program: pkg.join("exiftool_files").join("perl.exe"),
-        script: Some(pkg.join("exiftool_files").join("exiftool.pl")),
-        cwd: run.join("exiftool-cwd"),
-        temp: run.join("tmp"),
-    };
-    std::fs::create_dir_all(&cfg.cwd).unwrap();
-    std::fs::create_dir_all(&cfg.temp).unwrap();
-    let mut engines = vec![Engine::start(cfg).unwrap()];
-    let mut store = Store::open(&dir.join("data")).unwrap();
+    let Lab {
+        dir,
+        files,
+        before,
+        mut engines,
+        mut store,
+    } = lab;
     let gate = OperationGate::default();
     let mut book = PlanBook::default();
 
@@ -144,4 +199,126 @@ fn preview_exclusion_confirmation_execution_and_undo() {
     }
     drop(store);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ARCHITECTURE §5.3 and `op_cancel`: progress arrives once per file in completion order; Cancel
+/// stops new files, the Operation ends cancelled and resumes to completion; undo restores all.
+#[test]
+fn progress_and_cooperative_cancel() {
+    let Some(mut lab) = Lab::new("cancel", 6) else {
+        return;
+    };
+    let plan = lab.plan_creator();
+    let events = Arc::new(Mutex::new(Vec::<ExecProgress>::new()));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (ev, c) = (events.clone(), cancel.clone());
+    let opts = ExecOptions {
+        progress: Some(ProgressSink(Arc::new(move |p: &ExecProgress| {
+            ev.lock().unwrap().push(p.clone());
+            if p.ok == 2 {
+                c.store(true, Ordering::SeqCst);
+            }
+        }))),
+        cancel: Some(cancel.clone()),
+        ..Default::default()
+    };
+    let rep = executor::start(&mut lab.store, &mut lab.engines, &plan, &opts).unwrap();
+    assert_eq!(rep.status, OpStatus::Cancelled, "{rep:?}");
+    let states: Vec<FileState> = rep.files.iter().map(|f| f.state).collect();
+    assert_eq!(states.iter().filter(|s| **s == FileState::Done).count(), 2);
+    assert_eq!(
+        states
+            .iter()
+            .filter(|s| **s == FileState::Cancelled)
+            .count(),
+        4
+    );
+    let ev = events.lock().unwrap().clone();
+    assert_eq!(ev.len(), 6, "{ev:?}");
+    assert!(
+        ev.iter()
+            .enumerate()
+            .all(|(i, p)| p.done == i + 1 && p.total == 6)
+    );
+    let last = ev.last().unwrap();
+    assert_eq!((last.ok, last.failed, last.skipped), (2, 0, 4));
+
+    let rest = executor::resume(
+        &mut lab.store,
+        &mut lab.engines,
+        &rep.op_id,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rest.status, OpStatus::Completed, "{rest:?}");
+    assert!(lab.hashes().iter().zip(&lab.before).all(|(a, b)| a != b));
+
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    let urep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &up,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(urep.status, OpStatus::Completed, "{urep:?}");
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
+
+/// SAFETY_MODEL §11: Cancel during a file's steps 1–7 abandons it (temp removed, original
+/// unchanged, `cancelled`, resumable); Cancel after its commit lets it finish.
+#[test]
+fn cancel_abandons_before_the_commit_and_finishes_after() {
+    let Some(mut lab) = Lab::new("cancel-mid", 3) else {
+        return;
+    };
+    let photos = lab.files[0].parent().unwrap().to_path_buf();
+    let listing = || std::fs::read_dir(&photos).unwrap().count();
+    for (step, done) in [(4u8, 0usize), (8, 1)] {
+        // planned again each round: the undo gave the files new identities
+        let plan = lab.plan_creator();
+        let first = plan.executable().next().unwrap().seq;
+        let opts = ExecOptions {
+            cancel: Some(Arc::new(AtomicBool::new(false))),
+            cancel_at: Some(FaultPoint { seq: first, step }),
+            ..Default::default()
+        };
+        let rep = executor::start(&mut lab.store, &mut lab.engines, &plan, &opts).unwrap();
+        assert_eq!(rep.status, OpStatus::Cancelled, "step {step}: {rep:?}");
+        let n_done = rep
+            .files
+            .iter()
+            .filter(|f| f.state == FileState::Done)
+            .count();
+        assert_eq!(n_done, done, "step {step}: {rep:?}");
+        assert_eq!(listing(), 3, "no temporary file left (step {step})");
+        let changed = lab
+            .hashes()
+            .iter()
+            .zip(&lab.before)
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(changed, done, "step {step}");
+
+        let rest = executor::resume(
+            &mut lab.store,
+            &mut lab.engines,
+            &rep.op_id,
+            &ExecOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(rest.status, OpStatus::Completed, "{rest:?}");
+        let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+        let urep = executor::start(
+            &mut lab.store,
+            &mut lab.engines,
+            &up,
+            &ExecOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(urep.status, OpStatus::Completed, "{urep:?}");
+        assert_eq!(lab.hashes(), lab.before, "step {step}");
+    }
+    lab.close();
 }

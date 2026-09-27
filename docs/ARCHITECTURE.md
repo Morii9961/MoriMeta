@@ -188,6 +188,8 @@ apps/desktop/src/
 
 长任务使用 Tauri Channel 流式推送（批量合并，≤ 4 次/秒）：`ScanProgress`、`PlanProgress`、`ExecProgress { done, total, ok, warn, fail, skipped, current }`、`FileResult`（失败项即时推送）。
 
+实现状态：`mm-core::executor::ExecProgress`（total、done、ok、failed、skipped、刚结算的文件）经 `ExecOptions.progress` 在每个文件结算后按完成顺序回调；批量合并与 Channel 属于适配层。`warn` 待有警告类结果时加入。
+
 ---
 
 ## 6. 核心数据流

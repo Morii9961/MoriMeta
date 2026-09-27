@@ -16,7 +16,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::File;
 use std::io::Seek;
 use std::path::{Path, PathBuf};
-use std::sync::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use mm_domain::plan::{EntryAction, Plan, PlanEntry, PlanKind};
@@ -49,12 +50,52 @@ pub struct ExecOptions {
     pub fill: Option<(FaultPoint, PathBuf)>,
     /// Replace the 1 GiB backup-volume reserve of the space pre-check (tests only).
     pub space_reserve: Option<u64>,
+    /// Called after each file settles, in completion order (ARCHITECTURE §5.3).
+    pub progress: Option<ProgressSink>,
+    /// Set by the user's Cancel (`op_cancel`): no new files start, files in progress finish and
+    /// the Operation ends `cancelled`, resumable like a paused one.
+    pub cancel: Option<Arc<AtomicBool>>,
+    /// Set `cancel` when this point is reached, as if the user pressed Cancel there (tests).
+    pub cancel_at: Option<FaultPoint>,
+}
+
+impl ExecOptions {
+    fn cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::SeqCst))
+    }
+}
+
+/// Counts of an Operation's files so far.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExecProgress {
+    pub total: usize,
+    /// Settled files, `ok + failed + skipped`.
+    pub done: usize,
+    pub ok: usize,
+    pub failed: usize,
+    /// Conflict, skipped or not started (cancelled).
+    pub skipped: usize,
+    /// The file that just settled.
+    pub last: Option<(u32, FileState)>,
+}
+
+/// Receives [`ExecProgress`] from the workers; the adapter batches it for the UI.
+#[derive(Clone)]
+pub struct ProgressSink(pub Arc<dyn Fn(&ExecProgress) + Send + Sync>);
+
+impl std::fmt::Debug for ProgressSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProgressSink")
+    }
 }
 
 /// Backup-volume reserve on top of the backups themselves (SAFETY_MODEL §6.2).
 pub const SPACE_RESERVE: u64 = 1 << 30;
 
 const DISK_FULL_STOP: &str = "paused: a volume is full; free space, then resume";
+const USER_CANCEL: &str = "cancelled by the user; the files not started can be resumed";
 
 #[derive(Debug, Clone)]
 pub struct FileOutcome {
@@ -83,6 +124,11 @@ fn fault(opts: &ExecOptions, seq: u32, step: u8) -> Result<(), CoreError> {
         }
         unreachable!();
     }
+    if opts.cancel_at == here {
+        if let Some(c) = &opts.cancel {
+            c.store(true, Ordering::SeqCst);
+        }
+    }
     if opts.fail == here {
         return Err(CoreError::Io(std::io::Error::other(format!(
             "injected IO error at step {step}"
@@ -105,6 +151,8 @@ enum Outcome {
     Attention(String),
     /// A volume is full; the original is unchanged. Pauses the Operation.
     DiskFull(String),
+    /// The user cancelled before the commit; the original is unchanged (SAFETY_MODEL §11).
+    Cancelled(String),
 }
 
 /// Space pre-check before any file is touched (SAFETY_MODEL §6.2): the backup volume needs
@@ -394,6 +442,7 @@ struct Sched {
     consecutive_verify_failures: usize,
     tripped: Option<String>,
     fatal: Option<CoreError>,
+    progress: ExecProgress,
 }
 
 /// What became of one file.
@@ -454,6 +503,10 @@ fn run(
         consecutive_verify_failures: 0,
         tripped: None,
         fatal: None,
+        progress: ExecProgress {
+            total: seqs.len(),
+            ..Default::default()
+        },
     });
     let lock = || sched.lock().unwrap_or_else(|p| p.into_inner());
     std::thread::scope(|scope| {
@@ -465,6 +518,9 @@ fn run(
                         let mut s = lock();
                         if s.fatal.is_some() {
                             return;
+                        }
+                        if s.tripped.is_none() && opts.cancelled() {
+                            s.tripped = Some(USER_CANCEL.into());
                         }
                         s.queue.pop_front().map(|q| (q, s.tripped.clone()))
                     };
@@ -489,13 +545,27 @@ fn run(
                         }
                     };
                     let mut s = lock();
-                    match r {
-                        Ok(Some(settled)) => s.record(&settled),
-                        Ok(None) => {}
+                    let state = match r {
+                        Ok(Some(settled)) => {
+                            s.record(&settled);
+                            settled.state
+                        }
+                        Ok(None) => FileState::Cancelled,
                         Err(e) => {
                             s.fatal.get_or_insert(e);
                             return;
                         }
+                    };
+                    let p = &mut s.progress;
+                    p.done += 1;
+                    match state {
+                        FileState::Done => p.ok += 1,
+                        FileState::Failed => p.failed += 1,
+                        _ => p.skipped += 1,
+                    }
+                    p.last = Some((seq, state));
+                    if let Some(sink) = &opts.progress {
+                        (sink.0)(p);
                     }
                 }
             });
@@ -611,6 +681,7 @@ fn settle(
             stop = Some(DISK_FULL_STOP.into());
             (FileState::Cancelled, Some(r), false)
         }
+        Outcome::Cancelled(r) => (FileState::Cancelled, Some(r), false),
     };
     if state != FileState::Done {
         journal.set_state(
@@ -801,6 +872,13 @@ fn one_file(
         },
     )?;
     fault(opts, seq, 7)?;
+    // steps 1–7 are abandoned on Cancel; from the commit on, the file finishes (SAFETY_MODEL §11)
+    if opts.cancelled() {
+        remove_if_exists(&f.temp);
+        return Ok(Outcome::Cancelled(
+            "cancelled before the commit; original unchanged".into(),
+        ));
+    }
     // 5 identity and bak-name checks, then commit
     if mm_fs::file_id_of_path(&f.path).ok() != Some(mm_fs::file_id(&lock)?) {
         remove_if_exists(&f.temp);
@@ -1241,6 +1319,7 @@ mod tests {
             consecutive_verify_failures: 0,
             tripped: None,
             fatal: None,
+            progress: ExecProgress::default(),
         };
         let failed = Settled {
             state: FileState::Failed,

@@ -336,6 +336,8 @@ op_field_changes(op_id, seq, field_id, before_json, after_json, kind);
 - 可以立即终止 ExifTool 进程：它只写临时文件（I-1）。
 - 取消后可"继续剩余文件"（与崩溃后的"继续"相同，§9 的持久化 Plan），也可撤销已提交部分。
 
+实现状态（2026-09-27）：`ExecOptions.cancel` 标志；就地写入路径在提交前（步骤 7 之后）检查，已取消则删除临时文件、结果 `Cancelled`；已提交的文件照常完成；未开始的文件为 `Cancelled`，Operation 为 `cancelled`，可继续。集成测试：在步骤 4 取消（文件放弃、原文件不变、无临时文件残留）与在步骤 8 取消（该文件完成），两者继续后完成、撤销后逐字节一致。尚未做：ExifTool 执行中立即终止进程；重建 / 移入备份库 / 新建 sidecar 三条路径只在开始前检查。
+
 ---
 
 ## 12. 安全测试

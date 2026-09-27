@@ -253,6 +253,7 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         disk_full,
         fill,
         space_reserve,
+        ..Default::default()
     })
 }
 
