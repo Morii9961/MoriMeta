@@ -35,6 +35,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **Recovery screen data (PRODUCT_SPEC §6.15)**: `recovery::summary` (done / remaining / attention per interrupted Operation) and `dismiss` ("keep as it is": the Operation becomes cancelled, still resumable; its backups stay protected from automatic pruning while files remain). `mm-cli recovery-status | dismiss`. 156 tests.
 - **Cancel ends ExifTool at once (§11)**: a watcher terminates every session through a duplicated process handle; the interrupted file is cancelled (original unchanged); a session whose process exited is detected before its next use (this also fixed a first-file failure after an external kill). 157 tests.
 - **Public repository**: D-1 = GPL-3.0-or-later; github.com/Morii9961/MoriMeta created and pushed 2026-09-27 (design session files not included).
+- **CI** (`.github/workflows/ci.yml`): Windows runner; repository inclusion check over all tracked files, pinned ExifTool fetched and SHA-256-verified, fmt, clippy -D warnings, all tests; a second job checks the minimum Rust version from `rust-version` (raised 1.85 → 1.88: the code uses let-chains). Actions pinned to commit SHAs, read-only token.
 - **Saved Presets + settings**: schema v3 (`presets`, `settings`); `mm-core::presets` save (validated) / duplicate / import (schema-checked, always new) / export / delete / last used; built-ins listed as `builtin:NAME`, read-only. Retention policy read from settings (`backup.*`); an invalid policy value is refused and not kept. `mm-cli presets | preset-import | preset-export | preset-duplicate | preset-delete | setting | plan-preset --id`. 145 tests.
 - **History (PRODUCT_SPEC §6.14)**: `mm-core::history` list (newest first, paged) with files, states, field changes written, undo links, keep / pruned, undoable; detail with per-file before/after; Export Log to a new file. 146 tests. Retry Failed: a new Plan of the persisted entries of failed / skipped files (execution re-checks fingerprint and before-values; same app and ExifTool version required; conflicts need a new Plan). `mm-cli plan-retry`. 147 tests.
 - **Inspector + selection aggregate (ARCHITECTURE §5.2)**: `mm-core::inspect` — field views (effective value, sources, conflicts, invalid values) with every raw tag and the sidecar's tags (read without the image hash); per-field value counts for a selection (top 20, empty, conflicting, unreadable). `mm-cli inspect | aggregate`. 149 tests.
@@ -44,10 +45,9 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - Design session files (`docs/DESIGN.md`, `DESIGN_SYSTEM.md`, `SCREEN_SPEC.md`, `INTERACTION_SPEC.md`): not touched, not committed; review against the architecture after handoff.
 - Decisions: D-1 license + repository owner (then public repo), D-2 signing, D-15 (interim direction (c)), D-18 (after S3 third-party results).
 - Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, exFAT media, a safe cloud-sync folder.
-- Commit identity for the public push (docs/REPOSITORY_CHECKLIST.md P-3).
 
 ## Next engineering steps (no design dependency)
 
 - S4 on real data with the worker pool (needs D-13 corpus); parallel scan/plan; group-commit of journal writes if S4 shows the serialized flushes dominate.
 - More real disk-full positions (after commit, during undo; volume needs remounting); wider fault positions; measure the extra flushes of manifest.jsonl in S4.
-- Third-party reading of the sidecars is V-03/V-07 (needs LR/C1/NX Studio, D-13). Phase 2 backend: asynchronous Plan creation with progress, history/recovery queries for the adapter; decide whether unsupported formats appear in the Session (now only counted).
+- Third-party reading of the sidecars is V-03/V-07 (needs LR/C1/NX Studio, D-13). Decide whether unsupported formats appear in the Session (now only counted).
