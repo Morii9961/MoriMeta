@@ -70,6 +70,84 @@ impl FieldPlan {
     }
 }
 
+/// Several fields planned for one file (a Preset), combined into what the file's entry gets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergedPlan {
+    pub status: EntryStatus,
+    pub changes: Vec<FieldChange>,
+    pub ops: Vec<TagOp>,
+    pub expect: Vec<Expect>,
+    pub notes: Vec<String>,
+}
+
+/// Combine the plans of the fields of one file, each with its field name. The ready fields are
+/// written together; a blocked or unsupported field is left out with a note, so that one missing
+/// value does not stop the others (PRODUCT_SPEC §6.9). The file is blocked only when no field is
+/// ready and one is blocked. A single field keeps its own status and notes unchanged.
+pub fn merge(mut fields: Vec<(&str, FieldPlan)>) -> MergedPlan {
+    if fields.len() == 1 {
+        let (_, f) = fields.remove(0);
+        return MergedPlan {
+            status: f.status,
+            changes: f.change.into_iter().collect(),
+            ops: f.ops,
+            expect: f.expect,
+            notes: f.notes,
+        };
+    }
+    let any_ready = fields.iter().any(|(_, f)| f.status == EntryStatus::Ready);
+    let mut m = MergedPlan {
+        status: EntryStatus::NoChange,
+        changes: vec![],
+        ops: vec![],
+        expect: vec![],
+        notes: vec![],
+    };
+    let mut blocked: Vec<String> = vec![];
+    let mut unsupported: Vec<String> = vec![];
+    for (label, f) in fields {
+        m.notes.extend(f.notes);
+        match f.status {
+            EntryStatus::Ready => {
+                m.changes.extend(f.change);
+                for op in f.ops {
+                    if !m.ops.contains(&op) {
+                        m.ops.push(op); // the IPTC digest update is shared
+                    }
+                }
+                for e in f.expect {
+                    if !m.expect.contains(&e) {
+                        m.expect.push(e);
+                    }
+                }
+            }
+            EntryStatus::NoChange => {}
+            EntryStatus::Blocked(why) => {
+                if any_ready {
+                    m.notes.push(format!("{label} not changed: {why}"));
+                }
+                blocked.push(format!("{label}: {why}"));
+            }
+            EntryStatus::Unsupported(why) => {
+                if any_ready {
+                    m.notes.push(format!("{label} not changed: {why}"));
+                }
+                unsupported.push(format!("{label}: {why}"));
+            }
+        }
+    }
+    m.status = if any_ready {
+        EntryStatus::Ready
+    } else if !blocked.is_empty() {
+        EntryStatus::Blocked(blocked.join("; "))
+    } else if !unsupported.is_empty() {
+        EntryStatus::Unsupported(unsupported.join("; "))
+    } else {
+        EntryStatus::NoChange
+    };
+    m
+}
+
 /// What verification (SAFETY_MODEL §5 V2) must find in the temporary output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "expect", rename_all = "snake_case")]

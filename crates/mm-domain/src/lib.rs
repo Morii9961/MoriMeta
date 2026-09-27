@@ -11,6 +11,7 @@ pub mod gps;
 pub mod iptc;
 pub mod plan;
 pub mod risk;
+pub mod rules;
 pub mod snapshot;
 pub mod template;
 pub mod time;

@@ -15,6 +15,8 @@
 //!             [--no-digitized] --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-gps --set "lat,lon[,alt]" | --remove  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
+//!   plan-preset (--builtin NAME | --preset PRESET.json) --out PLAN.json [--files-from UTF8_FILE] FILE...
+//!   presets                   the built-in Presets (PRODUCT_SPEC §6.11) as JSON
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
@@ -59,6 +61,7 @@ use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
 use mm_domain::gps::{self, GeoPoint, GpsEdit};
 use mm_domain::plan::Plan;
+use mm_domain::rules;
 use mm_domain::time::{self, SequenceOrder};
 use mm_exiftool::EngineConfig;
 use mm_store::{FileState, Store, WriteFault, WriteTarget};
@@ -490,6 +493,40 @@ fn main() -> ExitCode {
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
                 let plan = planner::plan_gps(&mut eng, &paths, &edit, &title, &Default::default())
+                    .map_err(|e| e.to_string())?;
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
+                Ok(ExitCode::SUCCESS)
+            }
+            "presets" => {
+                let list: Vec<Value> = rules::builtin()
+                    .iter()
+                    .map(|p| json!({"name": p.name, "fields": p.fields().iter().map(|f| f.name()).collect::<Vec<_>>(),
+                                    "preset": serde_json::to_value(p).unwrap_or_default()}))
+                    .collect();
+                println!("{}", Value::Array(list));
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-preset" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
+                let preset = match (
+                    take_opt(&mut args, "--builtin"),
+                    take_opt(&mut args, "--preset"),
+                ) {
+                    (Some(name), None) => rules::builtin()
+                        .into_iter()
+                        .find(|p| p.name == name)
+                        .ok_or_else(|| format!("no built-in preset {name:?}"))?,
+                    (None, Some(file)) => {
+                        let text =
+                            std::fs::read_to_string(&file).map_err(|e| format!("{file}: {e}"))?;
+                        rules::Preset::from_json(text.trim_start_matches('\u{feff}'))?
+                    }
+                    _ => return Err("use either --builtin NAME or --preset FILE.json".into()),
+                };
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let plan = planner::plan_preset(&mut eng, &paths, &preset, &Default::default())
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

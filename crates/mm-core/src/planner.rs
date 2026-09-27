@@ -13,6 +13,7 @@ use mm_domain::gps::{self, GpsEdit};
 use mm_domain::plan::{
     EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind, Target,
 };
+use mm_domain::rules::{self, Preset};
 use mm_domain::snapshot::Snapshot;
 use mm_domain::template::{Template, TemplateCtx};
 use mm_domain::time::{
@@ -133,6 +134,27 @@ pub fn plan_copyright(
     })
 }
 
+/// Apply a Preset (PRODUCT_SPEC §6.10–6.11): per file, the actions of the rules whose conditions
+/// hold on its original snapshot, combined into one entry (blocked fields left out with a note).
+pub fn plan_preset(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    preset: &Preset,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
+    preset.validate().map_err(CoreError::Input)?;
+    plan_with(engine, inputs, &preset.name, ctl, |targets, entries| {
+        Ok(targets
+            .iter()
+            .map(|(idx, t)| {
+                let e = &entries[*idx];
+                let shown = e.raw.as_deref().unwrap_or(&e.path);
+                rules::plan_target(preset, t, shown)
+            })
+            .collect())
+    })
+}
+
 /// A field whose value is a template (PRODUCT_SPEC §6.9), rendered per file from its original
 /// snapshot and the path the user sees (the RAW for a sidecar).
 fn plan_templated(
@@ -148,7 +170,7 @@ fn plan_templated(
             .map(|(idx, t)| {
                 let e = &entries[*idx];
                 let shown = e.raw.as_deref().unwrap_or(&e.path);
-                field(t, &TemplateCtx::from_target(t, shown))
+                vec![("", field(t, &TemplateCtx::from_target(t, shown)))]
             })
             .collect())
     })
@@ -260,7 +282,7 @@ pub fn plan_capture_time(
                         format!("position {} of {n} in the sequence", r.index + 1),
                     );
                 }
-                fp
+                vec![("capture_time", fp)]
             })
             .collect())
     })
@@ -275,9 +297,13 @@ fn plan_field(
     field: impl Fn(&Target) -> FieldPlan,
 ) -> Result<Plan, CoreError> {
     plan_with(engine, inputs, title, ctl, |targets, _| {
-        Ok(targets.iter().map(|(_, t)| field(t)).collect())
+        Ok(targets.iter().map(|(_, t)| vec![("", field(t))]).collect())
     })
 }
+
+/// The planned fields of one file, each with its field name (one for a single edit, several for a
+/// Preset); combined by `plan::merge`.
+type FileFields = Vec<(&'static str, FieldPlan)>;
 
 /// RAW formats whose sidecar this build writes (SAFETY_MODEL §3: NEF, NRW; the RAW stays
 /// read-only, I-10).
@@ -424,7 +450,7 @@ fn plan_with(
     inputs: &[PathBuf],
     title: &str,
     ctl: &PlanCtl,
-    field_all: impl FnOnce(&[(usize, Target)], &[PlanEntry]) -> Result<Vec<FieldPlan>, CoreError>,
+    field_all: impl FnOnce(&[(usize, Target)], &[PlanEntry]) -> Result<Vec<FileFields>, CoreError>,
 ) -> Result<Plan, CoreError> {
     let mut entries: Vec<PlanEntry> = Vec::new();
     let mut seen = HashSet::new();
@@ -590,7 +616,8 @@ fn plan_with(
         .filter_map(|(i, r)| r.target().map(|t| (*i, t)))
         .collect();
     let plans = field_all(&targets, &entries)?;
-    for ((idx, t), cp) in targets.iter().zip(plans) {
+    for ((idx, t), fields) in targets.iter().zip(plans) {
+        let cp = mm_domain::plan::merge(fields);
         let e = &mut entries[*idx];
         e.status = cp.status;
         e.notes.extend(cp.notes);
@@ -606,9 +633,7 @@ fn plan_with(
             );
             continue;
         }
-        if let Some(ch) = cp.change {
-            e.changes.push(ch);
-        }
+        e.changes.extend(cp.changes);
         if e.status == EntryStatus::Ready {
             let (ops, expect) = (cp.ops, cp.expect);
             e.action = Some(if e.fingerprint.file_id.is_empty() {

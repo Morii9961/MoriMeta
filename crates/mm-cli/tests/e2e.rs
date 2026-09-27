@@ -3185,3 +3185,87 @@ fn copyright_template_per_file() {
     assert!(String::from_utf8_lossy(&o.stdout).contains("unknown variable"));
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.10–6.11: a Preset from JSON with conditions on the original snapshot and two
+/// fields in one entry; the built-in "Remove GPS"; undo restores everything.
+#[test]
+fn preset_rules_plan_apply_and_undo() {
+    let pkg = require!();
+    let lab = Lab::new("preset", &pkg);
+    let preset = lab.dir.join("preset.json");
+    std::fs::write(
+        &preset,
+        r#"{"schema_version": 1, "name": "Studio", "rules": [
+            {"name": "copyright where none",
+             "when": [{"if": "empty", "field": "copyright"}],
+             "then": [{"do": "set_copyright", "value": "© {creator|Studio} {year|2026}"}]},
+            {"name": "no position in JPEGs",
+             "when": [{"if": "not_empty", "field": "gps"}, {"if": "extension", "any": ["jpg"]}],
+             "then": [{"do": "remove_gps"}]}
+        ]}"#,
+    )
+    .unwrap();
+    let out = lab.dir.join("p.json");
+    let mut args = vec![
+        "plan-preset",
+        "--preset",
+        preset.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ];
+    let ps: Vec<String> = lab
+        .photos
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    args.extend(ps.iter().map(String::as_str));
+    let o = lab.cli(&args);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pj = Lab::json(&o);
+    let gps = lab
+        .photos
+        .iter()
+        .position(|p| p.ends_with("GPS.jpg"))
+        .unwrap();
+    let fields = |i: usize| -> Vec<String> {
+        pj["entries"][i]["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["field"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert!(fields(gps).contains(&"gps".to_string()), "{pj}");
+    let with_copyright = lab.copyrights();
+    for (i, c) in with_copyright.iter().enumerate() {
+        let had = c["value"].as_str().is_some();
+        assert_eq!(
+            fields(i).contains(&"copyright".to_string()),
+            !had && pj["entries"][i]["status"]["status"] == "ready",
+            "{i}: {c} {pj}"
+        );
+    }
+    let op = lab.apply_ok(&out);
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // the built-in Remove GPS
+    let o = lab.cli(&[
+        "plan-preset",
+        "--builtin",
+        "Remove GPS",
+        "--out",
+        lab.dir.join("builtin.json").to_str().unwrap(),
+        lab.photos[gps].to_str().unwrap(),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    assert_eq!(Lab::json(&o)["entries"][0]["status"]["status"], "ready");
+    let list = Lab::json(&lab.cli(&["presets"]));
+    assert!(
+        list.as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "Copyright Template")
+    );
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
