@@ -935,14 +935,26 @@ fn real_disk_full_on_small_volume() {
         assert!(lab.cli(&["recover"]).status.success(), "{case}");
         lab.assert_recovered(&op);
         eprintln!("{case}: after recovery: {}", lab.show(&op));
-        let res = lab.cli(&["resume", &op]);
+        // a small test volume can never hold the normal 1 GiB backup reserve
+        let res = lab.cli_env(&["resume", &op, "--space-reserve", "0"], true);
         assert!(
             res.status.success() || res.status.code() == Some(3),
             "{case}: {}",
             String::from_utf8_lossy(&res.stdout)
         );
         assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
-        lab.undo(&op);
+        let u = lab.dir.join("undo.json");
+        let p = lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()]);
+        assert!(p.status.success(), "{case}");
+        let a = lab.cli_env(
+            &["apply", u.to_str().unwrap(), "--space-reserve", "0"],
+            true,
+        );
+        assert!(
+            a.status.success(),
+            "{case}: undo: {}",
+            String::from_utf8_lossy(&a.stdout)
+        );
         lab.assert_all_original();
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&on_small);
