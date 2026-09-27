@@ -6,6 +6,7 @@
 pub mod engine;
 pub mod executor;
 pub mod fsck;
+pub mod history;
 pub mod planner;
 pub mod presets;
 pub mod recovery;

@@ -31,6 +31,7 @@
 //!                             files changed after the Operation are excluded unless forced (their
 //!                             current content is backed up first, so the forced restore can be undone)
 //!   history | show OP_ID | fsck OP_ID
+//!   export-log OP_ID --out FILE.json   the Operation with field-level before/after (a new file)
 //!   backups [--now-ms MS]     backup usage, protection and what the retention policy would prune
 //!   prune [--requested] OP_ID...   remove backups (the policy's choice, or the user's with
 //!                             --requested); unfinished Operations are always refused
@@ -58,7 +59,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::planner::TimeTool;
-use mm_core::{fsck, planner, presets, recovery, retention, undo};
+use mm_core::{fsck, history, planner, presets, recovery, retention, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
@@ -699,11 +700,17 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "history" => {
-                let ops = store.operations().map_err(|e| e.to_string())?;
-                println!(
-                    "{}",
-                    Value::Array(ops.iter().map(|o| json!({"id": o.id, "kind": o.kind, "title": o.title, "status": o.status, "undo_of": o.undo_of})).collect())
-                );
+                // oldest first here; history::list pages newest first for the UI
+                let mut ops = history::list(&store, 0, usize::MAX).map_err(|e| e.to_string())?;
+                ops.reverse();
+                println!("{}", serde_json::to_value(&ops).unwrap_or_default());
+                Ok(ExitCode::SUCCESS)
+            }
+            "export-log" => {
+                let out = take_opt(&mut args, "--out").ok_or("export-log OP_ID --out FILE.json")?;
+                let op = args.first().ok_or("export-log OP_ID --out FILE.json")?;
+                history::export_log(&store, op, Path::new(&out)).map_err(|e| e.to_string())?;
+                println!("{}", json!({"written": out}));
                 Ok(ExitCode::SUCCESS)
             }
             "show" => {

@@ -201,6 +201,7 @@ dependencies = [
  "mm-exiftool",
  "mm-fs",
  "mm-store",
+ "serde",
  "serde_json",
  "windows-sys",
 ]

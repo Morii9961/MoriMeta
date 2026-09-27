@@ -3319,3 +3319,50 @@ fn preset_rules_plan_apply_and_undo() {
     );
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.14: History rows carry file and change counts, results, backup state and the
+/// undo link; Export Log writes the field-level before/after to a new file.
+#[test]
+fn history_summary_and_export_log() {
+    let pkg = require!();
+    let lab = Lab::new("history", &pkg);
+    let op = lab.apply_ok(&lab.plan("Morii", "p.json"));
+    lab.undo(&op);
+    let h = Lab::json(&lab.cli(&["history"]));
+    let rows = h.as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let (a, u) = (&rows[0], &rows[1]);
+    assert_eq!(a["id"], op.as_str());
+    assert_eq!(
+        a["files"].as_u64().unwrap(),
+        a["states"]["done"].as_u64().unwrap()
+    );
+    assert!(
+        a["changes"].as_u64().unwrap() >= a["files"].as_u64().unwrap(),
+        "{a}"
+    );
+    assert_eq!(a["undone_by"], serde_json::json!([u["id"]]));
+    assert_eq!(u["undo_of"], op.as_str());
+    assert_eq!(
+        (a["undoable"].as_bool(), a["backups_pruned"].as_bool()),
+        (Some(true), Some(false))
+    );
+
+    let out = lab.dir.join("log.json");
+    let o = lab.cli(&["export-log", &op, "--out", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let log: Value = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+    let first = &log["files_detail"][0];
+    assert_eq!(first["changes"][0]["field"], "creator", "{first}");
+    assert_eq!(
+        first["changes"][0]["after"],
+        serde_json::json!(["Morii"]),
+        "{first}"
+    );
+    assert!(
+        !lab.cli(&["export-log", &op, "--out", out.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
