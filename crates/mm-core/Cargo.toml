@@ -1,0 +1,17 @@
+[package]
+name = "mm-core"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+mm-domain = { version = "0.0.0", path = "../mm-domain" }
+mm-exiftool = { version = "0.0.0", path = "../mm-exiftool" }
+mm-fs = { version = "0.0.0", path = "../mm-fs" }
+mm-store = { version = "0.0.0", path = "../mm-store" }
+serde_json = "1.0.151"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[lints]
+workspace = true

@@ -3,7 +3,7 @@
 # licenses compatible with both Apache-2.0 and GPL-3.0-or-later.
 [workspace]
 resolver = "3"
-members = ["crates/mm-domain", "crates/mm-exiftool", "crates/mm-fs"]
+members = ["crates/mm-cli","crates/mm-core","crates/mm-domain", "crates/mm-exiftool", "crates/mm-fs", "crates/mm-store"]
 exclude = ["research"]
 
 [workspace.package]

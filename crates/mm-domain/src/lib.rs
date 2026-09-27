@@ -1,7 +1,11 @@
 //! Pure domain model (no IO, no processes).
 //!
-//! Phase 1a: the four MVP time tools and input-value rules. FieldRegistry, rules, templates and
-//! the Plan/Diff model follow once the registry is frozen (S3 third-party checks).
+//! Phase 1a: MVP time tools, value rules. Phase 1b (in progress): Plan model, tag snapshot,
+//! and the `creator` field (provisional registry v0 until the S3 third-party checks).
 
+pub mod cp1252;
+pub mod creator;
+pub mod plan;
+pub mod snapshot;
 pub mod time;
 pub mod value;

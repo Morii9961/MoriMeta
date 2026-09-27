@@ -1,0 +1,21 @@
+[package]
+name = "mm-cli"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+mm-core = { version = "0.0.0", path = "../mm-core" }
+mm-domain = { version = "0.0.0", path = "../mm-domain" }
+mm-exiftool = { version = "0.0.0", path = "../mm-exiftool" }
+mm-fs = { version = "0.0.0", path = "../mm-fs" }
+mm-store = { version = "0.0.0", path = "../mm-store" }
+serde_json = "1.0.151"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+blake3 = "1.8.7"
+serde_json = "1.0.151"

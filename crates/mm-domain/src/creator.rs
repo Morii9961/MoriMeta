@@ -1,0 +1,358 @@
+//! `creator` field: read reconciliation and write planning for Embedded JPEG/TIFF targets
+//! (METADATA_MODEL §2.2, §6, §8). Explicit mapping (ADR-08): EXIF `IFD0:Artist` (items joined
+//! with "; "), XMP `dc:creator` (Seq), IPTC `By-line` only when the file already has IPTC, and
+//! any other already-present location (`XMP-tiff:Artist`).
+//!
+//! Registry status: provisional (`REGISTRY_VERSION = 0`) until the S3 third-party checks freeze v1.
+
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, TagOp};
+use crate::snapshot::Snapshot;
+use crate::value::{TextKind, validate_text};
+
+pub const REGISTRY_VERSION: u32 = 0;
+pub const FIELD: &str = "creator";
+
+pub const ARTIST: &str = "IFD0:Artist";
+pub const DC_CREATOR: &str = "XMP-dc:Creator";
+pub const IPTC_BYLINE: &str = "IPTC:By-line";
+pub const TIFF_ARTIST: &str = "XMP-tiff:Artist";
+pub const IPTC_CHARSET: &str = "IPTC:CodedCharacterSet";
+pub const IPTC_DIGEST: &str = "Photoshop:IPTCDigest";
+/// IPTC.pm: By-line => string[0,32]
+pub const BYLINE_MAX_BYTES: usize = 32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatorEdit {
+    Set(Vec<String>),
+    Clear,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatorState {
+    /// Effective value: XMP dc:creator > IFD0:Artist > IPTC By-line.
+    pub effective: Option<Vec<String>>,
+    /// Every location that holds a value, with its value.
+    pub sources: Vec<(String, Vec<String>)>,
+    pub conflicting: bool,
+}
+
+pub fn read(snap: &Snapshot) -> CreatorState {
+    let mut sources = Vec::new();
+    if let Some(v) = snap.list(DC_CREATOR) {
+        sources.push((DC_CREATOR.to_owned(), v));
+    }
+    if let Some(v) = snap.text(ARTIST) {
+        sources.push((ARTIST.to_owned(), split_artist(&v)));
+    }
+    if let Some(v) = snap.list(IPTC_BYLINE) {
+        sources.push((IPTC_BYLINE.to_owned(), v));
+    }
+    if let Some(v) = snap.text(TIFF_ARTIST) {
+        sources.push((TIFF_ARTIST.to_owned(), split_artist(&v)));
+    }
+    let effective = sources.first().map(|(_, v)| v.clone());
+    let conflicting = sources.windows(2).any(|w| w[0].1 != w[1].1);
+    CreatorState {
+        effective,
+        sources,
+        conflicting,
+    }
+}
+
+fn split_artist(s: &str) -> Vec<String> {
+    s.split("; ")
+        .filter(|x| !x.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Validation of user input for the creator field.
+pub fn validate(items: &[String]) -> Result<(), String> {
+    if items.is_empty() {
+        return Err("creator list is empty (use Clear to remove the field)".into());
+    }
+    for it in items {
+        validate_text(it, TextKind::SingleLine).map_err(|e| format!("{it:?}: {e}"))?;
+        if it.contains(';') {
+            return Err(format!(
+                "{it:?}: ';' is reserved as the EXIF Artist separator"
+            ));
+        }
+        if it.trim() != it {
+            return Err(format!("{it:?}: leading or trailing spaces"));
+        }
+    }
+    Ok(())
+}
+
+/// Result of planning the creator field for one file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatorPlan {
+    pub status: EntryStatus,
+    pub change: Option<FieldChange>,
+    pub ops: Vec<TagOp>,
+    pub expect: Vec<Expect>,
+    pub notes: Vec<String>,
+}
+
+fn has_iptc(snap: &Snapshot) -> bool {
+    snap.keys().any(|k| k.starts_with("IPTC:"))
+}
+
+fn has_extra_iptc_records(snap: &Snapshot) -> bool {
+    // ExifTool reports additional/duplicate IPTC blocks as IPTC2, IPTC3, …
+    snap.keys()
+        .any(|k| k.len() > 5 && k.starts_with("IPTC") && k.as_bytes()[4].is_ascii_digit())
+}
+
+fn iptc_is_utf8(snap: &Snapshot) -> bool {
+    snap.text(IPTC_CHARSET)
+        .map(|v| v.eq_ignore_ascii_case("UTF8") || v == "\u{1b}%G")
+        .unwrap_or(false)
+}
+
+/// Encoded byte length of `s` in the file's IPTC character set, or None if not representable.
+fn iptc_bytes(s: &str, utf8: bool) -> Option<usize> {
+    if utf8 {
+        return Some(s.len());
+    }
+    s.chars()
+        .all(crate::cp1252::encodable)
+        .then(|| s.chars().count())
+}
+
+pub fn plan(snap: &Snapshot, edit: &CreatorEdit) -> CreatorPlan {
+    let before = read(snap);
+    let blocked = |why: String| CreatorPlan {
+        status: EntryStatus::Blocked(why),
+        change: None,
+        ops: vec![],
+        expect: vec![],
+        notes: vec![],
+    };
+    let iptc = has_iptc(snap);
+    if iptc && has_extra_iptc_records(snap) {
+        return blocked("file contains more than one IPTC record; not written".into());
+    }
+    let mut ops = Vec::new();
+    let mut expect = Vec::new();
+    let mut notes = Vec::new();
+    let after: Option<Vec<String>> = match edit {
+        CreatorEdit::Set(items) => {
+            if let Err(e) = validate(items) {
+                return blocked(e);
+            }
+            let joined = items.join("; ");
+            ops.push(TagOp::Set {
+                tag: ARTIST.into(),
+                values: vec![joined.clone()],
+            });
+            expect.push(Expect::Equals {
+                tag: ARTIST.into(),
+                values: vec![joined.clone()],
+            });
+            ops.push(TagOp::Set {
+                tag: DC_CREATOR.into(),
+                values: items.clone(),
+            });
+            expect.push(Expect::Equals {
+                tag: DC_CREATOR.into(),
+                values: items.clone(),
+            });
+            if snap.contains(TIFF_ARTIST) {
+                ops.push(TagOp::Set {
+                    tag: TIFF_ARTIST.into(),
+                    values: vec![joined.clone()],
+                });
+                expect.push(Expect::Equals {
+                    tag: TIFF_ARTIST.into(),
+                    values: vec![joined],
+                });
+            }
+            if iptc {
+                let utf8 = iptc_is_utf8(snap);
+                for it in items {
+                    match iptc_bytes(it, utf8) {
+                        None => {
+                            return blocked(format!(
+                                "IPTC By-line uses the Latin character set and cannot store {it:?}; \
+                                 convert IPTC to UTF-8, remove the IPTC copy, or exclude this file"
+                            ));
+                        }
+                        Some(n) if n > BYLINE_MAX_BYTES => {
+                            return blocked(format!(
+                                "IPTC By-line allows {BYLINE_MAX_BYTES} bytes; {it:?} needs {n} \
+                                 (ExifTool would truncate it)"
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                ops.push(TagOp::Set {
+                    tag: IPTC_BYLINE.into(),
+                    values: items.clone(),
+                });
+                expect.push(Expect::Equals {
+                    tag: IPTC_BYLINE.into(),
+                    values: items.clone(),
+                });
+                notes.push("IPTC By-line updated because the file already has IPTC".into());
+            }
+            Some(items.clone())
+        }
+        CreatorEdit::Clear => {
+            for tag in [ARTIST, DC_CREATOR, TIFF_ARTIST, IPTC_BYLINE] {
+                if snap.contains(tag) {
+                    ops.push(TagOp::Delete { tag: tag.into() });
+                    expect.push(Expect::Absent { tag: tag.into() });
+                }
+            }
+            None
+        }
+    };
+    let iptc_touched = ops.iter().any(|o| o.tag() == IPTC_BYLINE);
+    if iptc_touched && snap.contains(IPTC_DIGEST) {
+        ops.push(TagOp::UpdateIptcDigest);
+        expect.push(Expect::IptcDigestCurrent);
+    }
+    // no change when every location already holds exactly the target value
+    let unchanged = match edit {
+        CreatorEdit::Set(items) => {
+            !before.sources.is_empty()
+                && before.sources.iter().all(|(_, v)| v == items)
+                && snap.contains(ARTIST)
+                && snap.contains(DC_CREATOR)
+        }
+        CreatorEdit::Clear => before.sources.is_empty(),
+    };
+    if unchanged {
+        return CreatorPlan {
+            status: EntryStatus::NoChange,
+            change: None,
+            ops: vec![],
+            expect: vec![],
+            notes,
+        };
+    }
+    let kind = match (&before.effective, &after) {
+        (None, Some(_)) => ChangeKind::Add,
+        (Some(_), None) => ChangeKind::Remove,
+        _ => ChangeKind::Modify,
+    };
+    if before.conflicting {
+        notes.push(format!(
+            "locations disagreed before the change: {:?}",
+            before.sources
+        ));
+    }
+    CreatorPlan {
+        status: EntryStatus::Ready,
+        change: Some(FieldChange {
+            field: FIELD.into(),
+            before: before.effective,
+            after,
+            kind,
+        }),
+        ops,
+        expect,
+        notes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn snap(v: serde_json::Value) -> Snapshot {
+        Snapshot::from_json(&v)
+    }
+
+    #[test]
+    fn set_on_file_without_iptc_writes_exif_and_xmp() {
+        let p = plan(
+            &snap(json!({"IFD0:Make": "NIKON"})),
+            &CreatorEdit::Set(vec!["森 Morii".into()]),
+        );
+        assert_eq!(p.status, EntryStatus::Ready);
+        assert_eq!(p.ops.len(), 2);
+        assert!(!p.ops.iter().any(|o| o.tag().starts_with("IPTC")));
+        assert_eq!(p.change.unwrap().kind, ChangeKind::Add);
+    }
+
+    #[test]
+    fn latin_iptc_blocks_non_latin_but_accepts_cp1252() {
+        let s = snap(json!({"IPTC:By-line": "Café", "Photoshop:IPTCDigest": "abc"}));
+        assert!(matches!(
+            plan(&s, &CreatorEdit::Set(vec!["森".into()])).status,
+            EntryStatus::Blocked(_)
+        ));
+        let ok = plan(&s, &CreatorEdit::Set(vec!["© Zoë".into()]));
+        assert_eq!(ok.status, EntryStatus::Ready);
+        assert!(ok.ops.contains(&TagOp::UpdateIptcDigest));
+        assert!(ok.expect.contains(&Expect::IptcDigestCurrent));
+    }
+
+    #[test]
+    fn utf8_iptc_checks_bytes_not_chars() {
+        let s = snap(json!({"IPTC:By-line": "x", "IPTC:CodedCharacterSet": "UTF8"}));
+        assert_eq!(
+            plan(&s, &CreatorEdit::Set(vec!["森".repeat(10)])).status,
+            EntryStatus::Ready
+        );
+        assert!(matches!(
+            plan(&s, &CreatorEdit::Set(vec!["森".repeat(11)])).status,
+            EntryStatus::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn unchanged_value_is_no_change() {
+        let s = snap(json!({"IFD0:Artist": "A; B", "XMP-dc:Creator": ["A", "B"]}));
+        assert_eq!(
+            plan(&s, &CreatorEdit::Set(vec!["A".into(), "B".into()])).status,
+            EntryStatus::NoChange
+        );
+        assert_eq!(
+            plan(&snap(json!({})), &CreatorEdit::Clear).status,
+            EntryStatus::NoChange
+        );
+    }
+
+    #[test]
+    fn existing_nonstandard_location_is_updated_and_conflicts_noted() {
+        let s = snap(json!({"IFD0:Artist": "Old", "XMP-tiff:Artist": "Other"}));
+        let p = plan(&s, &CreatorEdit::Set(vec!["New".into()]));
+        assert!(p.ops.iter().any(|o| o.tag() == TIFF_ARTIST));
+        assert!(p.notes.iter().any(|n| n.contains("disagreed")));
+    }
+
+    #[test]
+    fn clear_deletes_only_present_locations() {
+        let s = snap(json!({"IFD0:Artist": "A", "IPTC:By-line": "A", "Photoshop:IPTCDigest": "x"}));
+        let p = plan(&s, &CreatorEdit::Clear);
+        let tags: Vec<&str> = p.ops.iter().map(|o| o.tag()).collect();
+        assert_eq!(tags, vec![ARTIST, IPTC_BYLINE, IPTC_DIGEST]);
+        assert_eq!(p.change.unwrap().kind, ChangeKind::Remove);
+    }
+
+    #[test]
+    fn invalid_input_and_multiple_iptc_records_are_blocked() {
+        for bad in [
+            vec![],
+            vec!["a;b".to_string()],
+            vec![" a".to_string()],
+            vec!["a\nb".to_string()],
+        ] {
+            assert!(matches!(
+                plan(&snap(json!({})), &CreatorEdit::Set(bad)).status,
+                EntryStatus::Blocked(_)
+            ));
+        }
+        let s = snap(json!({"IPTC:By-line": "a", "IPTC2:By-line": "b"}));
+        assert!(matches!(
+            plan(&s, &CreatorEdit::Set(vec!["x".into()])).status,
+            EntryStatus::Blocked(_)
+        ));
+    }
+}
