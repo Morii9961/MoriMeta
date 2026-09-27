@@ -1721,3 +1721,199 @@ fn journal_rebuilt_after_crash_and_database_loss_recovers() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+impl Lab {
+    fn plan_copyright(&self, value: &str, file: &str) -> (PathBuf, Value) {
+        let out = self.dir.join(file);
+        let mut args = vec![
+            "plan-copyright",
+            "--set",
+            value,
+            "--out",
+            out.to_str().unwrap(),
+        ];
+        let ps: Vec<String> = self
+            .photos
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        args.extend(ps.iter().map(String::as_str));
+        let o = self.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, Lab::json(&o))
+    }
+
+    fn copyrights(&self) -> Vec<Value> {
+        let ps: Vec<String> = self
+            .photos
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let mut args = vec!["scan"];
+        args.extend(ps.iter().map(String::as_str));
+        Lab::json(&self.cli(&args))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["copyright"].clone())
+            .collect()
+    }
+}
+
+/// Scenario D's field (PRODUCT_SPEC §6.7): Copyright written to EXIF, XMP dc:rights (default
+/// language) and existing IPTC; non-Latin text on Latin IPTC is Blocked and the file untouched;
+/// undo is byte-identical.
+#[test]
+fn copyright_apply_then_undo_is_byte_identical() {
+    let pkg = require!();
+    let lab = Lab::new("copyright", &pkg);
+    let (plan, pj) = lab.plan_copyright("© 森 Morii 2026", "p.json");
+    let statuses: Vec<String> = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["status"]["status"].as_str().unwrap().to_owned())
+        .collect();
+    let gps = SAMPLES.iter().position(|s| *s == "GPS.jpg").unwrap();
+    assert_eq!(statuses[gps], "blocked", "{pj}"); // Latin IPTC CopyrightNotice
+    assert!(
+        statuses.iter().filter(|s| *s == "ready").count() >= 6,
+        "{statuses:?}"
+    );
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    for ((c, st), p) in lab.copyrights().iter().zip(&statuses).zip(&lab.photos) {
+        if st == "ready" {
+            assert_eq!(c["value"], "© 森 Morii 2026", "{}: {c}", p.display());
+            assert_eq!(c["conflicting"], false, "{}: {c}", p.display());
+        } else {
+            assert_eq!(blake(p).as_deref(), Some(lab.truth[p].as_str()));
+        }
+    }
+    assert!(lab.cli(&["fsck", &op]).status.success());
+    // the same value again is no change
+    let (_, again) = lab.plan_copyright("© 森 Morii 2026", "p2.json");
+    assert!(
+        again["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["status"]["status"] == "no_change" || e["status"]["status"] == "blocked"),
+        "{again}"
+    );
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    // a Latin value can be stored in the Latin IPTC copy: GPS.jpg is written, IPTC included
+    let (plan2, pj2) = lab.plan_copyright("© Zoë Morii 2026", "p3.json");
+    assert_eq!(pj2["entries"][gps]["status"]["status"], "ready", "{pj2}");
+    let a2 = lab.cli(&["apply", plan2.to_str().unwrap()]);
+    assert!(
+        a2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&a2.stdout)
+    );
+    let c = &lab.copyrights()[gps];
+    assert_eq!(c["value"], "© Zoë Morii 2026", "{c}");
+    assert!(
+        c["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s[0] == "IPTC:CopyrightNotice" && s[1] == "© Zoë Morii 2026"),
+        "{c}"
+    );
+    lab.undo(Lab::json(&a2)["op_id"].as_str().unwrap());
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// dc:rights in another language is kept (ExifTool would drop it if the default language were
+/// written without a language code), and verification would refuse the file if it were not.
+#[test]
+fn copyright_keeps_other_languages() {
+    let pkg = require!();
+    let lab = Lab::new("copyright-lang", &pkg);
+    let target = lab.dir.join("photos").join("lang.jpg");
+    let mk = Command::new(pkg.join("exiftool.exe"))
+        .args([
+            "-config",
+            "",
+            "-XMP-dc:Rights-de=Alle Rechte vorbehalten",
+            "-o",
+        ])
+        .arg(&target)
+        .arg(&lab.photos[0])
+        .output()
+        .unwrap();
+    assert!(mk.status.success());
+    let before = blake(&target).unwrap();
+    let out = lab.dir.join("lang.json");
+    let o = lab.cli(&[
+        "plan-copyright",
+        "--set",
+        "© Morii",
+        "--out",
+        out.to_str().unwrap(),
+        target.to_str().unwrap(),
+    ]);
+    assert!(o.status.success());
+    assert!(
+        String::from_utf8_lossy(&o.stdout).contains("other languages is kept"),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let a = lab.cli(&["apply", out.to_str().unwrap()]);
+    assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+    let scan = Lab::json(&lab.cli(&["scan", target.to_str().unwrap()]));
+    let c = &scan[0]["copyright"];
+    assert_eq!(c["value"], "© Morii", "{c}");
+    assert_eq!(
+        c["other_languages"],
+        serde_json::json!([["XMP-dc:Rights-de", "Alle Rechte vorbehalten"]]),
+        "{c}"
+    );
+    lab.undo(Lab::json(&a)["op_id"].as_str().unwrap());
+    assert_eq!(blake(&target).as_deref(), Some(before.as_str()));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// The preview check and resume work for the copyright field too (crash before the commit).
+#[test]
+fn copyright_crash_recovers_and_resumes() {
+    let pkg = require!();
+    for step in [6u8, 8] {
+        let lab = Lab::new(&format!("copyright-crash-{step}"), &pkg);
+        let (plan, _) = lab.plan_copyright("© Morii 2026", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--crash-at",
+                &format!("0:{step}"),
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(77));
+        let op = lab.last_op();
+        lab.assert_preimages(&op);
+        assert!(lab.cli(&["recover"]).status.success());
+        lab.assert_recovered(&op);
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(
+            lab.copyrights()
+                .iter()
+                .all(|c| c["value"] == "© Morii 2026"),
+            "step {step}"
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

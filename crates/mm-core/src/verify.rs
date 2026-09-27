@@ -139,7 +139,11 @@ pub fn check_output(
         }
     }
     // V3: no collateral changes
-    let mut allowed: BTreeSet<&str> = ops.iter().map(|o| o.tag()).collect();
+    // a language-alternative write (`…-x-default`) changes the key it reads back under
+    let mut allowed: BTreeSet<&str> = ops
+        .iter()
+        .flat_map(|o| [o.tag(), mm_domain::plan::read_key(o.tag())])
+        .collect();
     allowed.extend(DERIVED);
     let source_had_exif = source
         .keys()
@@ -180,6 +184,31 @@ mod tests {
 
     fn s(v: serde_json::Value) -> Snapshot {
         Snapshot::from_json(&v)
+    }
+
+    #[test]
+    fn default_language_write_allows_its_read_key_but_not_other_languages() {
+        let src = s(
+            json!({"XMP-dc:Rights": "Old", "XMP-dc:Rights-de": "Alt", "File:ImageDataHash": "h"}),
+        );
+        let ops = vec![TagOp::Set {
+            tag: "XMP-dc:Rights-x-default".into(),
+            values: vec!["New".into()],
+        }];
+        let expect = vec![Expect::Equals {
+            tag: "XMP-dc:Rights".into(),
+            values: vec!["New".into()],
+        }];
+        let ok = s(
+            json!({"XMP-dc:Rights": "New", "XMP-dc:Rights-de": "Alt", "File:ImageDataHash": "h"}),
+        );
+        assert_eq!(check_output(&src, &ok, &ops, &expect), Ok(()));
+        // ExifTool without a language code drops the other languages: V3 must refuse that
+        let dropped = s(json!({"XMP-dc:Rights": "New", "File:ImageDataHash": "h"}));
+        assert!(matches!(
+            check_output(&src, &dropped, &ops, &expect),
+            Err(VerifyError::Collateral(v)) if v == vec!["XMP-dc:Rights-de".to_string()]
+        ));
     }
 
     #[test]

@@ -18,9 +18,9 @@ use std::io::Seek;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mm_domain::creator;
 use mm_domain::plan::{EntryAction, Plan, PlanEntry, PlanKind};
 use mm_domain::snapshot::Snapshot;
+use mm_domain::{copyright, creator};
 use mm_store::{FileState, FileUpdate, NewFile, NewOperation, OpStatus, Store};
 
 use crate::engine::Engine;
@@ -911,14 +911,21 @@ fn commit_failed(f: &FilePaths, h0: &str, code: mm_fs::Win32Error) -> Outcome {
 /// The field values shown in the Preview must still be the source's values.
 fn before_matches(entry: &PlanEntry, src: &Snapshot) -> Result<(), VerifyError> {
     for ch in &entry.changes {
-        if ch.field == creator::FIELD {
-            let now = creator::read(src).effective;
-            if now != ch.before {
-                return Err(VerifyError::ChangedSincePreview(format!(
-                    "creator is now {now:?}, preview showed {:?}",
-                    ch.before
+        let now = match ch.field.as_str() {
+            creator::FIELD => creator::read(src).effective,
+            copyright::FIELD => copyright::read(src).effective.map(|v| vec![v]),
+            // a field without this check must not be written unchecked
+            other => {
+                return Err(VerifyError::Value(format!(
+                    "no preview check for field {other}"
                 )));
             }
+        };
+        if now != ch.before {
+            return Err(VerifyError::ChangedSincePreview(format!(
+                "{} is now {now:?}, preview showed {:?}",
+                ch.field, ch.before
+            )));
         }
     }
     Ok(())

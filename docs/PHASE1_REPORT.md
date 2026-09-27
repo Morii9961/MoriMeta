@@ -1,4 +1,4 @@
-# MoriMeta — Phase 1 Report（JPEG + Creator 垂直链路）
+# MoriMeta — Phase 1 Report（JPEG + Creator / Copyright 垂直链路）
 
 > **Status:** 进行中 · 2026-09-27
 > 记录 Phase 1b 的实现范围、验证方式与已知缺口。安全措辞仍以 SAFETY_MODEL §0 的前提为准。
@@ -21,6 +21,8 @@ scan → plan-creator → apply（逐文件事务）→ fsck → plan-undo → a
 
 Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; ` 连接）、XMP `dc:creator`；文件已有 IPTC 时写 `By-line`，Latin 字符集无法表示或超过 32 字节时**整个文件的该字段 Blocked**；已有 `XMP-tiff:Artist` 一并更新；写 IPTC 且已有摘要时更新 `IPTCDigest`。ExifTool 以**已核对哈希的备份副本**为写入源。
 
+Copyright 写入规则（METADATA_MODEL §6、§8，PRODUCT_SPEC §6.7）：EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言；文件已有 IPTC 时写 `CopyrightNotice`（Latin 字符集不能表示或超过 128 字节 → 该文件的该字段 Blocked）；已有 `XMP-tiff:Copyright` 一并更新；读取优先级 XMP 默认语言 > EXIF > IPTC。实测（ExifTool 13.59，2026-09-27）：不带语言代码写 `XMP-dc:Rights` 会**删除其他语言的条目**，因此写入时明确使用 `XMP-dc:Rights-x-default`；读回键名不带后缀，V3 按此对应，其他语言条目若被改动仍判为附带变化（单元测试覆盖）。执行时“预览后字段值未变”的核对改为按字段分派，未知字段一律拒绝写入。
+
 ## 2. 验证
 
 `cargo test --workspace --release`：53 个测试全部通过（2026-09-27）。端到端测试 `crates/mm-cli/tests/e2e.rs` 使用锁定的 ExifTool 13.59 与 8 个 ExifTool 样本 JPEG（Writer、Nikon、Canon、XMP、Sony、Olympus、Pentax、GPS）：
@@ -31,6 +33,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | 逐步崩溃 | 故障点 1–10 × 文件序号 0、3，共 20 例：每例检查恢复前原内容仍在（路径/bak/备份库）→ 恢复待决时新写入被拒绝 → `recover` → 路径只为 H0 或 H1、无残留、fsck 干净 → `resume` 完成 → 撤销后逐字节一致 | 20/20 通过 |
 | 随机终止 | 随机时刻终止 `mm-cli apply`，其后同上（默认 12 次，`MM_E2E_KILLS` 可调） | 12/12 通过 |
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
+| Copyright | 写入 EXIF `IFD0:Copyright`、XMP `dc:rights` 默认语言、已有 IPTC 时 `CopyrightNotice`；Latin IPTC 上中文 Blocked 且文件不动、Latin 值写入 IPTC；其他语言的 `dc:rights` 保留；同值重新规划为 NoChange；崩溃（故障点 6、8）后恢复与继续；撤销逐字节一致 | 通过（3 个测试） |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
 | 注入 IO 错误 | 在文件 #2 的故障点 1–10 各注入一次 IO 错误（`--fail-at`）：Operation 不停留在 running；提交前出错 → 该文件 failed 且内容为 H0；提交后出错 → done；其他文件 done；无残留、fsck 干净；撤销后逐字节一致 | 10/10 通过 |
 | Journal 写入失败 | SQLite 真实返回 `SQLITE_BUSY`（第二连接持写锁）：`begin`、文件 #2 的 4 个状态写、`finish`，各 once / persist | 12/12 通过 |
@@ -66,7 +69,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | G-2 | 1,000 个重复小样本 JPEG 的 Creator→Undo 已通过；5,000 文件、1,000 个不同相机原片与真实大文件仍未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |
-| G-5 | 字段注册表 v0 暂定（仅 creator） | S3 第三方测试后冻结 v1 |
+| G-5 | 字段注册表 v0 暂定（creator、copyright） | S3 第三方测试后冻结 v1 |
 | G-6 | 已实现：撤销时文件已被删除或移动 → 从备份在原路径重建（不覆盖的重命名提交，Journal 角色 `recreate`）。撤销这次重建：把文件移入备份库（锁定 → 复制到备份库并核对 → Ready → 不覆盖地改名为登记的 bak 名 → 核对后删除 bak；Journal 角色 `remove`），再撤销又重建，撤销链可以无限往复。重建的文件不保留原创建时间等属性 | Phase 3 的 sidecar 新建/撤销复用该事务 |
 | G-7 | 已实现：`manifest.jsonl` 只追加记录（H0/H1 先刷盘）+ `plan.json`；`mm-cli rebuild-journal` 导入数据库中缺失的 Operation，再按正常恢复处理。已测：完成的 apply 与 undo 链重建后可继续撤销；在故障点 2、4、7、8、9 崩溃及 `ReplaceFileW` 中途状态下丢失数据库，重建、恢复、继续、撤销全部逐字节还原；截断的最后一行被忽略，中间行损坏则不导入。未测：数据库损坏而非丢失（需先移走损坏文件）、备份目录部分缺失；每个文件多两次刷盘的性能开销待 S4 测量 | 产品 UI 中的入口待 Phase 2 |
 | G-8 | `resume` 要求应用与 ExifTool 版本不变；版本变化时只能撤销或重新规划 | 设计如此（ARCHITECTURE §11） |

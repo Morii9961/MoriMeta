@@ -5,7 +5,8 @@
 //!
 //! Registry status: provisional (`REGISTRY_VERSION = 0`) until the S3 third-party checks freeze v1.
 
-use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, TagOp};
+use crate::iptc;
+use crate::plan::{ChangeKind, EntryStatus, Expect, FieldChange, FieldPlan, TagOp};
 use crate::snapshot::Snapshot;
 use crate::value::{TextKind, validate_text};
 
@@ -16,8 +17,7 @@ pub const ARTIST: &str = "IFD0:Artist";
 pub const DC_CREATOR: &str = "XMP-dc:Creator";
 pub const IPTC_BYLINE: &str = "IPTC:By-line";
 pub const TIFF_ARTIST: &str = "XMP-tiff:Artist";
-pub const IPTC_CHARSET: &str = "IPTC:CodedCharacterSet";
-pub const IPTC_DIGEST: &str = "Photoshop:IPTCDigest";
+pub const IPTC_DIGEST: &str = iptc::DIGEST;
 /// IPTC.pm: By-line => string[0,32]
 pub const BYLINE_MAX_BYTES: usize = 32;
 
@@ -86,52 +86,13 @@ pub fn validate(items: &[String]) -> Result<(), String> {
 }
 
 /// Result of planning the creator field for one file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreatorPlan {
-    pub status: EntryStatus,
-    pub change: Option<FieldChange>,
-    pub ops: Vec<TagOp>,
-    pub expect: Vec<Expect>,
-    pub notes: Vec<String>,
-}
-
-fn has_iptc(snap: &Snapshot) -> bool {
-    snap.keys().any(|k| k.starts_with("IPTC:"))
-}
-
-fn has_extra_iptc_records(snap: &Snapshot) -> bool {
-    // ExifTool reports additional/duplicate IPTC blocks as IPTC2, IPTC3, …
-    snap.keys()
-        .any(|k| k.len() > 5 && k.starts_with("IPTC") && k.as_bytes()[4].is_ascii_digit())
-}
-
-fn iptc_is_utf8(snap: &Snapshot) -> bool {
-    snap.text(IPTC_CHARSET)
-        .map(|v| v.eq_ignore_ascii_case("UTF8") || v == "\u{1b}%G")
-        .unwrap_or(false)
-}
-
-/// Encoded byte length of `s` in the file's IPTC character set, or None if not representable.
-fn iptc_bytes(s: &str, utf8: bool) -> Option<usize> {
-    if utf8 {
-        return Some(s.len());
-    }
-    s.chars()
-        .all(crate::cp1252::encodable)
-        .then(|| s.chars().count())
-}
+pub type CreatorPlan = FieldPlan;
 
 pub fn plan(snap: &Snapshot, edit: &CreatorEdit) -> CreatorPlan {
     let before = read(snap);
-    let blocked = |why: String| CreatorPlan {
-        status: EntryStatus::Blocked(why),
-        change: None,
-        ops: vec![],
-        expect: vec![],
-        notes: vec![],
-    };
-    let iptc = has_iptc(snap);
-    if iptc && has_extra_iptc_records(snap) {
+    let blocked = FieldPlan::blocked;
+    let iptc = iptc::present(snap);
+    if iptc && iptc::has_extra_records(snap) {
         return blocked("file contains more than one IPTC record; not written".into());
     }
     let mut ops = Vec::new();
@@ -170,22 +131,9 @@ pub fn plan(snap: &Snapshot, edit: &CreatorEdit) -> CreatorPlan {
                 });
             }
             if iptc {
-                let utf8 = iptc_is_utf8(snap);
                 for it in items {
-                    match iptc_bytes(it, utf8) {
-                        None => {
-                            return blocked(format!(
-                                "IPTC By-line uses the Latin character set and cannot store {it:?}; \
-                                 convert IPTC to UTF-8, remove the IPTC copy, or exclude this file"
-                            ));
-                        }
-                        Some(n) if n > BYLINE_MAX_BYTES => {
-                            return blocked(format!(
-                                "IPTC By-line allows {BYLINE_MAX_BYTES} bytes; {it:?} needs {n} \
-                                 (ExifTool would truncate it)"
-                            ));
-                        }
-                        _ => {}
+                    if let Some(why) = iptc::refuse(snap, "By-line", it, BYLINE_MAX_BYTES) {
+                        return blocked(why);
                     }
                 }
                 ops.push(TagOp::Set {

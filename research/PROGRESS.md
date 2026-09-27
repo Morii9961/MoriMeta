@@ -13,6 +13,7 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - **G-1 fault matrix** (`docs/PHASE1B_FAULT_MATRIX.md`): journal write failures (real SQLITE_BUSY, once/persistent), simulated disk full → Operation pauses and resumes, undo-path crashes/IO errors, space pre-check (§6.2). 62 tests. Real disk full on a 64 MB NTFS VHDX (photo volume; backup/journal volume with real SQLITE_FULL): passed, run separately with `MM_E2E_SMALL_VOLUME`. Round 2: manifest / recover / resume write failures, undo random kills; fixed resume stranding re-registered files in a finished Operation. 66 tests.
 - **G-6**: undo recreates a deleted/moved file at its path from the backup (no-overwrite rename, journal role `recreate`); missing folder → Blocked; undoing a recreate moves the file into the backup store (journal role `remove`, never deleted), undoing that recreates it. 70 tests.
 - **G-7**: append-only `manifest.jsonl` (H0/H1 flushed) + `plan.json` per backup folder; `mm-cli rebuild-journal` re-imports operations missing from the database, then normal recovery. 73 tests.
+- **Copyright field** (scenario D's field): EXIF Copyright, XMP dc:rights x-default (other languages kept; ExifTool drops them without a language code), existing IPTC CopyrightNotice with the shared IPTC charset/length rules; `mm-cli plan-copyright`. 82 tests.
 
 ## Waiting / needs the user
 

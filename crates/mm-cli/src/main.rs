@@ -8,6 +8,7 @@
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
+//!   plan-copyright --set TEXT | --set-from UTF8_FILE | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
 //!   rebuild-journal           re-import operations missing from the database from their
@@ -38,6 +39,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::{fsck, planner, recovery, undo};
+use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
 use mm_domain::plan::Plan;
 use mm_exiftool::EngineConfig;
@@ -136,6 +138,30 @@ fn take_opt(args: &mut Vec<String>, name: &str) -> Option<String> {
     let v = args.get(i + 1).cloned();
     args.drain(i..(i + 2).min(args.len()));
     v
+}
+
+/// `(--set VALUE)... [--set-from UTF8_FILE]` → Some(values), or `--clear` → None.
+/// The file holds one value per line and avoids shell code-page conversion of non-ASCII text.
+fn set_values(args: &mut Vec<String>) -> Result<Option<Vec<String>>, String> {
+    let clear = args.iter().any(|a| a == "--clear");
+    args.retain(|a| a != "--clear");
+    let mut values = Vec::new();
+    while let Some(v) = take_opt(args, "--set") {
+        values.push(v);
+    }
+    if let Some(f) = take_opt(args, "--set-from") {
+        let text = std::fs::read_to_string(&f).map_err(|e| format!("{f}: {e}"))?;
+        values.extend(
+            text.lines()
+                .map(|l| l.trim_start_matches('\u{feff}').to_owned())
+                .filter(|l| !l.is_empty()),
+        );
+    }
+    match (clear, values.is_empty()) {
+        (true, true) => Ok(None),
+        (false, false) => Ok(Some(values)),
+        _ => Err("use either --set VALUE / --set-from FILE, or --clear".into()),
+    }
 }
 
 /// Fault-injection options of `apply` and `resume` (tests only).
@@ -295,7 +321,10 @@ fn main() -> ExitCode {
                     .map(|(p, s)| match s {
                         Ok(s) => {
                             let c = creator::read(&s);
-                            json!({"path": p, "creator": c.effective, "sources": c.sources, "conflicting": c.conflicting})
+                            let r = copyright::read(&s);
+                            json!({"path": p, "creator": c.effective, "sources": c.sources, "conflicting": c.conflicting,
+                                   "copyright": {"value": r.effective, "sources": r.sources, "conflicting": r.conflicting,
+                                                 "other_languages": r.other_languages}})
                         }
                         Err(e) => json!({"path": p, "error": e}),
                     })
@@ -306,29 +335,30 @@ fn main() -> ExitCode {
             "plan-creator" => {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
                 let title = take_opt(&mut args, "--title").unwrap_or_else(|| "Set creator".into());
-                let clear = args.iter().any(|a| a == "--clear");
-                args.retain(|a| a != "--clear");
-                let mut names = Vec::new();
-                while let Some(v) = take_opt(&mut args, "--set") {
-                    names.push(v);
-                }
-                // UTF-8 file, one name per line: avoids shell code-page conversion of non-ASCII text
-                if let Some(f) = take_opt(&mut args, "--set-from") {
-                    let text = std::fs::read_to_string(&f).map_err(|e| format!("{f}: {e}"))?;
-                    names.extend(
-                        text.lines()
-                            .map(|l| l.trim_start_matches('\u{feff}').to_owned())
-                            .filter(|l| !l.is_empty()),
-                    );
-                }
-                let edit = match (clear, names.is_empty()) {
-                    (true, true) => CreatorEdit::Clear,
-                    (false, false) => CreatorEdit::Set(names),
-                    _ => return Err("use either --set NAME (repeatable) or --clear".into()),
+                let edit = match set_values(&mut args)? {
+                    None => CreatorEdit::Clear,
+                    Some(names) => CreatorEdit::Set(names),
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
                 let plan = planner::plan_creator(&mut eng, &paths, &edit, &title)
+                    .map_err(|e| e.to_string())?;
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-copyright" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
+                let title =
+                    take_opt(&mut args, "--title").unwrap_or_else(|| "Set copyright".into());
+                let edit = match set_values(&mut args)?.as_deref() {
+                    None => CopyrightEdit::Clear,
+                    Some([one]) => CopyrightEdit::Set(one.clone()),
+                    Some(_) => return Err("copyright takes one value".into()),
+                };
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let plan = planner::plan_copyright(&mut eng, &paths, &edit, &title)
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

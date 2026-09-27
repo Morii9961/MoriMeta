@@ -4,8 +4,12 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
-use mm_domain::plan::{EntryAction, EntryStatus, Fingerprint, Plan, PlanEntry, PlanKind};
+use mm_domain::plan::{
+    EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind,
+};
+use mm_domain::snapshot::Snapshot;
 
 use crate::engine::Engine;
 use crate::{CoreError, fingerprint, new_id, normalize};
@@ -40,6 +44,25 @@ pub fn plan_creator(
     inputs: &[PathBuf],
     edit: &CreatorEdit,
     title: &str,
+) -> Result<Plan, CoreError> {
+    plan_field(engine, inputs, title, |s| creator::plan(s, edit))
+}
+
+pub fn plan_copyright(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    edit: &CopyrightEdit,
+    title: &str,
+) -> Result<Plan, CoreError> {
+    plan_field(engine, inputs, title, |s| copyright::plan(s, edit))
+}
+
+/// Pre-checks, fingerprints and the snapshot of every input, then the pure field planner.
+fn plan_field(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    title: &str,
+    field: impl Fn(&Snapshot) -> FieldPlan,
 ) -> Result<Plan, CoreError> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -79,7 +102,7 @@ pub fn plan_creator(
         match snap {
             Err(why) => e.status = EntryStatus::Blocked(format!("metadata unreadable: {why}")),
             Ok(s) => {
-                let cp = creator::plan(&s, edit);
+                let cp = field(&s);
                 e.status = cp.status;
                 e.notes = cp.notes;
                 if let Some(ch) = cp.change {

@@ -39,6 +39,35 @@ impl TagOp {
     }
 }
 
+/// The key under which ExifTool reads back what `write_tag` writes. A language-alternative
+/// write names the language (`XMP-dc:Rights-x-default`, so that other languages are kept),
+/// while the default language reads back without the suffix (`XMP-dc:Rights`).
+pub fn read_key(write_tag: &str) -> &str {
+    write_tag.strip_suffix("-x-default").unwrap_or(write_tag)
+}
+
+/// Result of planning one field for one file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldPlan {
+    pub status: EntryStatus,
+    pub change: Option<FieldChange>,
+    pub ops: Vec<TagOp>,
+    pub expect: Vec<Expect>,
+    pub notes: Vec<String>,
+}
+
+impl FieldPlan {
+    pub fn blocked(why: String) -> FieldPlan {
+        FieldPlan {
+            status: EntryStatus::Blocked(why),
+            change: None,
+            ops: vec![],
+            expect: vec![],
+            notes: vec![],
+        }
+    }
+}
+
 /// What verification (SAFETY_MODEL §5 V2) must find in the temporary output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "expect", rename_all = "snake_case")]
