@@ -5,7 +5,12 @@
 //!   1 before lock · 2 after lock/fingerprint · 3 after backup copy · 4 after BackedUp recorded ·
 //!   5 after temp written · 6 after verification · 7 after Ready recorded · 8 after ReplaceFileW ·
 //!   9 after Committed recorded · 10 after bak removed (before Done recorded)
+//!
+//! A full volume (SAFETY_MODEL §8.13) pauses the Operation: the file in progress is settled with
+//! the recovery table, it and every later file become `Cancelled` (original unchanged, retried
+//! by resume once space is freed), and the Operation ends `Cancelled`.
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Seek;
 use std::path::{Path, PathBuf};
@@ -32,7 +37,18 @@ pub struct ExecOptions {
     pub fault: Option<FaultPoint>,
     /// Return an injected IO error at this point (error-path test).
     pub fail: Option<FaultPoint>,
+    /// Return a simulated "disk full" IO error (Win32 112) at this point.
+    pub disk_full: Option<FaultPoint>,
+    /// Fill the (small, test) volume holding this directory at this point: a real disk full.
+    pub fill: Option<(FaultPoint, PathBuf)>,
+    /// Replace the 1 GiB backup-volume reserve of the space pre-check (tests only).
+    pub space_reserve: Option<u64>,
 }
+
+/// Backup-volume reserve on top of the backups themselves (SAFETY_MODEL §6.2).
+pub const SPACE_RESERVE: u64 = 1 << 30;
+
+const DISK_FULL_STOP: &str = "paused: a volume is full; free space, then resume";
 
 #[derive(Debug, Clone)]
 pub struct FileOutcome {
@@ -66,6 +82,12 @@ fn fault(opts: &ExecOptions, seq: u32, step: u8) -> Result<(), CoreError> {
             "injected IO error at step {step}"
         ))));
     }
+    if opts.disk_full == here {
+        return Err(CoreError::Io(std::io::Error::from_raw_os_error(112)));
+    }
+    if let Some((_, dir)) = opts.fill.as_ref().filter(|(p, _)| Some(*p) == here) {
+        mm_fs::fill_volume(dir).map_err(|e| CoreError::Internal(format!("fill: {e}")))?;
+    }
     Ok(())
 }
 
@@ -75,6 +97,60 @@ enum Outcome {
     Skipped(String),
     Conflict(String),
     Attention(String),
+    /// A volume is full; the original is unchanged. Pauses the Operation.
+    DiskFull(String),
+}
+
+/// Space pre-check before any file is touched (SAFETY_MODEL §6.2): the backup volume needs
+/// `Σ size × 1.05 + reserve`; each target directory's volume needs `largest file × 1.1` for the
+/// temporary output (one worker).
+fn check_space<'a>(
+    store: &Store,
+    entries: impl Iterator<Item = &'a PlanEntry>,
+    reserve: u64,
+) -> Result<(), CoreError> {
+    let mut total = 0u64;
+    let mut largest: BTreeMap<PathBuf, u64> = BTreeMap::new();
+    for e in entries {
+        let size = e.fingerprint.size;
+        total = total.saturating_add(size);
+        let dir = Path::new(&e.path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let m = largest.entry(dir).or_default();
+        *m = (*m).max(size);
+    }
+    if largest.is_empty() {
+        return Ok(()); // nothing will be written
+    }
+    let backups = store.data_dir().join("backups");
+    let need = total.saturating_add(total / 20).saturating_add(reserve);
+    let free = mm_fs::volume_space(&backups)?.free;
+    if free < need {
+        return Err(CoreError::InsufficientSpace(format!(
+            "backup volume ({}) needs {need} bytes free, has {free}",
+            backups.display()
+        )));
+    }
+    for (dir, size) in largest {
+        let need = size.saturating_add(size / 10);
+        let free = mm_fs::volume_space(&dir)?.free;
+        if free < need {
+            return Err(CoreError::InsufficientSpace(format!(
+                "volume of {} needs {need} bytes free for temporary output, has {free}",
+                dir.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// After ExifTool failed to produce the output: was the target volume full?
+fn target_volume_full(temp: &Path, size: u64) -> bool {
+    temp.parent()
+        .and_then(|d| mm_fs::volume_space(d).ok())
+        .is_some_and(|s| s.free < size + size / 10)
 }
 
 fn names(
@@ -119,6 +195,11 @@ pub fn start(
             engine.version()
         )));
     }
+    check_space(
+        store,
+        plan.executable(),
+        opts.space_reserve.unwrap_or(SPACE_RESERVE),
+    )?;
     let op_id = new_id("op")?;
     let backup_dir = store.backup_dir(&op_id);
     let mut files = Vec::new();
@@ -178,19 +259,29 @@ pub fn resume(
     let plan: Plan = serde_json::from_str(&op.plan_json)
         .map_err(|e| CoreError::Internal(format!("persisted plan: {e}")))?;
     let backup_dir = PathBuf::from(&op.backup_dir);
+    let retry: Vec<_> = store
+        .files(op_id)?
+        .into_iter()
+        .filter(|f| f.state == FileState::NotStarted || f.state == FileState::Cancelled)
+        .collect();
+    check_space(
+        store,
+        plan.entries
+            .iter()
+            .filter(|e| retry.iter().any(|f| f.seq == e.seq)),
+        opts.space_reserve.unwrap_or(SPACE_RESERVE),
+    )?;
     let mut seqs = Vec::new();
-    for f in store.files(op_id)? {
-        if f.state == FileState::NotStarted || f.state == FileState::Cancelled {
-            let (temp, bak, backup) = names(Path::new(&f.path), &backup_dir, f.seq)?;
-            store.set_paths(
-                op_id,
-                f.seq,
-                &temp.to_string_lossy(),
-                &bak.to_string_lossy(),
-                &backup.to_string_lossy(),
-            )?;
-            seqs.push(f.seq);
-        }
+    for f in retry {
+        let (temp, bak, backup) = names(Path::new(&f.path), &backup_dir, f.seq)?;
+        store.set_paths(
+            op_id,
+            f.seq,
+            &temp.to_string_lossy(),
+            &bak.to_string_lossy(),
+            &backup.to_string_lossy(),
+        )?;
+        seqs.push(f.seq);
     }
     store.set_status(op_id, OpStatus::Running)?;
     run(store, engine, op_id, &plan, &seqs, opts)
@@ -250,10 +341,26 @@ fn run(
                     .find(|r| r.seq == *seq)
                     .ok_or_else(|| CoreError::Internal(format!("missing file row {seq}")))?;
                 let (to, action) = crate::recovery::decide(&now);
+                if e.is_disk_full() {
+                    tripped = Some(DISK_FULL_STOP.into()); // whatever became of this file
+                }
                 match to {
+                    FileState::NotStarted if e.is_disk_full() => {
+                        Outcome::DiskFull(format!("{e}; original unchanged"))
+                    }
                     FileState::NotStarted => Outcome::Failed(format!("{e}; original unchanged")),
                     FileState::Done => {
-                        store.set_state(op_id, *seq, FileState::Done, &FileUpdate::default())?;
+                        // keep the error visible: the commit was confirmed from the disk, not
+                        // from a complete journal
+                        store.set_state(
+                            op_id,
+                            *seq,
+                            FileState::Done,
+                            &FileUpdate {
+                                error: Some(format!("{e}; commit confirmed on disk")),
+                                ..Default::default()
+                            },
+                        )?;
                         Outcome::Done
                     }
                     _ => Outcome::Attention(format!("{e}; {action}")),
@@ -269,6 +376,10 @@ fn run(
             Outcome::Skipped(r) => (FileState::Skipped, Some(r), false),
             Outcome::Conflict(r) => (FileState::Conflict, Some(r), false),
             Outcome::Attention(r) => (FileState::Attention, Some(r), false),
+            Outcome::DiskFull(r) => {
+                tripped = Some(DISK_FULL_STOP.into());
+                (FileState::Cancelled, Some(r), false)
+            }
         };
         if state != FileState::Done {
             store.set_state(
@@ -374,6 +485,11 @@ fn one_file(
     lock.rewind()?;
     let h0 = match mm_fs::copy_new_hashing(&mut lock, &f.backup) {
         Ok(h) => h,
+        Err(e) if mm_fs::is_disk_full(&e) => {
+            return Ok(Outcome::DiskFull(format!(
+                "backup volume is full ({e}); original unchanged"
+            )));
+        }
         Err(e) => return Ok(Outcome::Failed(format!("backup failed: {e}"))),
     };
     fault(opts, seq, 3)?;
@@ -396,19 +512,24 @@ fn one_file(
     match entry.action.as_ref() {
         Some(EntryAction::Write { ops, expect }) => {
             let out = engine.write(ops, &f.backup, &f.temp);
-            let out = match out {
-                Ok(o) => o,
-                Err(e) => {
-                    remove_if_exists(&f.temp);
-                    return Ok(Outcome::Failed(format!("ExifTool: {e}")));
+            // ExifTool reports a failed write only as text; ask the volume whether it is full
+            let engine_failed = |why: String| {
+                remove_if_exists(&f.temp);
+                if target_volume_full(&f.temp, fp.size) {
+                    Outcome::DiskFull(format!("{why}; photo volume is full; original unchanged"))
+                } else {
+                    Outcome::Failed(why)
                 }
             };
+            let out = match out {
+                Ok(o) => o,
+                Err(e) => return Ok(engine_failed(format!("ExifTool: {e}"))),
+            };
             if let Err(e) = verify::check_write_output(&out) {
-                remove_if_exists(&f.temp);
-                return Ok(Outcome::Failed(format!("verification V1: {e}")));
+                return Ok(engine_failed(format!("verification V1: {e}")));
             }
             if !f.temp.exists() {
-                return Ok(Outcome::Failed("ExifTool produced no output".into()));
+                return Ok(engine_failed("ExifTool produced no output".into()));
             }
             fault(opts, seq, 5)?;
             // 4 verify against the verified backup (the actual source)

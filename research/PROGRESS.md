@@ -6,9 +6,11 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 - **Git baseline** + `tools/check_repo.py` (inclusion check) + `docs/REPOSITORY_CHECKLIST.md`, `README.md`, `docs/LICENSE_DECISION.md`.
 - **S0/S1/S2/S3(ExifTool side)/S7**: see SPIKE_REPORT. S2 remains partial (no exFAT, cloud-sync, power loss, real NAS).
-- **Phase 1a/1b**: mm-exiftool, mm-fs, mm-domain, mm-store (SQLite journal), mm-core (planner, verification, transaction, recovery, resume, undo, fsck), mm-cli. JPEG + Creator end to end; crash (20 points + random kills) and injected IO errors (10 steps) all recover; undo byte-identical. 53 tests.
+- **Phase 1a/1b**: mm-exiftool, mm-fs, mm-domain, mm-store (SQLite journal), mm-core (planner, verification, transaction, recovery, resume, undo, fsck), mm-cli. JPEG + Creator end to end; crash (20 points + random kills) and injected IO errors (10 steps) all recover; undo byte-identical (53 tests at that point).
 - **S3/S4 preparation**: `research/s3/compat_corpus.py` + `tests/compat-lab/`; `research/s4/bench.py` + `tests/perf/`.
 - **S5 (automated part)**: `research/spikes/s5-ui` — Tauri 2.12 + React; numbers in SPIKE_REPORT §5a.
+- **Phase 1b scale (limited)**: 1,000 copies of 8 ExifTool fixtures, Creator apply → undo byte-identical (`docs/PHASE1B_SCALE_VALIDATION.md`); not a camera corpus or S4 result.
+- **G-1 fault matrix** (`docs/PHASE1B_FAULT_MATRIX.md`): journal write failures (real SQLITE_BUSY, once/persistent), simulated disk full → Operation pauses and resumes, undo-path crashes/IO errors, space pre-check (§6.2). 62 tests. Real disk full: test written, not run (no small volume).
 
 ## Waiting / needs the user
 
@@ -20,5 +22,5 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 ## Next engineering steps (no design dependency)
 
 - Worker pool + per-volume IO limits (ARCHITECTURE §7.5/§8), then S4 on real data.
-- Journal failure / real disk-full tests; manifest-only recovery; undo when the file was moved.
+- Real disk-full run (needs `tests/fault-lab/small_volume.ps1` as administrator, or small media); manifest-write and recover/resume journal-write faults; wider fault positions; manifest-only recovery; undo when the file was moved.
 - Time tools (Absolute/Shift/Sequence/Preserve) through the same Plan/transaction path.

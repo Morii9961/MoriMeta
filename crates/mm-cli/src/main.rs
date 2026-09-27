@@ -8,14 +8,21 @@
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
-//!   apply PLAN.json [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
+//!   apply PLAN.json [FAULTS]
 //!   recover
-//!   resume OP_ID [--crash-at SEQ:STEP] [--fail-at SEQ:STEP]
+//!   resume OP_ID [FAULTS]
 //!   plan-undo OP_ID --out PLAN.json
 //!   history | show OP_ID | fsck OP_ID
 //!
-//! `--crash-at` terminates the process at a fault point, `--fail-at` injects an IO error there;
-//! both require MM_FAULT_INJECTION=1.
+//! FAULTS (tests only; all require MM_FAULT_INJECTION=1):
+//!   --crash-at SEQ:STEP       terminate the process at a fault point
+//!   --fail-at SEQ:STEP        return an IO error there
+//!   --disk-full-at SEQ:STEP   return a simulated disk-full error (Win32 112) there
+//!   --fill-at SEQ:STEP --fill-dir DIR   really fill the (small test) volume of DIR there
+//!   --journal-fail-at begin | finish | SEQ:STATE [--journal-fail-persist]
+//!                             make SQLite fail that journal write (another connection holds the
+//!                             write lock); with --journal-fail-persist every later write fails too
+//!   --space-reserve BYTES     replace the 1 GiB backup-volume reserve of the space pre-check
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
 //! 4 fsck found problems.
 
@@ -30,7 +37,7 @@ use mm_core::{fsck, planner, recovery, undo};
 use mm_domain::creator::{self, CreatorEdit};
 use mm_domain::plan::Plan;
 use mm_exiftool::EngineConfig;
-use mm_store::Store;
+use mm_store::{FileState, Store, WriteFault, WriteTarget};
 use serde_json::{Value, json};
 
 struct Global {
@@ -98,14 +105,19 @@ fn instance_lock(data: &Path) -> Result<std::fs::File, String> {
         .map_err(|_| "another MoriMeta instance is using this data directory".to_string())
 }
 
+fn require_fault_injection(flag: &str) -> Result<(), String> {
+    if std::env::var("MM_FAULT_INJECTION").as_deref() != Ok("1") {
+        return Err(format!("{flag} requires MM_FAULT_INJECTION=1"));
+    }
+    Ok(())
+}
+
 /// `--crash-at` / `--fail-at SEQ:STEP` (fault-injection tests only).
 fn parse_point(args: &mut Vec<String>, flag: &str) -> Result<Option<FaultPoint>, String> {
     let Some(i) = args.iter().position(|a| a == flag) else {
         return Ok(None);
     };
-    if std::env::var("MM_FAULT_INJECTION").as_deref() != Ok("1") {
-        return Err(format!("{flag} requires MM_FAULT_INJECTION=1"));
-    }
+    require_fault_injection(flag)?;
     let v = args.get(i + 1).cloned().ok_or(format!("{flag} SEQ:STEP"))?;
     args.drain(i..=i + 1);
     let (s, t) = v.split_once(':').ok_or(format!("{flag} SEQ:STEP"))?;
@@ -120,6 +132,54 @@ fn take_opt(args: &mut Vec<String>, name: &str) -> Option<String> {
     let v = args.get(i + 1).cloned();
     args.drain(i..(i + 2).min(args.len()));
     v
+}
+
+/// Fault-injection options of `apply` and `resume` (tests only).
+fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions, String> {
+    let fault = parse_point(args, "--crash-at")?;
+    let fail = parse_point(args, "--fail-at")?;
+    let disk_full = parse_point(args, "--disk-full-at")?;
+    let fill = match parse_point(args, "--fill-at")? {
+        Some(p) => Some((
+            p,
+            PathBuf::from(take_opt(args, "--fill-dir").ok_or("--fill-at needs --fill-dir DIR")?),
+        )),
+        None => None,
+    };
+    let space_reserve = match take_opt(args, "--space-reserve") {
+        Some(v) => {
+            require_fault_injection("--space-reserve")?;
+            Some(v.parse().map_err(|_| "--space-reserve BYTES")?)
+        }
+        None => None,
+    };
+    let persistent = args.iter().any(|a| a == "--journal-fail-persist");
+    args.retain(|a| a != "--journal-fail-persist");
+    if let Some(t) = take_opt(args, "--journal-fail-at") {
+        require_fault_injection("--journal-fail-at")?;
+        let target = match t.as_str() {
+            "begin" => WriteTarget::Begin,
+            "finish" => WriteTarget::Finish,
+            s => {
+                let bad = || "--journal-fail-at begin | finish | SEQ:STATE".to_string();
+                let (seq, state) = s.split_once(':').ok_or_else(bad)?;
+                WriteTarget::File {
+                    seq: seq.parse().map_err(|_| bad())?,
+                    state: FileState::parse(state).ok_or_else(bad)?,
+                }
+            }
+        };
+        store.arm_write_fault(WriteFault { target, persistent });
+    } else if persistent {
+        return Err("--journal-fail-persist needs --journal-fail-at".into());
+    }
+    Ok(ExecOptions {
+        fault,
+        fail,
+        disk_full,
+        fill,
+        space_reserve,
+    })
 }
 
 /// Expand a UTF-8 path list so large batches do not exceed the Windows command-line limit.
@@ -264,25 +324,23 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "apply" => {
-                let fault = parse_point(&mut args, "--crash-at")?;
-                let fail = parse_point(&mut args, "--fail-at")?;
+                let opts = exec_options(&mut args, &mut store)?;
                 let file = args.first().ok_or("apply PLAN.json")?;
                 let plan: Plan =
                     serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
                         .map_err(|e| format!("plan file: {e}"))?;
                 let mut eng = with_engine(&g)?;
-                let r = executor::start(&mut store, &mut eng, &plan, &ExecOptions { fault, fail })
+                let r = executor::start(&mut store, &mut eng, &plan, &opts)
                     .map_err(|e| e.to_string())?;
                 eng.close();
                 Ok(report_exit(&r))
             }
             "resume" => {
-                let fault = parse_point(&mut args, "--crash-at")?;
-                let fail = parse_point(&mut args, "--fail-at")?;
+                let opts = exec_options(&mut args, &mut store)?;
                 let op = args.first().ok_or("resume OP_ID")?;
                 let mut eng = with_engine(&g)?;
-                let r = executor::resume(&mut store, &mut eng, op, &ExecOptions { fault, fail })
-                    .map_err(|e| e.to_string())?;
+                let r =
+                    executor::resume(&mut store, &mut eng, op, &opts).map_err(|e| e.to_string())?;
                 eng.close();
                 Ok(report_exit(&r))
             }

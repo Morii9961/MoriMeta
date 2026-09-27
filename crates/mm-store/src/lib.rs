@@ -29,6 +29,18 @@ impl std::fmt::Display for StoreError {
     }
 }
 impl std::error::Error for StoreError {}
+
+impl StoreError {
+    /// The journal or manifest could not be written because a volume is full (`SQLITE_FULL`,
+    /// Win32 112/39).
+    pub fn is_disk_full(&self) -> bool {
+        match self {
+            StoreError::Sql(e) => e.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull),
+            StoreError::Io(e) => matches!(e.raw_os_error(), Some(112 | 39)),
+            _ => false,
+        }
+    }
+}
 impl From<rusqlite::Error> for StoreError {
     fn from(e: rusqlite::Error) -> Self {
         StoreError::Sql(e)
@@ -189,9 +201,34 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Which journal write fails (fault-injection tests only; SAFETY_MODEL §12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteTarget {
+    /// The single transaction that registers the Operation and all its files (step 0).
+    Begin,
+    /// The state change of file `seq` to `state`.
+    File { seq: u32, state: FileState },
+    /// The final status of the Operation.
+    Finish,
+}
+
+/// A journal write failure produced by SQLite itself: right before the target write, a second
+/// connection takes the database write lock (`BEGIN IMMEDIATE`), so the write fails with a real
+/// `SQLITE_BUSY`. `persistent` keeps the lock until the process ends, so every later write fails
+/// too (a journal that stays unavailable); otherwise only the target write fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriteFault {
+    pub target: WriteTarget,
+    pub persistent: bool,
+}
+
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub struct Store {
     conn: Connection,
     data_dir: PathBuf,
+    fault: Option<WriteFault>,
+    blocker: Option<Connection>,
 }
 
 impl Store {
@@ -203,7 +240,7 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "FULL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if v > SCHEMA_VERSION {
             return Err(StoreError::NewerSchema(v));
@@ -230,11 +267,43 @@ impl Store {
         Ok(Store {
             conn,
             data_dir: data_dir.to_path_buf(),
+            fault: None,
+            blocker: None,
         })
     }
 
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    /// Arm a journal write failure (fault-injection tests only).
+    pub fn arm_write_fault(&mut self, fault: WriteFault) {
+        self.fault = Some(fault);
+    }
+
+    /// Run a journal write; if it is the armed target, run it while another connection holds the
+    /// write lock so that SQLite itself fails it.
+    fn write<T>(
+        &mut self,
+        target: WriteTarget,
+        f: impl FnOnce(&mut Connection) -> Result<T>,
+    ) -> Result<T> {
+        let armed = self.fault.filter(|x| x.target == target);
+        if let Some(x) = armed {
+            self.fault = None;
+            let blocker = Connection::open(self.data_dir.join("db").join("morimeta.sqlite"))?;
+            blocker.execute_batch("BEGIN IMMEDIATE")?;
+            self.blocker = Some(blocker);
+            self.conn
+                .busy_timeout(std::time::Duration::from_millis(50))?;
+            let r = f(&mut self.conn);
+            if !x.persistent {
+                self.blocker = None; // closing the connection rolls back and releases the lock
+                self.conn.busy_timeout(BUSY_TIMEOUT)?;
+            }
+            return r;
+        }
+        f(&mut self.conn)
     }
 
     pub fn backup_dir(&self, op_id: &str) -> PathBuf {
@@ -245,21 +314,24 @@ impl Store {
     pub fn begin_operation(&mut self, op: &NewOperation, files: &[NewFile]) -> Result<PathBuf> {
         let dir = self.backup_dir(&op.id);
         std::fs::create_dir_all(&dir)?;
-        let tx = self.conn.transaction()?;
-        let now = now_ms();
-        tx.execute(
-            "INSERT INTO operations(id, kind, title, status, created_ms, plan_json, app_version, exiftool_version, registry_version, undo_of, backup_dir)
-             VALUES(?1, ?2, ?3, 'running', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![op.id, op.kind, op.title, now, op.plan_json, op.app_version, op.exiftool_version, op.registry_version, op.undo_of, dir.to_string_lossy()],
-        )?;
-        for f in files {
+        self.write(WriteTarget::Begin, |conn| {
+            let tx = conn.transaction()?;
+            let now = now_ms();
             tx.execute(
-                "INSERT INTO op_files(op_id, seq, path, role, temp_path, bak_path, backup_path, state, updated_ms)
-                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 'planned', ?8)",
-                params![op.id, f.seq, f.path, f.role, f.temp_path, f.bak_path, f.backup_path, now],
+                "INSERT INTO operations(id, kind, title, status, created_ms, plan_json, app_version, exiftool_version, registry_version, undo_of, backup_dir)
+                 VALUES(?1, ?2, ?3, 'running', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![op.id, op.kind, op.title, now, op.plan_json, op.app_version, op.exiftool_version, op.registry_version, op.undo_of, dir.to_string_lossy()],
             )?;
-        }
-        tx.commit()?;
+            for f in files {
+                tx.execute(
+                    "INSERT INTO op_files(op_id, seq, path, role, temp_path, bak_path, backup_path, state, updated_ms)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 'planned', ?8)",
+                    params![op.id, f.seq, f.path, f.role, f.temp_path, f.bak_path, f.backup_path, now],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })?;
         self.write_manifest(&op.id)?;
         Ok(dir)
     }
@@ -272,13 +344,15 @@ impl Store {
         state: FileState,
         u: &FileUpdate,
     ) -> Result<()> {
-        let n = self.conn.execute(
-            "UPDATE op_files SET state = ?3,
-                 h0 = COALESCE(?4, h0), h1 = COALESCE(?5, h1), new_file_id = COALESCE(?6, new_file_id),
-                 error = COALESCE(?7, error), updated_ms = ?8
-             WHERE op_id = ?1 AND seq = ?2",
-            params![op_id, seq, state.as_str(), u.h0, u.h1, u.new_file_id, u.error, now_ms()],
-        )?;
+        let n = self.write(WriteTarget::File { seq, state }, |conn| {
+            Ok(conn.execute(
+                "UPDATE op_files SET state = ?3,
+                     h0 = COALESCE(?4, h0), h1 = COALESCE(?5, h1), new_file_id = COALESCE(?6, new_file_id),
+                     error = COALESCE(?7, error), updated_ms = ?8
+                 WHERE op_id = ?1 AND seq = ?2",
+                params![op_id, seq, state.as_str(), u.h0, u.h1, u.new_file_id, u.error, now_ms()],
+            )?)
+        })?;
         if n != 1 {
             return Err(StoreError::NotFound(format!("{op_id}#{seq}")));
         }
@@ -306,10 +380,13 @@ impl Store {
     }
 
     pub fn finish_operation(&mut self, op_id: &str, status: OpStatus) -> Result<()> {
-        self.conn.execute(
-            "UPDATE operations SET status = ?2, finished_ms = ?3 WHERE id = ?1",
-            params![op_id, status.as_str(), now_ms()],
-        )?;
+        self.write(WriteTarget::Finish, |conn| {
+            conn.execute(
+                "UPDATE operations SET status = ?2, finished_ms = ?3 WHERE id = ?1",
+                params![op_id, status.as_str(), now_ms()],
+            )?;
+            Ok(())
+        })?;
         self.write_manifest(op_id)?;
         Ok(())
     }
@@ -507,6 +584,85 @@ mod tests {
             s.set_state("op1", 9, FileState::Done, &FileUpdate::default()),
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    fn busy(r: Result<()>) -> bool {
+        matches!(r, Err(StoreError::Sql(e)) if e.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy))
+    }
+
+    #[test]
+    fn armed_write_fails_in_sqlite_once_or_persistently() {
+        let d = dir("fault");
+        let mut s = Store::open(&d).unwrap();
+        s.begin_operation(&op("op1"), &[file(0), file(1)]).unwrap();
+        let backed = |h: &str| FileUpdate {
+            h0: Some(h.into()),
+            ..Default::default()
+        };
+        // once: only the target write fails and changes nothing; the next write succeeds
+        s.arm_write_fault(WriteFault {
+            target: WriteTarget::File {
+                seq: 0,
+                state: FileState::BackedUp,
+            },
+            persistent: false,
+        });
+        s.set_state("op1", 1, FileState::BackedUp, &backed("x"))
+            .unwrap(); // not the target
+        assert!(busy(s.set_state(
+            "op1",
+            0,
+            FileState::BackedUp,
+            &backed("a")
+        )));
+        assert_eq!(s.files("op1").unwrap()[0].state, FileState::Planned);
+        s.set_state("op1", 0, FileState::BackedUp, &backed("a"))
+            .unwrap();
+        // persistent: every later write fails, reads still work
+        s.arm_write_fault(WriteFault {
+            target: WriteTarget::File {
+                seq: 0,
+                state: FileState::Ready,
+            },
+            persistent: true,
+        });
+        assert!(busy(s.set_state(
+            "op1",
+            0,
+            FileState::Ready,
+            &FileUpdate::default()
+        )));
+        assert!(busy(s.set_state(
+            "op1",
+            1,
+            FileState::Ready,
+            &FileUpdate::default()
+        )));
+        assert!(busy(s.finish_operation("op1", OpStatus::Completed)));
+        let f = s.files("op1").unwrap();
+        assert_eq!(
+            (f[0].state, f[0].h0.as_deref(), f[1].state),
+            (FileState::BackedUp, Some("a"), FileState::BackedUp)
+        );
+        drop(s);
+        // a new process (connection) is not blocked
+        let mut s = Store::open(&d).unwrap();
+        s.set_state("op1", 0, FileState::Ready, &FileUpdate::default())
+            .unwrap();
+        assert_eq!(s.unfinished().unwrap(), vec!["op1".to_string()]);
+    }
+
+    #[test]
+    fn disk_full_is_recognised() {
+        assert!(StoreError::Io(std::io::Error::from_raw_os_error(112)).is_disk_full());
+        assert!(
+            StoreError::Sql(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+                None
+            ))
+            .is_disk_full()
+        );
+        assert!(!StoreError::Io(std::io::Error::from_raw_os_error(5)).is_disk_full());
     }
 
     #[test]

@@ -33,6 +33,12 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 | 防护 | 只读、硬链接 → Blocked；预览后被改写 → Conflict 且不写入；执行时被独占打开 → Skipped | 通过 |
 | IPTC | Latin IPTC：中文作者 Blocked；`Zoë Morii`（cp1252 可表示）写入成功并更新 IPTCDigest；撤销成功 | 通过 |
 | 注入 IO 错误 | 在文件 #2 的故障点 1–10 各注入一次 IO 错误（`--fail-at`）：Operation 不停留在 running；提交前出错 → 该文件 failed 且内容为 H0；提交后出错 → done；其他文件 done；无残留、fsck 干净；撤销后逐字节一致 | 10/10 通过 |
+| Journal 写入失败 | SQLite 真实返回 `SQLITE_BUSY`（第二连接持写锁）：`begin`、文件 #2 的 4 个状态写、`finish`，各 once / persist | 12/12 通过 |
+| 磁盘满（模拟 112） | 文件 #2 的故障点 1–10：Operation 暂停（cancelled），`resume` 完成，撤销后逐字节一致 | 10/10 通过 |
+| Undo 路径 | Undo Operation 在文件 #2 的故障点 1–10 各终止一次、各注入 IO 错误一次 | 20/20 通过 |
+| 空间预检 | 余量不可满足时拒绝执行，不登记、不写入 | 通过 |
+
+2026-09-27 G-1 补充：矩阵、注入方式的真实程度与未覆盖项见 [PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md)。`cargo test --workspace`：62 个测试通过、0 失败（真实磁盘满测试因无小测试卷而跳过，不计入已验证）。
 
 实现过程中发现并修正的问题：
 
@@ -48,7 +54,7 @@ Creator 写入规则（METADATA_MODEL §2.2、§6）：EXIF `IFD0:Artist`（`; `
 
 | # | 缺口 | 计划 |
 |---|---|---|
-| G-1 | 故障注入覆盖进程终止与注入 IO 错误；真实磁盘满（小卷）与 Journal 写入失败尚未单独测试 | 需要可创建小卷的环境（管理员权限或可移动介质） |
+| G-1 | Journal 写入失败（SQLite 真实 BUSY）、模拟磁盘满、Undo 路径崩溃/IO 错误、空间预检已测；**真实磁盘满**测试已写好但未运行；`SQLITE_FULL`、manifest 写失败未产生 | 管理员运行 `tests/fault-lab/small_volume.ps1` 或提供小容量可清空介质（[PHASE1B_FAULT_MATRIX.md](PHASE1B_FAULT_MATRIX.md) §4） |
 | G-2 | 1,000 个重复小样本 JPEG 的 Creator→Undo 已通过；5,000 文件、1,000 个不同相机原片与真实大文件仍未做 | 等 S4 真实语料 |
 | G-3 | 断电、exFAT、云同步目录、真实 NAS 未测 | SAFETY_MODEL §0 A-2/A-3 |
 | G-4 | 只支持 JPEG；TIFF 需先补 S2/S3 同类验证 | Phase 3 前 |

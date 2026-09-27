@@ -25,12 +25,25 @@ pub enum CoreError {
     RecoveryPending(Vec<String>),
     /// The persisted plan was made by a different app / ExifTool / registry version.
     VersionMismatch(String),
+    /// The space pre-check failed (SAFETY_MODEL §6.2); nothing was registered or written.
+    InsufficientSpace(String),
     Internal(String),
 }
 
 impl std::fmt::Display for CoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl CoreError {
+    /// A volume (photos, backups or journal) is full.
+    pub fn is_disk_full(&self) -> bool {
+        match self {
+            CoreError::Io(e) => mm_fs::is_disk_full(e),
+            CoreError::Store(e) => e.is_disk_full(),
+            _ => false,
+        }
     }
 }
 impl std::error::Error for CoreError {}

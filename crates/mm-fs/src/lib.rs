@@ -14,8 +14,8 @@ use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, GetLastError, 
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo,
-    FlushFileBuffers, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
+    FlushFileBuffers, GetDiskFreeSpaceExW, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -252,6 +252,79 @@ pub fn copy_new_hashing(src: &mut File, dst: &Path) -> io::Result<Hash> {
     r
 }
 
+/// Win32 112 ERROR_DISK_FULL or 39 ERROR_HANDLE_DISK_FULL.
+pub fn is_disk_full(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(112 | 39)) || e.kind() == io::ErrorKind::StorageFull
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VolumeSpace {
+    /// Bytes available to this process (respects quotas).
+    pub free: u64,
+    pub total: u64,
+}
+
+/// Free and total space of the volume that holds directory `dir`.
+pub fn volume_space(dir: &Path) -> io::Result<VolumeSpace> {
+    let mut w = wide(dir);
+    w.pop(); // NUL
+    if w.last() != Some(&(b'\\' as u16)) {
+        w.push(b'\\' as u16);
+    }
+    w.push(0);
+    let (mut free, mut total, mut all_free) = (0u64, 0u64, 0u64);
+    // SAFETY: `w` is a NUL-terminated wide string; the out pointers are valid u64s.
+    let ok = unsafe { GetDiskFreeSpaceExW(w.as_ptr(), &mut free, &mut total, &mut all_free) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(VolumeSpace { free, total })
+}
+
+/// Largest volume [`fill_volume`] agrees to fill.
+pub const FILL_MAX_VOLUME: u64 = 2 << 30;
+
+/// Test lab only (real disk-full tests): allocate every free byte of the volume that holds `dir`
+/// in new files named `mm-fill-<token>.bin` inside `dir`, and return them (delete them to free the
+/// space again). Refuses volumes larger than [`FILL_MAX_VOLUME`], so it can never be pointed at a
+/// user's real disk.
+pub fn fill_volume(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let space = volume_space(dir)?;
+    if space.total > FILL_MAX_VOLUME {
+        return Err(io::Error::other(format!(
+            "refusing to fill a volume of {} bytes (limit {FILL_MAX_VOLUME})",
+            space.total
+        )));
+    }
+    let mut made = Vec::new();
+    // one large allocation, then small writes until the file system reports disk full
+    let big = dir.join(format!("mm-fill-{}.bin", random_token()?));
+    let f = OpenOptions::new().write(true).create_new(true).open(&big)?;
+    made.push(big);
+    let mut len = space.free;
+    while len > 0 {
+        match f.set_len(len) {
+            Ok(()) => break,
+            Err(_) => len = len.saturating_sub(len / 64 + 65536),
+        }
+    }
+    let small = dir.join(format!("mm-fill-{}.bin", random_token()?));
+    let mut g = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&small)?;
+    made.push(small);
+    let block = [0u8; 4096];
+    for _ in 0..(1 << 18) {
+        match g.write_all(&block).and_then(|_| g.flush()) {
+            Ok(()) => {}
+            Err(e) if is_disk_full(&e) => return Ok(made),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::other("volume did not fill up"))
+}
+
 /// 64 random bits as 16 hex digits (for `.mmtmp-` / `.mmbak-` names).
 pub fn random_token() -> io::Result<String> {
     let v = getrandom::u64().map_err(|e| io::Error::other(e.to_string()))?;
@@ -391,6 +464,21 @@ mod tests {
         assert_eq!(w("C:/a/b.jpg"), r"\\?\C:\a\b.jpg");
         assert_eq!(w(r"\\nas\share\x.jpg"), r"\\?\UNC\nas\share\x.jpg");
         assert_eq!(w(r"\\?\C:\x"), r"\\?\C:\x");
+    }
+
+    #[test]
+    fn volume_space_and_fill_guard() {
+        let d = dir("space");
+        let s = volume_space(&d).unwrap();
+        assert!(s.total > 0 && s.free <= s.total);
+        if s.total > FILL_MAX_VOLUME {
+            // a normal disk is never filled, and nothing is created
+            assert!(fill_volume(&d).is_err());
+            assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
+        }
+        assert!(is_disk_full(&io::Error::from_raw_os_error(112)));
+        assert!(is_disk_full(&io::Error::from_raw_os_error(39)));
+        assert!(!is_disk_full(&io::Error::from_raw_os_error(5)));
     }
 
     #[test]

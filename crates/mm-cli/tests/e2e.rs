@@ -85,22 +85,36 @@ impl Lab {
     fn new(name: &str, pkg: &Path) -> Lab {
         let dir = std::env::temp_dir().join(format!("mm-e2e-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("photos")).unwrap();
+        Lab::at(pkg, dir.clone(), dir.join("photos"), dir.join("data"))
+    }
+
+    /// Photos and application data in chosen places (e.g. on a small test volume).
+    fn at(pkg: &Path, dir: PathBuf, photo_dir: PathBuf, data: PathBuf) -> Lab {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&photo_dir).unwrap();
         let mut photos = Vec::new();
         let mut truth = BTreeMap::new();
         for s in SAMPLES {
-            let p = dir.join("photos").join(s);
+            let p = photo_dir.join(s);
             std::fs::copy(timages().join(s), &p).unwrap();
             truth.insert(p.clone(), blake(&p).unwrap());
             photos.push(p);
         }
         Lab {
-            data: dir.join("data"),
+            data,
             dir,
             pkg: pkg.to_path_buf(),
             photos,
             truth,
         }
+    }
+
+    /// Current content hash of every photo (the pre-images of the next Operation).
+    fn snapshot(&self) -> BTreeMap<PathBuf, String> {
+        self.photos
+            .iter()
+            .map(|p| (p.clone(), blake(p).unwrap()))
+            .collect()
     }
 
     fn cli(&self, args: &[&str]) -> Output {
@@ -158,7 +172,7 @@ impl Lab {
     }
 
     fn leftovers(&self) -> Vec<String> {
-        std::fs::read_dir(self.dir.join("photos"))
+        std::fs::read_dir(self.photos[0].parent().unwrap())
             .unwrap()
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -168,8 +182,13 @@ impl Lab {
 
     /// Before recovery: the original content of every file exists at the path, a bak name or a backup.
     fn assert_preimages(&self, op: &str) {
+        self.assert_preimages_of(op, &self.truth);
+    }
+
+    /// Same, for an Operation whose pre-images are `before` (e.g. an Undo).
+    fn assert_preimages_of(&self, op: &str, before: &BTreeMap<PathBuf, String>) {
         let s = self.show(op);
-        for (path, h0) in &self.truth {
+        for (path, h0) in before {
             let mut cands = vec![blake(path)];
             for f in s["files"].as_array().unwrap() {
                 if Path::new(f["path"].as_str().unwrap()) == path.as_path() {
@@ -188,8 +207,12 @@ impl Lab {
 
     /// After recovery: each path is H0 or the recorded H1, no leftovers, fsck clean.
     fn assert_recovered(&self, op: &str) {
+        self.assert_recovered_of(op, &self.truth);
+    }
+
+    fn assert_recovered_of(&self, op: &str, before: &BTreeMap<PathBuf, String>) {
         let s = self.show(op);
-        for (path, h0) in &self.truth {
+        for (path, h0) in before {
             let cur = blake(path).unwrap_or_else(|| panic!("missing {}", path.display()));
             let h1 = s["files"]
                 .as_array()
@@ -578,5 +601,350 @@ fn injected_io_errors_are_settled_without_recovery() {
         lab.undo(&op);
         lab.assert_all_original();
         let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+fn state_of(report: &Value, seq: u64) -> String {
+    report["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["seq"] == seq)
+        .unwrap_or_else(|| panic!("no file {seq} in {report}"))["state"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn op_status(lab: &Lab, op: &str) -> String {
+    lab.show(op)["status"].as_str().unwrap().to_owned()
+}
+
+/// G-1: journal writes fail inside SQLite (another connection holds the write lock), once or for
+/// the rest of the process, at every journal write of the file transaction and at the Operation's
+/// begin and end. Nothing irreversible may happen without its record (I-8), and every outcome must
+/// recover to H0/H1 and undo byte-identically.
+#[test]
+fn journal_write_failures_are_settled_or_recovered() {
+    let pkg = require!();
+    let targets = [
+        "begin",
+        "2:backed_up",
+        "2:ready",
+        "2:committed",
+        "2:done",
+        "finish",
+    ];
+    for target in targets {
+        for persist in [false, true] {
+            let case = format!("{target}{}", if persist { " persistent" } else { " once" });
+            let lab = Lab::new(
+                &format!("journal-{}-{persist}", target.replace(':', "-")),
+                &pkg,
+            );
+            let plan = lab.plan("Morii", "p.json");
+            let mut args = vec!["apply", plan.to_str().unwrap(), "--journal-fail-at", target];
+            if persist {
+                args.push("--journal-fail-persist");
+            }
+            let o = lab.cli_env(&args, true);
+            let out = String::from_utf8_lossy(&o.stdout).into_owned();
+            if target == "begin" {
+                // the registering transaction failed: no Operation, no file touched
+                assert!(
+                    !o.status.success() && out.contains("DatabaseBusy"),
+                    "{case}: {out}"
+                );
+                let h = Lab::json(&lab.cli(&["history"]));
+                assert!(h.as_array().unwrap().is_empty(), "{case}: {h}");
+                lab.assert_all_original();
+                assert!(lab.leftovers().is_empty(), "{case}");
+                let _ = std::fs::remove_dir_all(&lab.dir);
+                continue;
+            }
+            assert!(
+                out.contains("DatabaseBusy"),
+                "{case}: failure not seen: {out}"
+            );
+            let op = lab.last_op();
+            lab.assert_preimages(&op);
+            let target_file = &lab.photos[2];
+            let before_commit = target == "2:backed_up" || target == "2:ready";
+            if before_commit {
+                // the file was never committed without its Ready record (I-8)
+                assert_eq!(
+                    blake(target_file).as_deref(),
+                    Some(lab.truth[target_file].as_str()),
+                    "{case}"
+                );
+            }
+            if !persist && target != "finish" {
+                // settled in-process: the Operation ended, file 2 has a truthful state
+                let r = Lab::json(&o);
+                assert_ne!(r["status"], "running", "{case}");
+                let want = if before_commit { "failed" } else { "done" };
+                assert_eq!(state_of(&r, 2), want, "{case}: {r}");
+            } else {
+                // the journal stayed unavailable: the Operation is left for recovery
+                assert_eq!(op_status(&lab, &op), "running", "{case}");
+                let other = lab.plan("Someone", "p-other.json");
+                let refused = lab.cli(&["apply", other.to_str().unwrap()]);
+                assert!(
+                    String::from_utf8_lossy(&refused.stdout).contains("RecoveryPending"),
+                    "{case}"
+                );
+            }
+            assert!(lab.cli(&["recover"]).status.success(), "{case}");
+            lab.assert_recovered(&op);
+            let res = lab.cli(&["resume", &op]);
+            assert!(
+                res.status.success() || res.status.code() == Some(3),
+                "{case}: {}",
+                String::from_utf8_lossy(&res.stdout)
+            );
+            assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+            lab.undo(&op);
+            lab.assert_all_original();
+            assert!(lab.leftovers().is_empty(), "{case}");
+            let _ = std::fs::remove_dir_all(&lab.dir);
+        }
+    }
+}
+
+/// The Undo Operation writes JPEGs through the same transaction (Restore branch): crash at every
+/// fault point and inject an IO error at every point, then recover / re-undo to the originals.
+#[test]
+fn undo_path_crashes_and_io_errors_recover() {
+    let pkg = require!();
+    for (kind, step) in (1u8..=10)
+        .map(|s| ("crash", s))
+        .chain((1u8..=10).map(|s| ("fail", s)))
+    {
+        let case = format!("undo {kind} at 2:{step}");
+        let lab = Lab::new(&format!("undo-{kind}-{step}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+        assert!(a.status.success(), "{case}");
+        let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+        let applied = lab.snapshot();
+        let u = lab.dir.join("undo.json");
+        assert!(
+            lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+                .status
+                .success()
+        );
+        let flag = if kind == "crash" {
+            "--crash-at"
+        } else {
+            "--fail-at"
+        };
+        let o = lab.cli_env(
+            &["apply", u.to_str().unwrap(), flag, &format!("2:{step}")],
+            true,
+        );
+        let undo_op = lab.last_op();
+        assert_ne!(undo_op, op, "{case}: undo operation not registered");
+        if kind == "crash" {
+            assert_eq!(o.status.code(), Some(77), "{case}");
+            lab.assert_preimages_of(&undo_op, &applied);
+            assert!(lab.cli(&["recover"]).status.success(), "{case}");
+            lab.assert_recovered_of(&undo_op, &applied);
+            let res = lab.cli(&["resume", &undo_op]);
+            assert!(
+                res.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&res.stdout)
+            );
+            assert!(lab.cli(&["fsck", &undo_op]).status.success(), "{case}");
+        } else {
+            let r = Lab::json(&o);
+            assert_ne!(r["status"], "running", "{case}");
+            let want = if step <= 7 { "failed" } else { "done" };
+            assert_eq!(state_of(&r, 2), want, "{case}: {r}");
+            lab.assert_recovered_of(&undo_op, &applied);
+            // a failed restore leaves the file as it was; undoing the original operation again
+            // restores whatever is still changed (afterwards this Undo's fsck would rightly
+            // report file 2 as changed later, so it is checked by assert_recovered_of above)
+            if step <= 7 {
+                assert_eq!(
+                    blake(&lab.photos[2]).as_deref(),
+                    Some(applied[&lab.photos[2]].as_str()),
+                    "{case}"
+                );
+                lab.undo(&op);
+            }
+        }
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// SAFETY_MODEL §8.13 with a simulated ERROR_DISK_FULL at every fault point: the Operation pauses
+/// (the file in progress and all later files are Cancelled, originals unchanged), and resume
+/// completes it once space is available.
+#[test]
+fn disk_full_pauses_the_operation_and_resume_completes_it() {
+    let pkg = require!();
+    for step in 1u8..=10 {
+        let case = format!("disk full at 2:{step}");
+        let lab = Lab::new(&format!("diskfull-{step}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--disk-full-at",
+                &format!("2:{step}"),
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(3), "{case}");
+        let r = Lab::json(&o);
+        let op = r["op_id"].as_str().unwrap().to_owned();
+        assert_eq!(r["status"], "cancelled", "{case}: {r}");
+        assert!(r["note"].as_str().unwrap().contains("full"), "{case}: {r}");
+        for seq in 0..SAMPLES.len() as u64 {
+            let want = match seq {
+                0 | 1 => "done",
+                2 if step >= 8 => "done",
+                _ => "cancelled",
+            };
+            assert_eq!(state_of(&r, seq), want, "{case} file {seq}: {r}");
+        }
+        for (i, p) in lab.photos.iter().enumerate().skip(2) {
+            if i > 2 || step <= 7 {
+                assert_eq!(blake(p).as_deref(), Some(lab.truth[p].as_str()), "{case}");
+            }
+        }
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(
+            creators(&lab)
+                .iter()
+                .all(|c| c == &serde_json::json!(["Morii"])),
+            "{case}"
+        );
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// SAFETY_MODEL §6.2: without enough free space the Operation is refused before anything is
+/// registered or written.
+#[test]
+fn space_precheck_refuses_before_any_write() {
+    let pkg = require!();
+    let lab = Lab::new("space", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(
+        &[
+            "apply",
+            plan.to_str().unwrap(),
+            "--space-reserve",
+            &(1u64 << 62).to_string(),
+        ],
+        true,
+    );
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        !o.status.success() && out.contains("InsufficientSpace"),
+        "{out}"
+    );
+    assert!(
+        Lab::json(&lab.cli(&["history"]))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    lab.assert_all_original();
+    // the normal reserve (1 GiB) passes on the test volume
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// G-1, real disk full: needs `MM_E2E_SMALL_VOLUME` = a directory on a volume of at most 2 GiB
+/// (e.g. a VHDX made with `tests/fault-lab/small_volume.ps1`, as administrator). The volume is
+/// really filled at a fault point; afterwards the filler is deleted and the Operation resumed.
+/// Scenario "photos": the photo volume fills before ExifTool writes the temporary file.
+/// Scenario "data": the volume of backups and journal fills before the backup copy.
+#[test]
+fn real_disk_full_on_small_volume() {
+    let pkg = require!();
+    let Some(small) = std::env::var_os("MM_E2E_SMALL_VOLUME").map(PathBuf::from) else {
+        eprintln!("SKIP: MM_E2E_SMALL_VOLUME not set (needs a small test volume)");
+        return;
+    };
+    for (scenario, point) in [("photos", "2:4"), ("data", "2:2")] {
+        let case = format!("real disk full: {scenario} at {point}");
+        let base =
+            std::env::temp_dir().join(format!("mm-e2e-realfull-{scenario}-{}", std::process::id()));
+        let on_small = small.join(format!("mm-e2e-{scenario}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&on_small);
+        let fill = on_small.join("fill");
+        std::fs::create_dir_all(&fill).unwrap();
+        let (photos, data) = if scenario == "photos" {
+            (on_small.join("photos"), base.join("data"))
+        } else {
+            (base.join("photos"), on_small.join("data"))
+        };
+        let lab = Lab::at(&pkg, base.clone(), photos, data);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--space-reserve",
+                "0",
+                "--fill-at",
+                point,
+                "--fill-dir",
+                fill.to_str().unwrap(),
+            ],
+            true,
+        );
+        let out = String::from_utf8_lossy(&o.stdout).into_owned();
+        eprintln!("{case}: exit {:?}: {out}", o.status.code());
+        let fillers: Vec<PathBuf> = std::fs::read_dir(&fill)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert!(!fillers.is_empty(), "{case}: the volume was not filled");
+        let op = lab.last_op();
+        lab.assert_preimages(&op);
+        // while the volume is still full, recovery may fail but must not lose anything
+        let r = lab.cli(&["recover"]);
+        eprintln!(
+            "{case}: recover while full: exit {:?}: {}",
+            r.status.code(),
+            String::from_utf8_lossy(&r.stdout)
+        );
+        lab.assert_preimages(&op);
+        for f in fillers {
+            std::fs::remove_file(f).unwrap();
+        }
+        assert!(lab.cli(&["recover"]).status.success(), "{case}");
+        lab.assert_recovered(&op);
+        eprintln!("{case}: after recovery: {}", lab.show(&op));
+        let res = lab.cli(&["resume", &op]);
+        assert!(
+            res.status.success() || res.status.code() == Some(3),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&on_small);
     }
 }
