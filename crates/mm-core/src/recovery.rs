@@ -286,3 +286,63 @@ fn decide_recreate(f: &FileRow) -> (FileState, String) {
         other => (other, "terminal".into()),
     }
 }
+
+/// One Operation for the recovery screen (PRODUCT_SPEC §6.15): done N, not processed M, needs
+/// attention K.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecoverySummary {
+    pub op_id: String,
+    pub title: String,
+    pub status: String,
+    pub done: usize,
+    /// Not started or cancelled: what "continue" would process.
+    pub remaining: usize,
+    pub attention: usize,
+    pub other: usize,
+}
+
+/// Operations that were interrupted and still ask for a decision: continue the remaining files,
+/// undo the finished part, or keep things as they are (`dismiss`).
+pub fn summary(store: &Store) -> Result<Vec<RecoverySummary>, CoreError> {
+    let mut out = Vec::new();
+    for o in store.operations()? {
+        if !matches!(o.status.as_str(), "interrupted" | "recovered" | "running") {
+            continue;
+        }
+        let files = store.files(&o.id)?;
+        let count = |f: &dyn Fn(FileState) -> bool| files.iter().filter(|x| f(x.state)).count();
+        let done = count(&|s| s == FileState::Done);
+        let remaining = count(&|s| matches!(s, FileState::NotStarted | FileState::Cancelled));
+        let attention = count(&|s| s == FileState::Attention);
+        if o.status == "recovered" && remaining == 0 && attention == 0 {
+            continue; // nothing left to decide
+        }
+        out.push(RecoverySummary {
+            op_id: o.id.clone(),
+            title: o.title.clone(),
+            status: o.status.clone(),
+            done,
+            remaining,
+            attention,
+            other: files.len() - done - remaining - attention,
+        });
+    }
+    Ok(out)
+}
+
+/// "Keep as it is and close": the remaining files stay unprocessed and the Operation leaves the
+/// recovery screen as `cancelled` (still resumable from History). Files that need attention must
+/// be resolved first.
+pub fn dismiss(store: &mut Store, op_id: &str) -> Result<(), CoreError> {
+    let o = store
+        .operation(op_id)?
+        .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
+    if o.status != "recovered" {
+        return Err(CoreError::Input(format!(
+            "{op_id} is {}; run recovery and resolve files that need attention first",
+            o.status
+        )));
+    }
+    store.finish_operation(op_id, OpStatus::Cancelled)?;
+    Ok(())
+}

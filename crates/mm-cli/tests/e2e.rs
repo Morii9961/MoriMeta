@@ -3600,3 +3600,52 @@ fn plan_again_for_a_conflict() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.15: after a crash the recovery screen shows done / remaining / attention;
+/// "keep as it is" closes it, and the remaining files can still be continued later.
+#[test]
+fn recovery_summary_and_dismiss() {
+    let pkg = require!();
+    let lab = Lab::new("recovery-summary", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(
+        &[
+            "--workers",
+            "1",
+            "apply",
+            plan.to_str().unwrap(),
+            "--crash-at",
+            "2:7",
+        ],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(77));
+    let op = lab.last_op();
+    assert!(lab.cli(&["recover"]).status.success());
+    let s = Lab::json(&lab.cli(&["recovery-status"]));
+    let row = &s[0];
+    assert_eq!(row["op_id"], op.as_str(), "{s}");
+    assert_eq!(
+        (row["done"].as_u64(), row["attention"].as_u64()),
+        (Some(2), Some(0)),
+        "{s}"
+    );
+    assert_eq!(
+        row["remaining"].as_u64(),
+        Some(lab.photos.len() as u64 - 2),
+        "{s}"
+    );
+
+    assert!(lab.cli(&["dismiss", &op]).status.success());
+    assert!(
+        Lab::json(&lab.cli(&["recovery-status"]))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let r = lab.cli(&["resume", &op]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stdout));
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

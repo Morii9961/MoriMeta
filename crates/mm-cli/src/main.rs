@@ -31,6 +31,8 @@
 //!   rebuild-journal           re-import operations missing from the database from their
 //!                             backup folders (manifest.jsonl, plan.json); then run recover
 //!   resume OP_ID [FAULTS]
+//!   recovery-status           interrupted Operations: done, remaining, needing attention
+//!   dismiss OP_ID             keep a recovered Operation as it is (remaining files stay; resumable)
 //!   plan-undo OP_ID --out PLAN.json [--force-conflicts]
 //!                             files changed after the Operation are excluded unless forced (their
 //!                             current content is backed up first, so the forced restore can be undone)
@@ -704,6 +706,17 @@ fn main() -> ExitCode {
                     .map_err(|e| e.to_string())?
                     .ok_or("no such operation")?;
                 println!("{}", json!({"id": op, "status": o.status}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "recovery-status" => {
+                let s = recovery::summary(&store).map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&s).unwrap_or_default());
+                Ok(ExitCode::SUCCESS)
+            }
+            "dismiss" => {
+                let op = args.first().ok_or("dismiss OP_ID")?;
+                recovery::dismiss(&mut store, op).map_err(|e| e.to_string())?;
+                println!("{}", json!({"id": op, "status": "cancelled"}));
                 Ok(ExitCode::SUCCESS)
             }
             "plan-undo" => {
