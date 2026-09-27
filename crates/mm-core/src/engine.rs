@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use mm_domain::plan::TagOp;
 use mm_domain::snapshot::Snapshot;
-use mm_exiftool::{Command, EngineConfig, EngineError, Line, Output, Session, TagName};
+use mm_exiftool::{Command, EngineConfig, EngineError, Line, Output, Session, TagName, Terminator};
 
 use crate::CoreError;
 
@@ -15,6 +15,20 @@ pub struct Engine {
     session: Option<Session>,
     version: String,
     restarts: u32,
+    kill: KillSwitch,
+}
+
+/// Ends whatever ExifTool process an [`Engine`] currently runs, from another thread (a user's
+/// Cancel, SAFETY_MODEL §11). The engine starts a new process on its next use.
+#[derive(Clone, Default)]
+pub struct KillSwitch(std::sync::Arc<std::sync::Mutex<Option<Terminator>>>);
+
+impl KillSwitch {
+    pub fn kill(&self) {
+        if let Some(t) = self.0.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+            t.terminate();
+        }
+    }
 }
 
 /// Read timeout: 10 s + 0.2 s/MB; write: 30 s + 0.5 s/MB (initial values, S4 calibrates).
@@ -54,6 +68,7 @@ impl Engine {
             session: None,
             version: String::new(),
             restarts: 0,
+            kill: KillSwitch::default(),
         };
         let mut c = Command::empty();
         c.push(Line::option("-ver"));
@@ -75,13 +90,18 @@ impl Engine {
         self.restarts
     }
 
+    pub fn kill_switch(&self) -> KillSwitch {
+        self.kill.clone()
+    }
+
     fn session(&mut self) -> Result<&mut Session, CoreError> {
-        if self.session.as_ref().map(|s| s.is_dead()).unwrap_or(true) {
+        if self.session.as_mut().map(|s| s.is_dead()).unwrap_or(true) {
             if self.session.is_some() {
                 self.restarts += 1;
             }
-            self.session =
-                Some(Session::spawn(&self.cfg).map_err(|e| CoreError::Engine(e.to_string()))?);
+            let s = Session::spawn(&self.cfg).map_err(|e| CoreError::Engine(e.to_string()))?;
+            *self.kill.0.lock().unwrap_or_else(|p| p.into_inner()) = s.terminator().ok();
+            self.session = Some(s);
         }
         Ok(self.session.as_mut().expect("session"))
     }

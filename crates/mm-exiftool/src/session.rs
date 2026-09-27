@@ -254,6 +254,22 @@ fn spawn_reader(
     });
 }
 
+/// See [`Session::terminator`].
+#[derive(Debug)]
+pub struct Terminator(std::os::windows::io::OwnedHandle);
+
+impl Terminator {
+    /// End the process. ExifTool only ever writes to temporary files (I-1), so this is safe at
+    /// any point; the session notices and is replaced on its next use.
+    pub fn terminate(&self) {
+        use windows_sys::Win32::System::Threading::TerminateProcess;
+        // SAFETY: a valid process handle owned by self; failure (already exited) is harmless.
+        unsafe {
+            TerminateProcess(self.0.as_raw_handle() as HANDLE, 1);
+        }
+    }
+}
+
 pub struct Session {
     child: Child,
     _job: Option<Job>,
@@ -347,7 +363,12 @@ impl Session {
         self.child.id()
     }
 
-    pub fn is_dead(&self) -> bool {
+    /// Dead after a failure here, or because the process has exited (for example ended by a
+    /// [`Terminator`] from another thread).
+    pub fn is_dead(&mut self) -> bool {
+        if !self.dead && !matches!(self.child.try_wait(), Ok(None)) {
+            self.dead = true;
+        }
         self.dead
     }
 
@@ -424,6 +445,13 @@ impl Session {
                 stderr: vec![],
             }),
         }
+    }
+
+    /// A handle that can end this ExifTool process from another thread (a user's Cancel,
+    /// SAFETY_MODEL §11). It holds its own process handle, so a reused process id is never hit.
+    pub fn terminator(&self) -> io::Result<Terminator> {
+        use std::os::windows::io::AsHandle;
+        Ok(Terminator(self.child.as_handle().try_clone_to_owned()?))
     }
 
     pub fn kill(&mut self) {

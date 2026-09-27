@@ -486,3 +486,75 @@ fn inspector_and_selection_aggregate() {
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }
+
+/// SAFETY_MODEL §11: Cancel ends the ExifTool process that is writing a large file's temporary
+/// output; the file is settled as cancelled with the original unchanged and nothing left behind,
+/// and the next use of the engine starts a new process.
+#[test]
+fn cancel_ends_a_long_exiftool_write() {
+    let Some(mut lab) = Lab::new("cancel-kill", 1) else {
+        return;
+    };
+    // 150 MB after the JPEG's end: ExifTool copies it into the temporary output
+    {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&lab.files[0])
+            .unwrap();
+        let block = vec![0x5au8; 1 << 20];
+        for _ in 0..150 {
+            f.write_all(&block).unwrap();
+        }
+    }
+    lab.before = lab.hashes();
+    let plan = lab.plan_creator();
+    let seq = plan.executable().next().unwrap().seq;
+    let opts = ExecOptions {
+        cancel: Some(Arc::new(AtomicBool::new(false))),
+        cancel_at: Some(FaultPoint { seq, step: 4 }),
+        space_reserve: Some(0),
+        ..Default::default()
+    };
+    let t = std::time::Instant::now();
+    let rep = executor::start(&mut lab.store, &mut lab.engines, &plan, &opts).unwrap();
+    assert_eq!(rep.status, OpStatus::Cancelled, "{rep:?}");
+    assert_eq!(rep.files[0].state, FileState::Cancelled, "{rep:?}");
+    assert_eq!(lab.hashes(), lab.before);
+    let dir = lab.files[0].parent().unwrap();
+    assert_eq!(
+        std::fs::read_dir(dir).unwrap().count(),
+        1,
+        "no temporary file left"
+    );
+    eprintln!("cancelled after {:?}", t.elapsed());
+
+    let rest = executor::resume(
+        &mut lab.store,
+        &mut lab.engines,
+        &rep.op_id,
+        &ExecOptions {
+            space_reserve: Some(0),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(rest.status, OpStatus::Completed, "{rest:?}");
+    assert!(
+        lab.engines[0].restarts() >= 1,
+        "the ExifTool process was ended"
+    );
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &up,
+        &ExecOptions {
+            space_reserve: Some(0),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}

@@ -453,6 +453,15 @@ struct Sched {
     progress: ExecProgress,
 }
 
+/// Counts a worker out when it returns, whichever way.
+struct Finished<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl Drop for Finished<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// What became of one file.
 struct Settled {
     state: FileState,
@@ -517,10 +526,28 @@ fn run(
         },
     });
     let lock = || sched.lock().unwrap_or_else(|p| p.into_inner());
+    let switches: Vec<crate::engine::KillSwitch> =
+        engines.iter().map(Engine::kill_switch).collect();
+    let working = std::sync::atomic::AtomicUsize::new(engines.len());
     std::thread::scope(|scope| {
-        for engine in engines.iter_mut() {
-            let (journal, gate, rows) = (&journal, &gate, &rows);
+        // Cancel ends the ExifTool processes at once (SAFETY_MODEL §11): they only write
+        // temporary files, and a file interrupted before its commit is settled as cancelled
+        if opts.cancel.is_some() {
+            let (switches, working) = (&switches, &working);
             scope.spawn(move || {
+                while working.load(Ordering::SeqCst) > 0 {
+                    if opts.cancelled() {
+                        switches.iter().for_each(crate::engine::KillSwitch::kill);
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            });
+        }
+        for engine in engines.iter_mut() {
+            let (journal, gate, rows, working) = (&journal, &gate, &rows, &working);
+            scope.spawn(move || {
+                let _done = Finished(working);
                 loop {
                     let next = {
                         let mut s = lock();
@@ -678,6 +705,12 @@ fn settle(
     };
     let (state, reason, verify_fail) = match outcome {
         Outcome::Done => (FileState::Done, None, false),
+        // ExifTool ended by Cancel while it worked on this file: nothing was committed
+        Outcome::Failed(r) if opts.cancelled() => (
+            FileState::Cancelled,
+            Some(format!("cancelled while ExifTool was working ({r})")),
+            false,
+        ),
         Outcome::Failed(r) => {
             let v = r.starts_with("verification");
             (FileState::Failed, Some(r), v)
