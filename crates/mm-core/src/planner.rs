@@ -11,7 +11,8 @@ use mm_domain::copyright::{self, CopyrightEdit};
 use mm_domain::creator::{self, CreatorEdit};
 use mm_domain::gps::{self, GpsEdit};
 use mm_domain::plan::{
-    EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind, Target,
+    EntryAction, EntryStatus, FieldPlan, Fingerprint, Plan, PlanEntry, PlanKind, PlanSource,
+    Target, TimeSpec,
 };
 use mm_domain::rules::{self, Preset};
 use mm_domain::snapshot::Snapshot;
@@ -100,6 +101,23 @@ pub fn plan_creator(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
+    let mut plan = plan_creator_inner(engine, inputs, edit, title, ctl)?;
+    plan.source = Some(match edit {
+        CreatorEdit::Set(v) => PlanSource::Creator {
+            set: Some(v.clone()),
+        },
+        CreatorEdit::Clear => PlanSource::Creator { set: None },
+    });
+    Ok(plan)
+}
+
+fn plan_creator_inner(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    edit: &CreatorEdit,
+    title: &str,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
     let CreatorEdit::Set(names) = edit else {
         return plan_field(engine, inputs, title, ctl, |t| {
             creator::plan_target(t, edit)
@@ -125,6 +143,23 @@ pub fn plan_copyright(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
+    let mut plan = plan_copyright_inner(engine, inputs, edit, title, ctl)?;
+    plan.source = Some(match edit {
+        CopyrightEdit::Set(v) => PlanSource::Copyright {
+            set: Some(v.clone()),
+        },
+        CopyrightEdit::Clear => PlanSource::Copyright { set: None },
+    });
+    Ok(plan)
+}
+
+fn plan_copyright_inner(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    edit: &CopyrightEdit,
+    title: &str,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
     let CopyrightEdit::Set(value) = edit else {
         return plan_field(engine, inputs, title, ctl, |t| {
             copyright::plan_target(t, edit)
@@ -142,6 +177,20 @@ pub fn plan_copyright(
 /// Apply a Preset (PRODUCT_SPEC §6.10–6.11): per file, the actions of the rules whose conditions
 /// hold on its original snapshot, combined into one entry (blocked fields left out with a note).
 pub fn plan_preset(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    preset: &Preset,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
+    let mut plan = plan_preset_inner(engine, inputs, preset, ctl)?;
+    plan.source = Some(PlanSource::Preset {
+        id: None,
+        preset: preset.clone(),
+    });
+    Ok(plan)
+}
+
+fn plan_preset_inner(
     engine: &mut Engine,
     inputs: &[PathBuf],
     preset: &Preset,
@@ -188,6 +237,26 @@ pub fn plan_gps(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
+    let mut plan = plan_gps_inner(engine, inputs, edit, title, ctl)?;
+    plan.source = Some(match edit {
+        GpsEdit::Set(p) => PlanSource::Gps {
+            set: Some(match p.alt {
+                Some(a) => format!("{},{},{a}", p.lat, p.lon),
+                None => format!("{},{}", p.lat, p.lon),
+            }),
+        },
+        GpsEdit::Remove => PlanSource::Gps { set: None },
+    });
+    Ok(plan)
+}
+
+fn plan_gps_inner(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    edit: &GpsEdit,
+    title: &str,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
     plan_field(engine, inputs, title, ctl, |t| gps::plan_target(t, edit))
 }
 
@@ -208,10 +277,77 @@ pub enum TimeTool {
     },
 }
 
+impl TimeTool {
+    /// As recorded in a Plan's source.
+    pub fn spec(&self) -> TimeSpec {
+        match self {
+            TimeTool::Absolute(t) => TimeSpec::Absolute {
+                to: time::format_local(*t),
+            },
+            TimeTool::Shift(d) => TimeSpec::Shift {
+                by: time::format_shift(*d),
+            },
+            TimeTool::Sequence { start, step, order } => TimeSpec::Sequence {
+                start: time::format_local(*start),
+                step: time::format_shift(*step),
+                order: match order {
+                    SequenceOrder::CaptureTimeThenName => "time".into(),
+                    SequenceOrder::NaturalFileName => "name".into(),
+                },
+            },
+            TimeTool::PreserveRelative { anchor, new_local } => TimeSpec::PreserveRelative {
+                anchor: anchor.to_string_lossy().into_owned(),
+                to: time::format_local(*new_local),
+            },
+        }
+    }
+
+    pub fn from_spec(s: &TimeSpec) -> Result<TimeTool, CoreError> {
+        let local = |v: &str| {
+            time::parse_local(v).ok_or_else(|| CoreError::Input(format!("{v:?} is not a time")))
+        };
+        let shift = |v: &str| {
+            time::parse_shift(v).ok_or_else(|| CoreError::Input(format!("{v:?} is not a shift")))
+        };
+        Ok(match s {
+            TimeSpec::Absolute { to } => TimeTool::Absolute(local(to)?),
+            TimeSpec::Shift { by } => TimeTool::Shift(shift(by)?),
+            TimeSpec::Sequence { start, step, order } => TimeTool::Sequence {
+                start: local(start)?,
+                step: shift(step)?,
+                order: match order.as_str() {
+                    "name" => SequenceOrder::NaturalFileName,
+                    _ => SequenceOrder::CaptureTimeThenName,
+                },
+            },
+            TimeSpec::PreserveRelative { anchor, to } => TimeTool::PreserveRelative {
+                anchor: PathBuf::from(anchor),
+                new_local: local(to)?,
+            },
+        })
+    }
+}
+
 /// Capture time for the whole selection at once: Sequence orders the files and Preserve Relative
 /// Timing measures from its anchor, so no file can be planned on its own. `digitized` also sets
 /// EXIF CreateDate (on by default, METADATA_MODEL §5.3).
 pub fn plan_capture_time(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    tool: &TimeTool,
+    digitized: bool,
+    title: &str,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
+    let mut plan = plan_capture_time_inner(engine, inputs, tool, digitized, title, ctl)?;
+    plan.source = Some(PlanSource::CaptureTime {
+        tool: tool.spec(),
+        digitized,
+    });
+    Ok(plan)
+}
+
+fn plan_capture_time_inner(
     engine: &mut Engine,
     inputs: &[PathBuf],
     tool: &TimeTool,
@@ -665,6 +801,7 @@ fn plan_with(
         registry_version: creator::REGISTRY_VERSION,
         exiftool_version: engine.version().to_owned(),
         entries,
+        source: None,
     })
 }
 

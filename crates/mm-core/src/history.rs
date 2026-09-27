@@ -202,3 +202,94 @@ pub fn retry_plan(store: &Store, op_id: &str, exiftool_version: &str) -> Result<
     plan.title = format!("Retry: {}", plan.title);
     Ok(plan)
 }
+
+/// Plan the same edit again (the Plan's recorded source) for the files of an Operation that
+/// failed, were skipped or were in conflict: their metadata is read afresh, so a file changed
+/// after the first Preview gets a correct Plan ("re-preview", PRODUCT_SPEC §6.15). Sequence and
+/// Preserve Relative Timing depend on the whole selection and are not re-planned for a subset.
+pub fn replan(
+    engine: &mut crate::engine::Engine,
+    store: &Store,
+    op_id: &str,
+    ctl: &crate::planner::PlanCtl,
+) -> Result<Plan, CoreError> {
+    use crate::planner::{self, TimeTool};
+    use mm_domain::copyright::CopyrightEdit;
+    use mm_domain::creator::CreatorEdit;
+    use mm_domain::gps::{GeoPoint, GpsEdit};
+    use mm_domain::plan::{PlanSource, TimeSpec};
+
+    let o = store
+        .operation(op_id)?
+        .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
+    let old = plan_of(&o).ok_or_else(|| CoreError::Internal("persisted plan unreadable".into()))?;
+    let source = old.source.clone().ok_or_else(|| {
+        CoreError::Input("this Operation does not record what it was planned from".into())
+    })?;
+    let seqs: Vec<u32> = store
+        .files(op_id)?
+        .iter()
+        .filter(|f| {
+            matches!(
+                f.state,
+                FileState::Failed | FileState::Skipped | FileState::Conflict
+            )
+        })
+        .map(|f| f.seq)
+        .collect();
+    let paths: Vec<std::path::PathBuf> = old
+        .entries
+        .iter()
+        .filter(|e| seqs.contains(&e.seq))
+        .map(|e| std::path::PathBuf::from(e.raw.as_deref().unwrap_or(&e.path)))
+        .collect();
+    if paths.is_empty() {
+        return Err(CoreError::Input(format!(
+            "{op_id} has no failed, skipped or conflicting files"
+        )));
+    }
+    let title = format!("Again: {}", old.title);
+    let mut plan = match &source {
+        PlanSource::Creator { set } => {
+            let edit = set.clone().map_or(CreatorEdit::Clear, CreatorEdit::Set);
+            planner::plan_creator(engine, &paths, &edit, &title, ctl)?
+        }
+        PlanSource::Copyright { set } => {
+            let edit = set.clone().map_or(CopyrightEdit::Clear, CopyrightEdit::Set);
+            planner::plan_copyright(engine, &paths, &edit, &title, ctl)?
+        }
+        PlanSource::Gps { set } => {
+            let edit = match set {
+                Some(s) => GpsEdit::Set(GeoPoint::parse(s).map_err(CoreError::Input)?),
+                None => GpsEdit::Remove,
+            };
+            planner::plan_gps(engine, &paths, &edit, &title, ctl)?
+        }
+        PlanSource::CaptureTime { tool, digitized } => {
+            if matches!(
+                tool,
+                TimeSpec::Sequence { .. } | TimeSpec::PreserveRelative { .. }
+            ) {
+                return Err(CoreError::Input(
+                    "a Sequence or Preserve Relative Timing depends on the whole selection; \
+                     select the files and plan it again"
+                        .into(),
+                ));
+            }
+            let tool = TimeTool::from_spec(tool)?;
+            planner::plan_capture_time(engine, &paths, &tool, *digitized, &title, ctl)?
+        }
+        PlanSource::Preset { preset, .. } => {
+            let mut p = planner::plan_preset(engine, &paths, preset, ctl)?;
+            p.title = title;
+            p
+        }
+        PlanSource::Undo { .. } => {
+            return Err(CoreError::Input(
+                "an undo is planned again with plan-undo".into(),
+            ));
+        }
+    };
+    plan.source = Some(source);
+    Ok(plan)
+}

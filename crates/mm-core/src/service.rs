@@ -430,6 +430,7 @@ mod tests {
             registry_version: 0,
             exiftool_version: "13.59".into(),
             entries: (0..n).map(entry).collect(),
+            source: None,
         }
     }
 

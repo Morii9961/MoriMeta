@@ -379,6 +379,30 @@ pub fn parse_shift(s: &str) -> Option<TimeDelta> {
     TimeDelta::try_seconds(total * sign)
 }
 
+/// The text `parse_shift` reads back: `[+|-][<days>d]HH:MM:SS`.
+pub fn format_shift(d: TimeDelta) -> String {
+    let total = d.num_seconds();
+    let sign = if total < 0 { '-' } else { '+' };
+    let t = total.unsigned_abs();
+    let (days, rest) = (t / 86_400, t % 86_400);
+    let hms = format!(
+        "{:02}:{:02}:{:02}",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    );
+    if days > 0 {
+        format!("{sign}{days}d{hms}")
+    } else {
+        format!("{sign}{hms}")
+    }
+}
+
+/// The text `parse_local` reads back.
+pub fn format_local(t: NaiveDateTime) -> String {
+    t.format("%Y:%m:%d %H:%M:%S").to_string()
+}
+
 /// A wall-clock time as typed for Absolute / Sequence: `YYYY:MM:DD HH:MM:SS`.
 pub fn parse_local(s: &str) -> Option<NaiveDateTime> {
     (s.len() == 19)
@@ -397,6 +421,22 @@ pub fn ymd_hms(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shift_and_local_text_round_trip() {
+        for t in [
+            "+01:00:00",
+            "-00:30:05",
+            "+2d03:00:00",
+            "-1d00:00:01",
+            "+00:00:00",
+        ] {
+            assert_eq!(format_shift(parse_shift(t).unwrap()), t);
+        }
+        assert_eq!(format_shift(parse_shift("01:00:00").unwrap()), "+01:00:00");
+        let l = "2024:02:29 23:59:58";
+        assert_eq!(format_local(parse_local(l).unwrap()), l);
+    }
 
     fn item(id: u64, name: &str, exif: Option<&str>) -> TimeItem {
         TimeItem {

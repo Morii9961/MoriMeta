@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use mm_domain::plan::{EntryAction, EntryStatus, Fingerprint, Plan, PlanEntry, PlanKind};
+use mm_domain::plan::{
+    EntryAction, EntryStatus, Fingerprint, Plan, PlanEntry, PlanKind, PlanSource,
+};
 use mm_store::{FileRow, FileState, Store};
 
 use crate::{CoreError, ROLE_CREATE, ROLE_RECREATE, ROLE_REMOVE, fingerprint, hash_opt, new_id};
@@ -70,6 +72,9 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
         registry_version: op.registry_version,
         exiftool_version: exiftool_version.to_owned(),
         entries,
+        source: Some(PlanSource::Undo {
+            of: op_id.to_owned(),
+        }),
     })
 }
 

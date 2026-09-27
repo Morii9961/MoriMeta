@@ -259,6 +259,57 @@ pub struct PlanEntry {
     pub excluded: bool,
 }
 
+/// What a Plan was made from (METADATA_MODEL §9 `created_from`), so that the same edit can be
+/// planned again for files that could not be written. Times and shifts are kept as the text the
+/// user typed (`time::format_local` / `format_shift`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "from", rename_all = "snake_case")]
+pub enum PlanSource {
+    /// `None` clears.
+    Creator {
+        set: Option<Vec<String>>,
+    },
+    Copyright {
+        set: Option<String>,
+    },
+    /// `lat,lon[,alt]`; `None` removes.
+    Gps {
+        set: Option<String>,
+    },
+    CaptureTime {
+        tool: TimeSpec,
+        digitized: bool,
+    },
+    Preset {
+        id: Option<String>,
+        preset: crate::rules::Preset,
+    },
+    Undo {
+        of: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tool", rename_all = "snake_case")]
+pub enum TimeSpec {
+    Absolute {
+        to: String,
+    },
+    Shift {
+        by: String,
+    },
+    /// `order`: `time` or `name`.
+    Sequence {
+        start: String,
+        step: String,
+        order: String,
+    },
+    PreserveRelative {
+        anchor: String,
+        to: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanKind {
@@ -275,6 +326,8 @@ pub struct Plan {
     pub registry_version: u32,
     pub exiftool_version: String,
     pub entries: Vec<PlanEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<PlanSource>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

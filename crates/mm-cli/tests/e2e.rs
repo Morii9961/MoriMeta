@@ -3568,3 +3568,35 @@ fn synced_folders_are_noted() {
     assert!(Lab::json(&run(&["backups"], &elsewhere))["warning"].is_null());
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// PRODUCT_SPEC §6.15 "re-preview": a file changed after the Preview is a Conflict; the Plan
+/// records what it was made from, so the same edit is planned again for that file from a fresh
+/// read, applied, and both Operations undo.
+#[test]
+fn plan_again_for_a_conflict() {
+    let pkg = require!();
+    let lab = Lab::new("again", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let saved: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
+    assert_eq!(saved["source"]["from"], "creator", "{}", saved["source"]);
+    assert_eq!(saved["source"]["set"], serde_json::json!(["Morii"]));
+    // rewritten with the same bytes after the Preview: new identity and time
+    std::thread::sleep(Duration::from_millis(20));
+    let bytes = std::fs::read(&lab.photos[0]).unwrap();
+    std::fs::write(&lab.photos[0], &bytes).unwrap();
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    assert_eq!(lab.show(&op)["files"][0]["state"], "conflict");
+
+    let again = lab.dir.join("again.json");
+    let o = lab.cli(&["plan-again", &op, "--out", again.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pj = Lab::json(&o);
+    assert_eq!(pj["entries"].as_array().unwrap().len(), 1, "{pj}");
+    assert_eq!(pj["entries"][0]["status"]["status"], "ready", "{pj}");
+    let op2 = lab.apply_ok(&again);
+    lab.undo(&op2);
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
