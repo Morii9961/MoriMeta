@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rows"
+description = "Enables the rows command without any pre-configured scope."
+commands.allow = ["rows"]
+
+[[permission]]
+identifier = "deny-rows"
+description = "Denies the rows command without any pre-configured scope."
+commands.deny = ["rows"]

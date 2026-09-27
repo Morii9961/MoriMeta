@@ -40,3 +40,10 @@ desktop.ini
 # python bytecode
 __pycache__/
 *.pyc
+
+# S5 UI spike: dependencies, build output, generated files
+/research/spikes/s5-ui/node_modules/
+/research/spikes/s5-ui/dist/
+/research/spikes/s5-ui/src-tauri/target/
+/research/spikes/s5-ui/src-tauri/gen/
+/research/spikes/s5-ui/src-tauri/icons/icon.ico

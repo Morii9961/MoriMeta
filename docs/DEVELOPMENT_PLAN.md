@@ -43,7 +43,7 @@ Phase 4  Hardening & Release 规模故障注入、兼容性实验室、性能、
 | **S2 文件事务** | 锁句柄与 ExifTool/ReplaceFileW 共存；提交方式对比；故障注入；多种文件系统 | 每种环境、每个注入点记录路径、内容、恢复结果；据此写定 SAFETY_MODEL §0 | **部分完成**：NTFS 与 SMB 回环完成（0 违例）；exFAT、云同步目录、断电未做 |
 | **S3 字段与 sidecar** | 显式/MWG 映射、IPTC 编码与长度、时间字段、sidecar 保留、MakerNotes 序列号、C2PA；第三方软件显示 | 注册表 v1 冻结；兼容性结果表发布到 `tests/compat-lab/` | **ExifTool 侧完成**；第三方软件（LR Classic 15、ACR/Bridge、Capture One、NX Studio、darktable、digiKam、Photo Mechanic）未做，需要人工与授权（D-13） |
 | **S4 性能** | 真实语料在 NVMe/SATA/HDD/NAS 上的扫描与写入吞吐；worker 数；Journal 开销；持久化 Plan 的体积；内存 | PRODUCT_SPEC §7.1 目标被确认或修订 | 未开始（需要真实语料，D-13） |
-| **S5 UI 技术验证** | Tauri 2.11 + React：5,000 行虚拟表格、排序筛选、中文 IME、Narrator/NVDA、IPC、类型生成；capability 中无插件权限 | ADR-01 的退出条件满足，否则启动 ADR-01 复审 | 未开始。只做技术验证，不涉及产品视觉设计 |
+| **S5 UI 技术验证** | Tauri 2.11 + React：5,000 行虚拟表格、排序筛选、中文 IME、Narrator/NVDA、IPC、类型生成；capability 中无插件权限 | ADR-01 的退出条件满足，否则启动 ADR-01 复审 | **自动部分完成**（Tauri 2.12，`research/spikes/s5-ui`）：排序/筛选 < 50 ms、IPC 5,000×30 约 40 ms、Channel 3 万事件/秒、插件命令被 ACL 拒绝；中端笔记本帧率、中文 IME、Narrator/NVDA、缩放与 Win10 为人工项，未做。不涉及产品视觉设计 |
 | **S6 打包、更新、许可证** | NSIS per-user 与 `exiftool_files`；升级/卸载；Defender；后端 updater 门禁与安装时退出流程；许可证清单；签名渠道条件核对 | 一次完整演练（不做公开发布、不申请签名、不购买证书） | 未开始 |
 | **S7 隐私导出** | 按 D-15 (c) 的方向验证 Clean Export（范围未批准） | 预览移除集合 = 实际移除集合；输出通过段级与标签级检查；无法证明干净的文件被阻止 | **完成（JPEG，53 个源）**；真实 C2PA、HDR gain map、更多相机直出 JPEG 待补充 |
 
