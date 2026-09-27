@@ -1,12 +1,12 @@
 # MoriMeta — License Decision Preparation (D-1)
 
-> **Status:** 待决 · 2026-09-27
-> 已确定 MoriMeta 公开开源；具体许可证由用户决定。本文把两种候选落地所需的工作列清楚，决定后可以直接执行。影响比较见 RELEASE_PLAN §7.1。
+> **Status:** 已决定 · 2026-09-27 — **GPL-3.0-or-later**（用户决定）。
+> 已执行：`LICENSE` 为 gnu.org 官方 GPL-3.0 原文（SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`）；workspace `Cargo.toml` 写入 `license = "GPL-3.0-or-later"`，各 crate 继承；README 写明许可声明。尚未做：源文件头 SPDX 注释、`CONTRIBUTING.md`（DCO/CLA，§3 第 3 问）、应用内 About → Licenses。以下为决定前的准备材料，保留备查。
 
 ## 1. 当前约束（不论选哪种）
 
 - 产品依赖只使用宽松许可（MIT、Apache-2.0、BSD、Zlib、Unicode 等；多许可的依赖选择其中的 MIT/Apache 选项）。截至 2026-09-27，`crates/` 的全部传递依赖均满足（DEVELOPMENT_PLAN §4 Phase 1a）。
-- `Cargo.toml` 暂不写 `license` 字段；仓库暂无 `LICENSE` 文件，也不做公开推送。
+- （决定前）`Cargo.toml` 暂不写 `license` 字段；仓库暂无 `LICENSE` 文件，也不做公开推送。
 - ExifTool（Artistic 或 GPL，与 Perl 相同）与 Strawberry Perl 组件以独立进程调用、原样再分发，属于聚合，不决定 MoriMeta 自身的许可证；它们的许可证文件随安装包附带（RELEASE_PLAN §7.2）。
 
 ## 2. 决定后需要做的事

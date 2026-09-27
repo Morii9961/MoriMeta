@@ -1,7 +1,7 @@
 # MoriMeta — Repository Checklist
 
 > **Status:** 草案 · 2026-09-27
-> 本地 Git 基线已建立；公开 GitHub 仓库在 D-1（许可证）与仓库归属确定之后才创建和推送。本文列出每次提交前与首次公开推送前需要逐项确认的内容。
+> 2026-09-27：D-1 与仓库归属已由用户确定，公开仓库 `Morii9961/MoriMeta` 已创建并推送（见 §3）。本文列出每次提交前与首次公开推送前需要逐项确认的内容。
 
 ---
 
@@ -32,11 +32,11 @@
 
 | # | 项目 | 状态 |
 |---|---|---|
-| P-1 | 许可证（D-1）确定，按 `docs/LICENSE_DECISION.md` 添加 `LICENSE` 等文件，并在 `Cargo.toml` 写入 SPDX 表达式 | 待决 |
-| P-2 | 仓库归属（个人账号 / 组织）与仓库名 | 待决 |
-| P-3 | **提交作者身份**：当前全局 Git 身份为 `Morii9961` 及一个个人邮箱。推送后所有提交的作者邮箱会公开。若希望隐藏，应在首次推送前改用 GitHub 的 noreply 地址并重写本地历史（公开后无法撤回） | 待决 |
-| P-4 | v0.1 原始规格与设计简报是否公开（含个人化 Preset 示例与个人网站名） | 待决 |
-| P-5 | 对全部历史运行 `tools/check_repo.py`（`git ls-files` 的全部文件），并人工复核 `docs/` 中的示例值 | 推送前执行 |
+| P-1 | 许可证（D-1）确定，按 `docs/LICENSE_DECISION.md` 添加 `LICENSE` 等文件，并在 `Cargo.toml` 写入 SPDX 表达式 | 完成：GPL-3.0-or-later |
+| P-2 | 仓库归属（个人账号 / 组织）与仓库名 | 完成：个人账号，`Morii9961/MoriMeta`，公开 |
+| P-3 | **提交作者身份**：当前全局 Git 身份为 `Morii9961` 及一个个人邮箱。推送后所有提交的作者邮箱会公开。若希望隐藏，应在首次推送前改用 GitHub 的 noreply 地址并重写本地历史（公开后无法撤回） | 用户已允许现有个人邮箱公开，不改写历史 |
+| P-4 | v0.1 原始规格与设计简报是否公开（含个人化 Preset 示例与个人网站名） | 用户决定公开 |
+| P-5 | 对全部历史运行 `tools/check_repo.py`（`git ls-files` 的全部文件），并人工复核 `docs/` 中的示例值 | 首次推送前对全部已跟踪文件执行，0 拦截 |
 | P-6 | 第三方声明：ExifTool 与 Strawberry Perl 的许可证文件、源码获取方式（V-11）；在打包 ExifTool 之前完成 | 打包前 |
 | P-7 | `SECURITY.md`（漏洞报告渠道）、`CONTRIBUTING.md`（DCO/CLA 取决于 D-1）、`PRIVACY.md`、`CODE_OF_CONDUCT.md` | 待写 |
 | P-8 | GitHub 设置：默认分支保护、必需的 CI 检查、Secret scanning、Dependabot、Actions 以 SHA 固定、最小权限 | 创建仓库时 |

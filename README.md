@@ -2,7 +2,7 @@
 
 **A local-first batch photo-metadata tool for photographers — preview every change, then apply it, and undo it while the backup is kept.** Windows first. Built on [ExifTool](https://exiftool.org/).
 
-> **Status: pre-alpha, research and foundation phase.** There is no usable release, no installer, and no signed binary. Documents in `docs/` are drafts (v0.3) and not approved specifications. The license has not been chosen yet (see [License](#license)).
+> **Status: pre-alpha, research and foundation phase.** There is no usable release, no installer, and no signed binary. Documents in `docs/` are drafts (v0.3) and not approved specifications. Licensed under GPL-3.0-or-later (see [License](#license)).
 
 ## What it is meant to do
 
@@ -55,7 +55,7 @@ Only work on copies of photos: this is pre-alpha software.
 
 ## License
 
-Not chosen yet. MoriMeta will be released as open source; the choice between Apache-2.0 and GPL-3.0-or-later (or a combination) is pending ([`docs/LICENSE_DECISION.md`](docs/LICENSE_DECISION.md)). Until a `LICENSE` file is added, no license is granted.
+MoriMeta is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) (SPDX: `GPL-3.0-or-later`).
 
 ExifTool is © Phil Harvey and is distributed under the same terms as Perl; it is invoked as a separate program.
 
@@ -63,4 +63,4 @@ ExifTool is © Phil Harvey and is distributed under the same terms as Perl; it i
 
 ## 简体中文
 
-MoriMeta 是面向摄影师的本地批量照片元数据工具：先完整预览，再执行；在备份保留期内、且文件没有被其他软件改动时可以撤销。目前处于预发布前的研究与基础实现阶段，没有可用版本；`docs/` 中是 v0.3 草案，尚未批准。许可证尚未确定。
+MoriMeta 是面向摄影师的本地批量照片元数据工具：先完整预览，再执行；在备份保留期内、且文件没有被其他软件改动时可以撤销。目前处于预发布前的研究与基础实现阶段，没有可用版本；`docs/` 中是 v0.3 草案，尚未批准。许可证为 GPL-3.0-or-later（见 `LICENSE`）。
