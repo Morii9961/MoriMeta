@@ -5402,3 +5402,38 @@ fn a_file_held_open_at_the_commit_is_retried_or_skipped() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+/// The same on the Undo path: a file held open by another program at the moment its original
+/// would be put back is skipped as in use and keeps the applied content; undoing the Operation
+/// again once it is released restores it, and every file ends byte-identical.
+#[test]
+fn a_file_held_open_at_an_undo_commit_is_restored_by_a_later_undo() {
+    let pkg = require!();
+    let lab = Lab::new("hold-undo", &pkg);
+    let op = lab.apply_ok(&lab.plan("Morii", "p.json"));
+    let applied = lab.snapshot();
+    let u = lab.dir.join("undo.json");
+    assert!(
+        lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let o = lab.cli_env(
+        &[
+            "apply",
+            u.to_str().unwrap(),
+            "--hold-before-commit",
+            "2:5000",
+        ],
+        true,
+    );
+    let r = Lab::json(&o);
+    assert_eq!(state_of(&r, 2), "skipped", "{r}");
+    let p2 = &lab.photos[2];
+    assert_eq!(blake(p2).as_deref(), Some(applied[p2].as_str()));
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    std::thread::sleep(Duration::from_millis(5000));
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
