@@ -40,6 +40,8 @@
 //!                             current content is backed up first, so the forced restore can be undone)
 //!   history | show OP_ID | fsck OP_ID
 //!   plan-retry OP_ID --out PLAN.json   the failed and skipped files of an Operation again
+//!   now OP_ID [SEQ...]        each file now vs. after the Operation (as_written / original /
+//!                             changed / missing)
 //!   plan-again OP_ID --out PLAN.json   the same edit, read afresh, for the failed, skipped and
 //!                             conflicting files of an Operation
 //!   export-log OP_ID --out FILE.json [--include-paths] [--include-values]
@@ -822,6 +824,32 @@ fn main() -> ExitCode {
                 eng.close();
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
+                Ok(ExitCode::SUCCESS)
+            }
+            "now" => {
+                let op = args.first().ok_or("now OP_ID [SEQ...]")?;
+                let seqs: Vec<u32> = if args.len() > 1 {
+                    args[1..]
+                        .iter()
+                        .map(|s| s.parse().map_err(|_| format!("bad SEQ {s}")))
+                        .collect::<Result<_, _>>()?
+                } else {
+                    store
+                        .files(op)
+                        .map_err(|e| e.to_string())?
+                        .iter()
+                        .map(|f| f.seq)
+                        .collect()
+                };
+                let r = history::now_vs_after(&store, op, &seqs).map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    Value::Array(
+                        r.iter()
+                            .map(|(s, n)| json!({"seq": s, "now": serde_json::to_value(n).unwrap_or_default()}))
+                            .collect()
+                    )
+                );
                 Ok(ExitCode::SUCCESS)
             }
             "plan-again" => {

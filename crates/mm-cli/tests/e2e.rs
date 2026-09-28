@@ -3857,3 +3857,40 @@ fn debug_log_records_cut_commands_while_on() {
     assert_eq!(read_logs().matches(" debug exiftool ").count(), before);
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// History "Now vs. after operation": as written, changed by another program, missing, and after
+/// the undo the original again.
+#[test]
+fn now_vs_after_operation() {
+    let pkg = require!();
+    let lab = Lab::new("now", &pkg);
+    let op = lab.apply_ok(&lab.plan("Morii", "p.json"));
+    let now = |seqs: &[&str]| -> Vec<String> {
+        let mut args = vec!["now", op.as_str()];
+        args.extend(seqs);
+        Lab::json(&lab.cli(&args))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["now"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert!(now(&[]).iter().all(|s| s == "as_written"));
+    let mut b = std::fs::read(&lab.photos[1]).unwrap();
+    b.extend_from_slice(b"edited elsewhere");
+    std::fs::write(&lab.photos[1], &b).unwrap();
+    let moved = lab.dir.join("moved.jpg");
+    std::fs::rename(&lab.photos[2], &moved).unwrap();
+    assert_eq!(now(&["0", "1", "2"]), ["as_written", "changed", "missing"]);
+    std::fs::rename(&moved, &lab.photos[2]).unwrap();
+    let u = lab.dir.join("u.json");
+    lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()]);
+    lab.apply_ok(&u);
+    let after = now(&["0", "1", "2"]);
+    assert_eq!(
+        after,
+        ["original", "changed", "original"],
+        "file 1 was not restored (conflict)"
+    );
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

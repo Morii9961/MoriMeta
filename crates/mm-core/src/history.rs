@@ -353,3 +353,46 @@ pub fn replan(
     plan.source = Some(source);
     Ok(plan)
 }
+
+/// What a file holds now compared with the Operation (History "Now vs. after operation").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NowState {
+    /// The content the Operation wrote (or, for a removal, still absent).
+    AsWritten,
+    /// The content from before the Operation (undone, or never written).
+    Original,
+    /// Something else: changed by another program or a later Operation.
+    Changed,
+    Missing,
+}
+
+/// Compare the current files of an Operation with what it wrote, for the given files (the rows
+/// on screen: hashing reads each file, so the UI asks page by page).
+pub fn now_vs_after(
+    store: &Store,
+    op_id: &str,
+    seqs: &[u32],
+) -> Result<Vec<(u32, NowState)>, CoreError> {
+    let files = store.files(op_id)?;
+    let mut out = Vec::new();
+    for &seq in seqs {
+        let f = files
+            .iter()
+            .find(|f| f.seq == seq)
+            .ok_or_else(|| CoreError::Input(format!("{op_id} has no file {seq}")))?;
+        let now = crate::hash_opt(std::path::Path::new(&f.path));
+        let written = f.state == FileState::Done;
+        let state = match (now, written) {
+            (None, true) if f.role == crate::ROLE_REMOVE => NowState::AsWritten,
+            (None, false) if f.h0.is_none() => NowState::Original, // created by it, not yet
+            (None, _) => NowState::Missing,
+            (Some(h), true) if Some(&h) == f.h1.as_ref() => NowState::AsWritten,
+            (Some(h), _) if Some(&h) == f.h0.as_ref() => NowState::Original,
+            (Some(_), false) => NowState::Original, // never written; no pre-image hash kept
+            (Some(_), true) => NowState::Changed,
+        };
+        out.push((seq, state));
+    }
+    Ok(out)
+}
