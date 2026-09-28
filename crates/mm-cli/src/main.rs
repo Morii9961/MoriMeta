@@ -52,10 +52,11 @@
 //!   --fail-at SEQ:STEP        return an IO error there
 //!   --disk-full-at SEQ:STEP   return a simulated disk-full error (Win32 112) there
 //!   --fill-at SEQ:STEP --fill-dir DIR   really fill the (small test) volume of DIR there
-//!   --journal-fail-at begin | finish | manifest[:N] | SEQ:STATE [--journal-fail-persist]
+//!   --journal-fail-at begin | finish | manifest[:N] | log[:N] | SEQ:STATE [--journal-fail-persist]
 //!                             make SQLite fail that journal write (another connection holds the
 //!                             write lock), or the file system refuse a manifest.json write
-//!                             (after N successful ones);
+//!                             (after N successful ones), or an append to manifest.jsonl fail
+//!                             (log[:N], simulated IO error after N successful appends);
 //!                             with --journal-fail-persist every later write fails too
 //!   --space-reserve BYTES     replace the 1 GiB backup-volume reserve of the space pre-check
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
@@ -269,6 +270,12 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
             "begin" => WriteTarget::Begin,
             "finish" => WriteTarget::Finish,
             "manifest" => WriteTarget::Manifest(0),
+            "log" => WriteTarget::Log(0),
+            m if m.starts_with("log:") => WriteTarget::Log(
+                m["log:".len()..]
+                    .parse()
+                    .map_err(|_| "--journal-fail-at log:N")?,
+            ),
             m if m.starts_with("manifest:") => WriteTarget::Manifest(
                 m["manifest:".len()..]
                     .parse()

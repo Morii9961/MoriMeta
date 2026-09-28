@@ -234,6 +234,10 @@ pub enum WriteTarget {
     Finish,
     /// A rewrite of an Operation's `manifest.json`, after skipping this many successful ones.
     Manifest(u32),
+    /// An append to `manifest.jsonl`, after skipping this many successful ones. The append
+    /// fails with an IO error before writing (simulated; the database write it follows has
+    /// already been committed).
+    Log(u32),
 }
 
 /// A journal write failure produced by SQLite itself: right before the target write, a second
@@ -258,6 +262,8 @@ pub struct Store {
     fault: Option<WriteFault>,
     blocker: Option<Connection>,
     manifest_blocker: Option<PathBuf>,
+    /// A persistent `Log` fault fired: every later append fails.
+    log_blocked: bool,
     /// Open `manifest.jsonl` of each Operation written by this process.
     logs: HashMap<String, std::fs::File>,
 }
@@ -329,12 +335,36 @@ impl Store {
             fault: None,
             blocker: None,
             manifest_blocker: None,
+            log_blocked: false,
             logs: HashMap::new(),
         })
     }
 
     /// Append one record to the Operation's `manifest.jsonl`; `durable` flushes it to disk.
     fn log(&mut self, op_id: &str, line: Value, durable: bool) -> Result<()> {
+        match self.fault {
+            Some(WriteFault {
+                target: WriteTarget::Log(0),
+                persistent,
+            }) => {
+                self.fault = None;
+                self.log_blocked = persistent;
+                return Err(injected_log_failure());
+            }
+            Some(WriteFault {
+                target: WriteTarget::Log(n),
+                persistent,
+            }) => {
+                self.fault = Some(WriteFault {
+                    target: WriteTarget::Log(n - 1),
+                    persistent,
+                });
+            }
+            _ => {}
+        }
+        if self.log_blocked {
+            return Err(injected_log_failure());
+        }
         if !self.logs.contains_key(op_id) {
             let f = std::fs::OpenOptions::new()
                 .append(true)
@@ -765,6 +795,12 @@ impl Store {
         std::fs::rename(&tmp, dir.join("manifest.json"))?;
         Ok(())
     }
+}
+
+fn injected_log_failure() -> StoreError {
+    StoreError::Io(std::io::Error::other(
+        "injected manifest.jsonl append failure",
+    ))
 }
 
 fn row_to_op(r: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRow> {

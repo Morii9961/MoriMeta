@@ -3655,3 +3655,56 @@ fn recovery_summary_and_dismiss() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// manifest.jsonl (the append-only record that rebuilds a lost journal) cannot be appended to:
+/// while the Operation is registered, and at several points while files are written, once or
+/// for good. Recovery (and resume where the Operation stopped) and undo restore every file.
+#[test]
+fn manifest_log_append_failures_recover() {
+    let pkg = require!();
+    for (skip, persist) in [(0, false), (3, true), (12, false), (20, true), (33, false)] {
+        let case = format!("log append #{skip} fails (persistent {persist})");
+        let lab = Lab::new(&format!("log-{skip}-{persist}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let fault = format!("log:{skip}");
+        let mut args = vec!["apply", plan.to_str().unwrap(), "--journal-fail-at", &fault];
+        if persist {
+            args.push("--journal-fail-persist");
+        }
+        let o = lab.cli_env(&args, true);
+        let out = String::from_utf8_lossy(&o.stdout).into_owned();
+        // the failure is reported (as an error, or in the file it hit; after a commit that the
+        // disk confirms, the file is done and keeps the error as its note)
+        assert!(out.contains("manifest.jsonl"), "{case}: {out}");
+        let op = lab.last_op();
+        // a single failure mid-transaction is settled for that file from the journal and the
+        // disk and the Operation goes on; a lasting one stops it for recovery
+        let status = op_status(&lab, &op);
+        assert!(
+            status == "running" || status.starts_with("completed"),
+            "{case}: {status}"
+        );
+        lab.assert_preimages(&op);
+        let r = lab.cli(&["recover"]);
+        assert!(
+            r.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&r.stdout)
+        );
+        lab.assert_recovered(&op);
+        if status == "running" {
+            // files interrupted by the failure were settled as failed (original unchanged), so
+            // resume may end with files not done (exit 3); it must not stop again
+            let res = lab.cli(&["resume", &op]);
+            let rj = Lab::json(&res);
+            assert!(
+                matches!(res.status.code(), Some(0 | 3)) && rj["status"] != "running",
+                "{case}: {rj}"
+            );
+        }
+        lab.undo(&op);
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
