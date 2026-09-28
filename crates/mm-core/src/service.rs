@@ -599,6 +599,13 @@ pub fn startup(store: &mut Store) -> Result<Startup, ServiceError> {
 /// gate and written to the log. Returns whether the attribute was set.
 pub fn clear_read_only(gate: &OperationGate, path: &Path) -> Result<bool, ServiceError> {
     let _permit = gate.write()?;
+    // the attribute calls below follow links: never change the file a link points to (§8.6)
+    if mm_fs::probe(path)?.reparse_point {
+        return Err(ServiceError::Core(CoreError::Input(format!(
+            "{}: a symbolic link or other reparse point; its attribute is not changed",
+            path.display()
+        ))));
+    }
     let meta = std::fs::metadata(path)?;
     let mut perm = meta.permissions();
     if !perm.readonly() {
@@ -712,6 +719,44 @@ impl Drop for ExclusivePermit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A junction stands in for any link (making a file link needs extra rights): the attribute
+    /// of what a link points to is never changed through it.
+    #[test]
+    fn clear_read_only_refuses_a_link() {
+        let d = std::env::temp_dir().join(format!("mm-clear-ro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let target = d.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let mut perm = std::fs::metadata(&target).unwrap().permissions();
+        perm.set_readonly(true);
+        std::fs::set_permissions(&target, perm).unwrap();
+        let j = d.join("j");
+        assert!(
+            std::process::Command::new("cmd")
+                .args(["/c", "mklink", "/J"])
+                .arg(&j)
+                .arg(&target)
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+        let gate = OperationGate::default();
+        assert!(clear_read_only(&gate, &j).is_err());
+        assert!(
+            std::fs::metadata(&target).unwrap().permissions().readonly(),
+            "target untouched"
+        );
+        #[allow(clippy::permissions_set_readonly_false)]
+        {
+            let mut perm = std::fs::metadata(&target).unwrap().permissions();
+            perm.set_readonly(false);
+            std::fs::set_permissions(&target, perm).unwrap();
+        }
+        std::fs::remove_dir(&j).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn refused_writes_stay_refused() {
