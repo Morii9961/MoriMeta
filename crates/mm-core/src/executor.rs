@@ -66,6 +66,9 @@ pub struct ExecOptions {
     pub preserve_mtime: bool,
     /// Spoil this file's temporary output before it is verified (tests only).
     pub tamper: Option<(u32, Tamper)>,
+    /// Just before this file's commit, another handle opens it without delete sharing (as a
+    /// virus scanner does) and keeps it for this many milliseconds (tests only).
+    pub hold_before_commit: Option<(u32, u64)>,
 }
 
 /// A deliberate defect in a temporary output, made after ExifTool wrote it and before it is
@@ -1125,6 +1128,11 @@ fn one_file(
         },
     )?;
     fault(opts, seq, 7)?;
+    if let Some((s, ms)) = opts.hold_before_commit
+        && s == seq
+    {
+        hold_open(&f.path, ms)?;
+    }
     // steps 1–7 are abandoned on Cancel; from the commit on, the file finishes (SAFETY_MODEL §11)
     if opts.cancelled() {
         remove_if_exists(&f.temp);
@@ -1472,6 +1480,21 @@ fn commit_new(
     fault(opts, seq, 10)?;
     store.set_state(op_id, seq, FileState::Done, &FileUpdate::default())?;
     Ok(Outcome::Done)
+}
+
+/// Test hook: open `path` for reading without delete sharing, from another thread, for `ms`.
+fn hold_open(path: &Path, ms: u64) -> Result<(), CoreError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let h = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path)?;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(ms));
+        drop(h);
+    });
+    Ok(())
 }
 
 /// ReplaceFileW failed: classify what is on disk (SAFETY_MODEL §4.5) and restore if needed.

@@ -5345,3 +5345,60 @@ fn long_unicode_paths_through_write_crash_and_undo() {
     assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §8.2 at the commit: another program (a virus scanner) opens the file without
+/// delete sharing just before ReplaceFileW. A short hold is waited out by the retries and the file
+/// is written; a hold longer than every retry leaves the file skipped as in use, unchanged, with
+/// nothing left behind, and it is written by a retry later.
+#[test]
+fn a_file_held_open_at_the_commit_is_retried_or_skipped() {
+    let pkg = require!();
+    for (ms, want) in [(500u64, "done"), (5000, "skipped")] {
+        let case = format!("held {ms} ms");
+        let lab = Lab::new(&format!("hold-{ms}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--hold-before-commit",
+                &format!("2:{ms}"),
+            ],
+            true,
+        );
+        let r = Lab::json(&o);
+        let op = r["op_id"].as_str().unwrap().to_owned();
+        assert_eq!(state_of(&r, 2), want, "{case}: {r}");
+        for f in r["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["seq"] != 2)
+        {
+            assert_eq!(f["state"], "done", "{case}: {f}");
+        }
+        let p2 = &lab.photos[2];
+        if want == "skipped" {
+            assert!(
+                r["files"][2]["reason"].as_str().unwrap().contains("in use"),
+                "{case}: {r}"
+            );
+            assert_eq!(blake(p2).as_deref(), Some(lab.truth[p2].as_str()), "{case}");
+            // once the other program has let go, the file is written by a retry
+            std::thread::sleep(Duration::from_millis(ms));
+            let retry = lab.dir.join("retry.json");
+            assert!(
+                lab.cli(&["plan-retry", &op, "--out", retry.to_str().unwrap()])
+                    .status
+                    .success()
+            );
+            let again = lab.apply_ok(&retry);
+            lab.undo(&again);
+        }
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

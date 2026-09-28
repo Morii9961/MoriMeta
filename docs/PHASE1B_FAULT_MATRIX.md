@@ -42,6 +42,7 @@
 | Apply | IO 错误、磁盘满（模拟） | 故障点 1、4、7、8、10 × 首个文件（0）与末个文件（7） | 20 | 通过（第六轮新增）；**发现并修正一处状态报告问题**（见下） |
 | Undo | 磁盘满（模拟） | 故障点 1–10 × 文件 2 | 10 | 通过（第六轮新增）：撤销 Operation 暂停，每个文件为执行后或原始内容，`resume` 完成撤销 |
 | Apply（更新已有 NEF sidecar） | 进程终止、IO 错误 | 故障点 1–10 × 唯一文件 | 20 | 通过（第六轮新增）：sidecar 始终为第一次或完整的第二次内容；两次撤销后 sidecar 不存在，NEF 逐字节不变 |
+| Apply | 提交前被其他程序打开（`--hold-before-commit`，不共享删除） | 文件 2，占用 500 ms / 5 s | 2 | 通过（第六轮新增）：短占用由退避重试等过并写入；长占用记为 skipped、原文件不变、无残留，之后重试写入 |
 | Apply（JPEG、新建 sidecar） | 损坏临时输出（`--tamper-at`） | 故障点 5 之后、验证前 × 文件 2 / 唯一文件 | 11 | 通过（第六轮新增）：意外警告 → V1，截断 → V5（重读出现 JPEG 格式错误），改动一个图像数据字节 → V4，删除 `IFD0:Make` → V3（Canon MakerNotes 随之不可解析，也被列出），增加标签 → V3，改错目标值与多追加一项 → V2；文件记为 failed，原文件不变，无残留 |
 
 `cargo test --workspace`（2026-09-27，本机，`ReplaceFileW` 可用）：第一轮 62 个、第二轮 66 个测试通过、0 失败；两次运行中 `real_disk_full_on_small_volume` 均因未设置 `MM_E2E_SMALL_VOLUME` 而跳过。第一轮之后在 64 MB 测试卷上以 `MM_E2E_SMALL_VOLUME` 单独运行该测试：通过（两个场景）；该卷随后已卸载，第二轮未重跑。`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。

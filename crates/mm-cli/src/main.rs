@@ -72,6 +72,8 @@
 //!   --tamper-at SEQ:KIND      spoil that file's temporary output before verification
 //!                             (warning | truncate | image-byte | extra-tag | wrong-value |
 //!                             list-append | drop:TAG)
+//!   --hold-before-commit SEQ:MS   another handle keeps that file open without delete sharing
+//!                             for MS milliseconds just before its commit (a virus scanner)
 //!   --disk-full-at SEQ:STEP   return a simulated disk-full error (Win32 112) there
 //!   --fill-at SEQ:STEP --fill-dir DIR   really fill the (small test) volume of DIR there
 //!   --journal-fail-at begin | finish | manifest[:N] | log[:N] | SEQ:STATE [--journal-fail-persist]
@@ -270,6 +272,18 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         }
         None => None,
     };
+    let hold_before_commit = match take_opt(args, "--hold-before-commit") {
+        Some(v) => {
+            require_fault_injection("--hold-before-commit")?;
+            let bad = || "--hold-before-commit SEQ:MS".to_string();
+            let (s, ms) = v.split_once(':').ok_or_else(bad)?;
+            Some((
+                s.parse().map_err(|_| bad())?,
+                ms.parse().map_err(|_| bad())?,
+            ))
+        }
+        None => None,
+    };
     let space_reserve = match take_opt(args, "--space-reserve") {
         Some(v) => {
             require_fault_injection("--space-reserve")?;
@@ -317,6 +331,7 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         fill,
         space_reserve,
         tamper,
+        hold_before_commit,
         preserve_mtime: store
             .setting("metadata.preserve_mtime")
             .map_err(|e| e.to_string())?
