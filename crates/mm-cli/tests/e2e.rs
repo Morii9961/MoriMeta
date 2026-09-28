@@ -3440,11 +3440,29 @@ fn history_summary_and_export_log() {
         "{first}"
     );
     assert!(first["path"].as_str().unwrap().ends_with("Writer.jpg"));
+    let before = std::fs::read(&out).unwrap();
     assert!(
         !lab.cli(&["export-log", &op, "--out", out.to_str().unwrap()])
             .status
             .success()
     );
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        before,
+        "an existing file is never replaced"
+    );
+    // the report is written under a name of its own and renamed when complete
+    let partial = std::fs::read_dir(out.parent().unwrap())
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".partial")
+        })
+        .count();
+    assert_eq!(partial, 0);
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 

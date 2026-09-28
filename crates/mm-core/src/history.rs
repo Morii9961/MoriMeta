@@ -238,14 +238,37 @@ pub fn export_log(
         "values": !opts.include_values,
     });
     let text = serde_json::to_string_pretty(&v).map_err(|e| CoreError::Internal(e.to_string()))?;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(out)
-        .map_err(|e| CoreError::Input(format!("{}: {e}", out.display())))?;
-    f.write_all(text.as_bytes())?;
-    f.sync_all()?;
-    Ok(())
+    let taken = || CoreError::Input(format!("{}: a file with this name exists", out.display()));
+    if mm_fs::ensure_absent(out).is_err() {
+        return Err(taken());
+    }
+    // written under a name of its own and renamed once complete: an interrupted export never
+    // leaves a truncated report under the name the user chose
+    let mut partial = out.as_os_str().to_owned();
+    partial.push(".partial");
+    let partial = std::path::PathBuf::from(partial);
+    let written = (|| -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&partial);
+        return Err(CoreError::Input(format!("{}: {e}", out.display())));
+    }
+    match mm_fs::move_no_replace(&partial, out) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&partial);
+            match e {
+                mm_fs::Win32Error(80 | 183) => Err(taken()),
+                e => Err(CoreError::Input(format!("{}: {e}", out.display()))),
+            }
+        }
+    }
 }
 
 /// "Retry Failed" (PRODUCT_SPEC §6.14): a new Plan of the persisted entries of the files that
