@@ -1,0 +1,359 @@
+{
+  "AFCP.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "6b2bb83559a3d0a47fcd308319c06d75bb9acf9e79a3a8c93e5baf810cf2afcf"
+  },
+  "Apple.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "518c958d25c225234c5a339beaa035ae26d9085340cf9ca05f0551da531ae5b2"
+  },
+  "Canon.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "230c0981f567bc4ece255546a61d0ac96ee320f23663bdf5b5335468ecf4d0e3"
+  },
+  "Canon1DmkIII.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "930f7bccd9d08fb4a73200e1a09a66908a1317c958d225b9e3ab231fd6904f52"
+  },
+  "Casio.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "41aaa94508d6c56874df8a6a5de5894b9c5ffd9806576c4d787802fb15c535db"
+  },
+  "Casio2.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "1cc2c2d7d1f402395a811ded91c733a033077c21267022dc476ea52f309558c7"
+  },
+  "CasioQVCI.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "480119cd1f6f0ce2f98ab0335077c4825abc52d6c68d98a1eadf5caa59688fc4"
+  },
+  "ExifTool.jpg": {
+    "1 creator": "blocked: file contains more than one IPTC record; not written",
+    "2 copyright": "blocked: file contains more than one IPTC record; not written",
+    "3 gps": "done",
+    "4 time": "blocked: file contains more than one IPTC record; not written",
+    "blake3": "1f7838fab2294172cdd72cd500f98493380900482ab8d5546781846fef201aa0"
+  },
+  "ExtendedXMP.jpg": {
+    "1 creator": "failed: verification: unexpected changes: XMP-xmpNote:HasExtendedXMP",
+    "2 copyright": "failed: verification: unexpected changes: XMP-xmpNote:HasExtendedXMP",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "3883f4d9790d61fc71944988a68cd7a380f5afe93d9eb38ccd1f9b798cdbb4be"
+  },
+  "FLIR.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "e624cec25767f4eba670bce2980a48d2936ce2e42bc864555dbe539e04afba4e"
+  },
+  "FotoStation.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "9ce125b937b0af49483ef90742f1e7f3e66c882f9b2c4ab6830d225ead3c17c5"
+  },
+  "FujiFilm.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "c9f46d500a96e2f4e11367a020343be5f3cbb666431c44551da3faa15210fc2c"
+  },
+  "GE.jpg": {
+    "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
+    "2 copyright": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
+    "3 gps": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
+    "4 time": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
+    "blake3": "bb3dc97ecf2ebab375f77dbf38fb6bd4c2d54e1eb8d8bf7725a12a6fec73f0fe"
+  },
+  "GPS.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "eea1397afd8d9160d3adf3a2b4b3c0f271c0d448c81b4b4242719f65f64e86c7"
+  },
+  "GoPro.jpg": {
+    "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Maker notes could not be parsed\")",
+    "2 copyright": "failed: verification V1: Engine(\"Warning: [minor] Maker notes could not be parsed\")",
+    "3 gps": "failed: verification V1: Engine(\"Warning: [minor] Maker notes could not be parsed\")",
+    "4 time": "failed: verification V1: Engine(\"Warning: [minor] Maker notes could not be parsed\")",
+    "blake3": "79d05bb0b6a4d19bfcfd11161ac0bfa04943c793ad6a50a838025ec2e09365b8"
+  },
+  "Google.jpg": {
+    "1 creator": "failed: verification: unexpected changes: Google:HDRPlusMakerNote_14-1-10-2-1008, Google:HDRPlusMakerNote_14-1-10-2-14, Google:HDRPlusMakerNote_14-1-10-2-4, Google:HDRPlusMakerNote_14-1-10-2-9, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-20-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-4, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-103, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-132, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-72, Google:HDRPlusMakerNote_9-47-4-2-6-7-3, Google:HDRPlusMakerNote_9-47-4-2-6-7-4, Google:HDRPlusMakerNote_9-47-4-2-6-7-6, Google:HDRPlusMakerNote_9-47-4-2-6-7-7, Google:HDRPlusMakerNote_9-47-4-2-6-7-8, Google:HDRPlusMakerNote_9-47-4-2-6-7-9, Google:HDRPlusMakerNote_9-47-4-2-8-1-4-0-0, Google:HDRPlusMakerNote_9-47-4-3-3-8-4-0, XMP-xmpNote:HasExtendedXMP",
+    "2 copyright": "failed: verification: unexpected changes: Google:HDRPlusMakerNote_14-1-10-2-1008, Google:HDRPlusMakerNote_14-1-10-2-14, Google:HDRPlusMakerNote_14-1-10-2-4, Google:HDRPlusMakerNote_14-1-10-2-9, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-20-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-4, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-103, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-132, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-72, Google:HDRPlusMakerNote_9-47-4-2-6-7-3, Google:HDRPlusMakerNote_9-47-4-2-6-7-4, Google:HDRPlusMakerNote_9-47-4-2-6-7-6, Google:HDRPlusMakerNote_9-47-4-2-6-7-7, Google:HDRPlusMakerNote_9-47-4-2-6-7-8, Google:HDRPlusMakerNote_9-47-4-2-6-7-9, Google:HDRPlusMakerNote_9-47-4-2-8-1-4-0-0, Google:HDRPlusMakerNote_9-47-4-3-3-8-4-0, XMP-xmpNote:HasExtendedXMP",
+    "3 gps": "failed: verification: unexpected changes: Google:HDRPlusMakerNote_14-1-10-2-1008, Google:HDRPlusMakerNote_14-1-10-2-14, Google:HDRPlusMakerNote_14-1-10-2-4, Google:HDRPlusMakerNote_14-1-10-2-9, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-20-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-4, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-103, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-132, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-72, Google:HDRPlusMakerNote_9-47-4-2-6-7-3, Google:HDRPlusMakerNote_9-47-4-2-6-7-4, Google:HDRPlusMakerNote_9-47-4-2-6-7-6, Google:HDRPlusMakerNote_9-47-4-2-6-7-7, Google:HDRPlusMakerNote_9-47-4-2-6-7-8, Google:HDRPlusMakerNote_9-47-4-2-6-7-9, Google:HDRPlusMakerNote_9-47-4-2-8-1-4-0-0, Google:HDRPlusMakerNote_9-47-4-3-3-8-4-0",
+    "4 time": "failed: verification: unexpected changes: Google:HDRPlusMakerNote_14-1-10-2-1008, Google:HDRPlusMakerNote_14-1-10-2-14, Google:HDRPlusMakerNote_14-1-10-2-4, Google:HDRPlusMakerNote_14-1-10-2-9, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-2-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-1-2-5, Google:HDRPlusMakerNote_9-47-2-3-1-1-20-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-1, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-21-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-6-2-4, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-0, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1008, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1015, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-1140, Google:HDRPlusMakerNote_9-47-2-3-1-1-7-3-4, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-103, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-132, Google:HDRPlusMakerNote_9-47-4-2-1-4-7-72, Google:HDRPlusMakerNote_9-47-4-2-6-7-3, Google:HDRPlusMakerNote_9-47-4-2-6-7-4, Google:HDRPlusMakerNote_9-47-4-2-6-7-6, Google:HDRPlusMakerNote_9-47-4-2-6-7-7, Google:HDRPlusMakerNote_9-47-4-2-6-7-8, Google:HDRPlusMakerNote_9-47-4-2-6-7-9, Google:HDRPlusMakerNote_9-47-4-2-8-1-4-0-0, Google:HDRPlusMakerNote_9-47-4-3-3-8-4-0",
+    "blake3": "649b2e8e0c2e7a41d6f39be359264f54b7b9b5cc1f13342b32c0c78222fcc82d"
+  },
+  "IPTC.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "0f41776fa2351f12978e208fc52497385e1614cc7e51e39a4852be39047747c8"
+  },
+  "InfiRay.jpg": {
+    "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
+    "2 copyright": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
+    "3 gps": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "9d064831d9e826665caed767174dd5ec356806c6a1ff2e5d8ea92828cebffa6b"
+  },
+  "JVC.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "4be389f98f483d8a8ceec944067e6f8eada77beb162cd9d88675811a1d8f2ddb"
+  },
+  "JVC2.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "30dbd7d086091a05180069713379a9ac731175fc5d0492588e559964ff9be9fa"
+  },
+  "Kodak.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "7ef63b0d75a9c17fc018e78b19bee06beb7a785a23310bd671be39627c751266"
+  },
+  "MWG.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "f269e9d60e6aeff50e9168e6deea0d6760f43b26d927e903ff9280dc67a33ca1"
+  },
+  "Minolta.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "36f612c15bb64713eba8149e6716af2fcad9f620a1b78fdaaa6823f2a954d2d5"
+  },
+  "Motorola.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "1f580c099a016fb9cfdbcbfa1dbfcf5b49b71c1ddfe4630679765d21c1b567a6"
+  },
+  "Nikon.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "0e3dc126263b2f0da7787f98e9447f3d39bda3f6e9bee6307beca53fb331c7f2"
+  },
+  "NikonD2Hs.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "8ae9bcf393b6b7fa5f6f139caa76689d50d3be98b7c8002c39ef421dea691903"
+  },
+  "NikonD70.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "82dc1d08c4a36467d2bedb3f8a86bacfd076ea7bd6b50829d77d44a4af5657c2"
+  },
+  "Olympus.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "babeb761ad20c65dab557b6c982cf0695284336ee36eadce2909edc6dbef8a03"
+  },
+  "Olympus2.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "f65e8b3ab0011abd5baebf45de0b0372887c122c337d638351f358b836e1a3ef"
+  },
+  "OlympusE1.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "a2440d329efa00ccc577de587384838bdd96945d40cba3accc9bf117759a44f0"
+  },
+  "PLUS.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "753345b550686420b413c51ea503423c0c24b0f54e46126b4bd0855fc959e4df"
+  },
+  "Panasonic.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "44ef158b013898afbdfb34d41a777aff9bcb0a8c7bb341939256f63f3317a230"
+  },
+  "Pentax.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "c48f9f59953b15e9f7eee76d632bd6f54efc20b0a556f287031fe30408e078b6"
+  },
+  "PhotoMechanic.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "2696f2ff37d957712d354d3979f283b2217142b79b81be058709062374e56391"
+  },
+  "Ricoh.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "118dc8bf24f52d401261f96839472981d288873a64a7b7b83c577d072c18f50c"
+  },
+  "Ricoh2.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "d1d547d9fb5dc76825ba40dce7968cad9d68f58d2b2f258b3f313238e3eb84f5"
+  },
+  "Sanyo.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "ac6d251d866fc688122f9125e08b843c91225c20acbd759016bc6fc1f045b971"
+  },
+  "Sigma.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "42d7b93a603623ba25be75c4596ccedc1f0836c489bcae5a8ef0200b63dc5d0c"
+  },
+  "Sony.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "85c14a041daa2d5fa5aba2f54fe1d965489fc1ea1cee0ea9929ab501475735d8"
+  },
+  "Unknown.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "dfb6d90a1717a5c678020d4b7826002b519376193bb4f3f99cc9f97b422f8a68"
+  },
+  "Writer.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "e1814acf81acf70055b3f31acfb56c1e25c534420943da52fc4e85d84dcc979f"
+  },
+  "XMP.jpg": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "df0e53915a22893064161b34f0a4bae3f8280575e7cb0647db0469f0d7132d92"
+  },
+  "XMP.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done",
+    "blake3": "994e71edc83c19893586c159bac47593ddf910cccee6ae2d32261ad4d218ca87"
+  },
+  "XMP2.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "33e03fa41ea36b74b425e2b9e5c66b7c70d742b3dca1025fb0d9dcba2a437a97"
+  },
+  "XMP3.xmp": {
+    "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Fixed incorrect list type for XMP-dc:Creator\")",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "4ddcf0b0cb24e7b3f89e165f2fe7938de6460148c0fae1557e9a15bf449ced6b"
+  },
+  "XMP4.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "24f40dd7fe3ca189b6db517f1e50f9edf9ea269186d3b4572f6ad2c4bdfede56"
+  },
+  "XMP5.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "e2881be63ec31c0d58253d4ebf0e9fc958e2aa15c7bf8435bc01654dfd2e1712"
+  },
+  "XMP6.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "980efaff6d8314efd2e918ae573ce0b50e06f99f09a097821276efb65fc8dc75"
+  },
+  "XMP7.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "1b7317ca957f3e9bfdc4ee73f7972b6dd5fca7078643a133a3b5afdf57386b79"
+  },
+  "XMP8.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "809e980094e00e42949c8053e7564c72a540ffc3cc72e12257d02d0740835f26"
+  },
+  "XMP9.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
+    "blake3": "5e65014f40e9dbe3bdc2a9c598e0c139dc671dbd0bbcfb8005d74ab47614e263"
+  }
+}

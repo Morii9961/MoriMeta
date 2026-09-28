@@ -4327,7 +4327,7 @@ fn io_errors_and_disk_full_at_the_first_and_last_file() {
     }
 }
 
-/// SAFETY_MODEL 搂8.13 on the Undo path: a simulated ERROR_DISK_FULL at every fault point pauses
+/// SAFETY_MODEL §8.13 on the Undo path: a simulated ERROR_DISK_FULL at every fault point pauses
 /// the Undo Operation; each file is its applied or its original content; resume finishes the Undo.
 #[test]
 fn disk_full_during_undo_pauses_and_resume_completes_it() {
@@ -4463,7 +4463,7 @@ fn nef_sidecar_update_crashes_and_io_errors_recover() {
     }
 }
 
-/// SAFETY_MODEL 搂12 "verification effectiveness": file 2's temporary output is spoiled after
+/// SAFETY_MODEL §12 "verification effectiveness": file 2's temporary output is spoiled after
 /// ExifTool wrote it and before it is verified. Every defect is refused by the check named (the
 /// file fails, its original is unchanged, nothing is left behind); the other files are written,
 /// and undo restores every file byte for byte.
@@ -4519,7 +4519,7 @@ fn verification_refuses_every_spoiled_output() {
     }
 }
 
-/// The same for a new XMP sidecar (verified against an empty source, V1鈥揤3 and V5): a spoiled
+/// The same for a new XMP sidecar (verified against an empty source, V1–V3 and V5): a spoiled
 /// sidecar is never created and the NEF is never touched.
 #[test]
 fn verification_refuses_a_spoiled_new_sidecar() {
@@ -4558,7 +4558,7 @@ fn verification_refuses_a_spoiled_new_sidecar() {
     }
 }
 
-/// SAFETY_MODEL 搂8.6: a file that is a symbolic link is blocked when planned, and one that became a
+/// SAFETY_MODEL §8.6: a file that is a symbolic link is blocked when planned, and one that became a
 /// link after the Preview is skipped when applied; neither the link nor its target is written. A
 /// sidecar that is a link blocks its NEF. Needs the right to create symbolic links (Developer Mode
 /// or an elevated test run, as on CI); skipped otherwise.
@@ -4573,6 +4573,11 @@ fn symbolic_links_are_never_written() {
     std::fs::copy(&lab.photos[4], &target).unwrap();
     let link = dir.join("link.jpg");
     if let Err(e) = std::os::windows::fs::symlink_file(&target, &link) {
+        // the CI runner is elevated: there, a skip would hide a broken test
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "cannot create a link on CI: {e}"
+        );
         eprintln!("SKIP: cannot create symbolic links here ({e})");
         let _ = std::fs::remove_dir_all(&lab.dir);
         return;
@@ -4636,5 +4641,136 @@ fn symbolic_links_are_never_written() {
 
     lab.undo(&op);
     lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// SAFETY_MODEL §12 corpus regression, the procedure for every ExifTool upgrade: every JPEG and
+/// XMP among ExifTool's own test images goes through the four MVP writes; each write is verified
+/// before its commit and then undone byte for byte. What happened to each file in each write is
+/// compared with `tests/regression/exiftool-<version>.json`. After an upgrade, run with
+/// `MM_UPDATE_REGRESSION=1` to rewrite that file and review its diff: every change needs a
+/// known reason (SAFETY_MODEL §12 "0 verification failures, or each with a known cause").
+#[test]
+fn fixture_regression_through_every_write() {
+    let pkg = require!();
+    let lab = Lab::new("regression", &pkg);
+    let dir = lab.dir.join("all");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(timages())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.extension().is_some_and(|e| {
+                let e = e.to_string_lossy().to_lowercase();
+                e == "jpg" || e == "xmp"
+            })
+        })
+        .map(|p| {
+            let to = dir.join(p.file_name().unwrap());
+            std::fs::copy(&p, &to).unwrap();
+            to
+        })
+        .collect();
+    files.sort();
+    let refs: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
+    let name = |p: &str| {
+        Path::new(p)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+    // reasons can name the file; keep the record free of this machine's paths
+    let scrub = |s: &str| {
+        s.replace(dir.to_str().unwrap(), "<dir>")
+            .replace(lab.dir.to_str().unwrap(), "<lab>")
+    };
+    let original: BTreeMap<String, String> = files
+        .iter()
+        .map(|p| (name(p.to_str().unwrap()), blake(p).unwrap()))
+        .collect();
+    let mut got: BTreeMap<String, BTreeMap<String, String>> = original
+        .iter()
+        .map(|(n, h)| {
+            (
+                n.clone(),
+                BTreeMap::from([("blake3".to_owned(), h.clone())]),
+            )
+        })
+        .collect();
+    for (write, cmd) in [
+        ("1 creator", &["plan-creator", "--set", "Morii"][..]),
+        (
+            "2 copyright",
+            &["plan-copyright", "--set", "© 2026 Morii"][..],
+        ),
+        ("3 gps", &["plan-gps", "--set", "35.6586,139.7454,40"][..]),
+        ("4 time", &["plan-time", "--shift", "+01:00:00"][..]),
+    ] {
+        let (p, pj) = lab.plan_on(cmd, &refs, &format!("w{}.json", &write[..1]));
+        for e in pj["entries"].as_array().unwrap() {
+            let st = &e["status"];
+            let s = match (st["status"].as_str().unwrap(), st["reason"].as_str()) {
+                ("ready", _) => "ready".to_owned(),
+                (k, Some(r)) => format!("{k}: {}", scrub(r)),
+                (k, None) => k.to_owned(),
+            };
+            got.get_mut(&name(e["path"].as_str().unwrap()))
+                .unwrap_or_else(|| panic!("{write}: unexpected entry {e}"))
+                .insert(write.to_owned(), s);
+        }
+        let a = lab.cli(&["apply", p.to_str().unwrap()]);
+        let r = Lab::json(&a);
+        if let Some(op) = r["op_id"].as_str() {
+            for f in r["files"].as_array().unwrap() {
+                let n = name(f["path"].as_str().unwrap());
+                let s = match (f["state"].as_str().unwrap(), f["reason"].as_str()) {
+                    ("done", _) => "done".to_owned(),
+                    (k, Some(why)) => format!("{k}: {}", scrub(why)),
+                    (k, None) => k.to_owned(),
+                };
+                got.get_mut(&n).unwrap().insert(write.to_owned(), s);
+            }
+            assert!(lab.cli(&["fsck", op]).status.success(), "{write}");
+            lab.undo(op);
+        }
+        for p in &files {
+            let n = name(p.to_str().unwrap());
+            assert_eq!(
+                blake(p).as_deref(),
+                Some(original[&n].as_str()),
+                "{write}: {n} not restored"
+            );
+        }
+        assert!(
+            std::fs::read_dir(&dir).unwrap().count() == files.len(),
+            "{write}: a file was left behind"
+        );
+    }
+    let lock: Value = serde_json::from_str(
+        &std::fs::read_to_string(repo().join("research/exiftool.lock.json")).unwrap(),
+    )
+    .unwrap();
+    let record = repo().join(format!(
+        "crates/mm-cli/tests/regression/exiftool-{}.json",
+        lock["version"].as_str().unwrap()
+    ));
+    let text = serde_json::to_string_pretty(&got).unwrap() + "\n";
+    if std::env::var("MM_UPDATE_REGRESSION").as_deref() == Ok("1") {
+        std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+        std::fs::write(&record, &text).unwrap();
+    } else {
+        let want = std::fs::read_to_string(&record).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}; run with MM_UPDATE_REGRESSION=1 and review",
+                record.display()
+            )
+        });
+        let want: BTreeMap<String, BTreeMap<String, String>> = serde_json::from_str(&want).unwrap();
+        for (n, w) in &want {
+            assert_eq!(got.get(n), Some(w), "{n} differs from the record");
+        }
+        assert_eq!(got.len(), want.len(), "fixture set differs from the record");
+    }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }

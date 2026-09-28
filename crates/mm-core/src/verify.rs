@@ -73,19 +73,38 @@ fn warnings(s: &Snapshot) -> Vec<String> {
         .collect()
 }
 
+/// An ExifTool message without the ` - <file>` it ends with: the file is the backup or a
+/// temporary name, which means nothing to the user and would put a path into the History.
+pub fn without_file(line: &str) -> &str {
+    match line.rsplit_once(" - ") {
+        Some((msg, file))
+            if file.starts_with('/')
+                || file.starts_with('\\')
+                || file
+                    .as_bytes()
+                    .get(1..3)
+                    .is_some_and(|b| b == b":/" || b == b":\\") =>
+        {
+            msg
+        }
+        _ => line,
+    }
+}
+
 /// V1: exit status and stderr of the write command.
 pub fn check_write_output(out: &Output) -> Result<(), VerifyError> {
     let err = out.stderr_text();
     if out.status != 0 {
+        let lines: Vec<&str> = err.lines().map(|l| without_file(l.trim())).collect();
         return Err(VerifyError::Engine(format!(
             "status {}: {}",
             out.status,
-            err.trim()
+            lines.join("; ").trim_matches(|c| c == ';' || c == ' ')
         )));
     }
     for line in err.lines().map(str::trim).filter(|l| !l.is_empty()) {
         if line.starts_with("Error") || !BENIGN_WARNINGS.iter().any(|w| line.contains(w)) {
-            return Err(VerifyError::Engine(line.to_owned()));
+            return Err(VerifyError::Engine(without_file(line).to_owned()));
         }
     }
     Ok(())
@@ -216,6 +235,24 @@ pub fn check_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exiftool_messages_lose_the_file_they_name() {
+        for (line, want) in [
+            (
+                "Warning: [minor] Maker notes could not be parsed - C:/d/backups/op-1/0001-a.jpg",
+                "Warning: [minor] Maker notes could not be parsed",
+            ),
+            (
+                "Error: Not a valid JPG - \\\\host\\share\\a.jpg",
+                "Error: Not a valid JPG",
+            ),
+            ("Warning: a - b", "Warning: a - b"),
+            ("Warning: no file", "Warning: no file"),
+        ] {
+            assert_eq!(without_file(line), want);
+        }
+    }
     use serde_json::json;
 
     fn s(v: serde_json::Value) -> Snapshot {
