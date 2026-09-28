@@ -87,9 +87,27 @@ pub const ROLE_REMOVE: &str = "remove";
 pub const ROLE_CREATE: &str = "create";
 
 /// Absolute path without the verbatim prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\h\s` → `\\h\s`).
+/// A path that is itself a symbolic link or another reparse point (junction, cloud file) stays
+/// that path: only its folder is resolved, so the checks see the link and never the file it
+/// points to (SAFETY_MODEL §8.6).
 pub fn normalize(p: &Path) -> Result<PathBuf, CoreError> {
-    let abs =
-        std::fs::canonicalize(p).map_err(|e| CoreError::Input(format!("{}: {e}", p.display())))?;
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    let err = |e: std::io::Error| CoreError::Input(format!("{}: {e}", p.display()));
+    let reparse = std::fs::symlink_metadata(p).map_err(err)?.file_attributes()
+        & FILE_ATTRIBUTE_REPARSE_POINT
+        != 0;
+    let abs = match (reparse, p.parent(), p.file_name()) {
+        (true, Some(dir), Some(name)) => {
+            let dir = if dir.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                dir
+            };
+            std::fs::canonicalize(dir).map_err(err)?.join(name)
+        }
+        _ => std::fs::canonicalize(p).map_err(err)?,
+    };
     let s = abs.to_string_lossy();
     let s = if let Some(r) = s.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{r}")
@@ -141,4 +159,39 @@ pub fn new_id(prefix: &str) -> Result<String, CoreError> {
 
 pub fn hash_opt(p: &Path) -> Option<String> {
     mm_fs::hash_path(p).ok().map(|h| mm_fs::hex(&h))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A junction (a reparse point any user can make) keeps its own path; a folder behind one is
+    /// still resolved, as before.
+    #[test]
+    fn normalize_does_not_resolve_a_reparse_point() {
+        let d = std::env::temp_dir().join(format!("mm-normalize-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let target = d.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("a.jpg"), b"a").unwrap();
+        let j = d.join("j");
+        let ok = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&j)
+            .arg(&target)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J failed");
+        let base = normalize(&d).unwrap();
+        assert_eq!(normalize(&j).unwrap(), base.join("j"));
+        assert_eq!(
+            normalize(&j.join("a.jpg")).unwrap(),
+            base.join("target").join("a.jpg")
+        );
+        assert!(normalize(&d.join("missing.jpg")).is_err());
+        std::fs::remove_dir(&j).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

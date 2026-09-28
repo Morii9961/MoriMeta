@@ -4548,3 +4548,84 @@ fn verification_refuses_a_spoiled_new_sidecar() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+/// SAFETY_MODEL 搂8.6: a file that is a symbolic link is blocked when planned, and one that became a
+/// link after the Preview is skipped when applied; neither the link nor its target is written. A
+/// sidecar that is a link blocks its NEF. Needs the right to create symbolic links (Developer Mode
+/// or an elevated test run, as on CI); skipped otherwise.
+#[test]
+fn symbolic_links_are_never_written() {
+    let pkg = require!();
+    let lab = Lab::new("symlinks", &pkg);
+    let dir = lab.photos[0].parent().unwrap().to_path_buf();
+    let outside = lab.dir.join("elsewhere");
+    std::fs::create_dir_all(&outside).unwrap();
+    let target = outside.join("target.jpg");
+    std::fs::copy(&lab.photos[4], &target).unwrap();
+    let link = dir.join("link.jpg");
+    if let Err(e) = std::os::windows::fs::symlink_file(&target, &link) {
+        eprintln!("SKIP: cannot create symbolic links here ({e})");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+        return;
+    }
+    let target_hash = blake(&target).unwrap();
+
+    // planned as a link: blocked
+    let (p, pj) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[&link, &lab.photos[0]],
+        "p.json",
+    );
+    let st = |i: usize| {
+        pj["entries"][i]["status"]["status"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(st(0), "blocked", "{pj}");
+    assert_eq!(st(1), "ready", "{pj}");
+    let op = lab.apply_ok(&p);
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(blake(&target).as_deref(), Some(target_hash.as_str()));
+
+    // replaced by a link after the Preview: skipped at apply
+    let later = &lab.photos[5];
+    let (p2, pj2) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[later], "p2.json");
+    assert_eq!(pj2["entries"][0]["status"]["status"], "ready", "{pj2}");
+    let moved = outside.join("moved.jpg");
+    std::fs::rename(later, &moved).unwrap();
+    std::os::windows::fs::symlink_file(&moved, later).unwrap();
+    let moved_hash = blake(&moved).unwrap();
+    let a = lab.cli(&["apply", p2.to_str().unwrap()]);
+    let r = Lab::json(&a);
+    let s0 = state_of(&r, 0);
+    assert!(s0 == "skipped" || s0 == "conflict", "{r}");
+    assert!(
+        std::fs::symlink_metadata(later)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(blake(&moved).as_deref(), Some(moved_hash.as_str()));
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    std::fs::remove_file(later).unwrap();
+    std::fs::rename(&moved, later).unwrap();
+
+    // a sidecar that is a link: its NEF is blocked, nothing written through the link
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let real_xmp = outside.join("real.xmp");
+    std::fs::write(&real_xmp, b"<x:xmpmeta xmlns:x='adobe:ns:meta/'/>").unwrap();
+    std::os::windows::fs::symlink_file(&real_xmp, nef.with_file_name("DSC_0001.xmp")).unwrap();
+    let (_, pj3) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "p3.json");
+    assert_eq!(pj3["entries"][0]["status"]["status"], "blocked", "{pj3}");
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
