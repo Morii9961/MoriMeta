@@ -21,6 +21,7 @@
 //!   plan-preset (--id PRESET_ID | --preset PRESET.json) --out PLAN.json [--files-from UTF8_FILE] FILE...
 //!   presets                   built-in (id builtin:NAME) and saved Presets (PRODUCT_SPEC §6.11)
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
+//!   clear-readonly FILE       the user's explicit "Clear read-only attribute" (never automatic)
 //!   debug-log on | off         ExifTool commands (values cut) and timings in the log, for 24 hours
 //!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3),
@@ -81,6 +82,7 @@ use std::process::ExitCode;
 use mm_core::engine::Engine;
 use mm_core::executor::{self, ExecOptions, FaultPoint, OpReport};
 use mm_core::planner::TimeTool;
+use mm_core::service::OperationGate;
 use mm_core::{fsck, history, inspect, planner, presets, recovery, retention, undo};
 use mm_domain::capture;
 use mm_domain::copyright::{self, CopyrightEdit};
@@ -427,6 +429,7 @@ fn main() -> ExitCode {
         "dismiss",
         "prune",
         "rebuild-journal",
+        "clear-readonly",
     ];
     if WRITES.contains(&cmd.as_str())
         && std::env::var("MM_ALLOW_ELEVATED").as_deref() != Ok("1")
@@ -624,6 +627,14 @@ fn main() -> ExitCode {
                 let id = args.first().ok_or("preset-delete ID")?;
                 presets::delete(&mut store, id).map_err(|e| e.to_string())?;
                 println!("{}", json!({"deleted": id}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "clear-readonly" => {
+                let f = args.first().ok_or("clear-readonly FILE")?;
+                let was =
+                    mm_core::service::clear_read_only(&OperationGate::default(), Path::new(f))
+                        .map_err(|e| e.to_string())?;
+                println!("{}", json!({"cleared": was}));
                 Ok(ExitCode::SUCCESS)
             }
             "debug-log" => {

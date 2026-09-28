@@ -4107,3 +4107,25 @@ fn acknowledgements_are_recorded_with_the_operation() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// INTERACTION_SPEC §7: a read-only file is blocked until the user clears the attribute through
+/// the explicit action; then it is planned like any other.
+#[test]
+fn read_only_attribute_is_cleared_only_on_request() {
+    let pkg = require!();
+    let lab = Lab::new("clear-ro", &pkg);
+    let f = lab.photos[0].clone();
+    let mut perm = std::fs::metadata(&f).unwrap().permissions();
+    perm.set_readonly(true);
+    std::fs::set_permissions(&f, perm).unwrap();
+    let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&f], "a.json");
+    assert_eq!(pj["entries"][0]["status"]["status"], "blocked", "{pj}");
+    let o = Lab::json(&lab.cli(&["clear-readonly", f.to_str().unwrap()]));
+    assert_eq!(o["cleared"], true);
+    assert!(!std::fs::metadata(&f).unwrap().permissions().readonly());
+    let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&f], "b.json");
+    assert_eq!(pj["entries"][0]["status"]["status"], "ready", "{pj}");
+    let o = Lab::json(&lab.cli(&["clear-readonly", f.to_str().unwrap()]));
+    assert_eq!(o["cleared"], false);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

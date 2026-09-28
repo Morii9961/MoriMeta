@@ -422,6 +422,32 @@ impl PlanBook {
     }
 }
 
+/// "Clear read-only attribute…" (INTERACTION_SPEC §7, SAFETY_MODEL §8.1): MoriMeta never clears
+/// the attribute by itself; this is the user's explicit, separate action, taken under the write
+/// gate and written to the log. Returns whether the attribute was set.
+pub fn clear_read_only(gate: &OperationGate, path: &Path) -> Result<bool, ServiceError> {
+    let _permit = gate.write()?;
+    let meta = std::fs::metadata(path)?;
+    let mut perm = meta.permissions();
+    if !perm.readonly() {
+        return Ok(false);
+    }
+    #[allow(clippy::permissions_set_readonly_false)]
+    // Windows: clears FILE_ATTRIBUTE_READONLY only
+    perm.set_readonly(false);
+    std::fs::set_permissions(path, perm)?;
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    crate::log::event(
+        "info",
+        "read-only attribute cleared by the user",
+        &[("ext", &ext)],
+    );
+    Ok(true)
+}
+
 #[derive(Debug, Default)]
 struct GateState {
     writers: usize,
