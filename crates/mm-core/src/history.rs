@@ -31,6 +31,10 @@ pub struct OpSummary {
     pub backups_pruned: bool,
     /// Whether an undo Plan can be made now (not running, not interrupted, backups present).
     pub undoable: bool,
+    /// Files stopped while they were being written (their temporary output discarded, the
+    /// original unchanged), as the completion summary of a stopped Operation counts them apart
+    /// from the files never started (INTERACTION_SPEC §10).
+    pub rolled_back: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,6 +105,16 @@ fn summarize(
         undoable: !pending
             && o.pruned_ms.is_none()
             && files.iter().any(|f| f.state == FileState::Done),
+        rolled_back: files
+            .iter()
+            .filter(|f| {
+                f.state == FileState::Cancelled
+                    && f.error.as_deref().is_some_and(|e| {
+                        e.starts_with("cancelled before the commit")
+                            || e.starts_with("cancelled while ExifTool was working")
+                    })
+            })
+            .count(),
     })
 }
 

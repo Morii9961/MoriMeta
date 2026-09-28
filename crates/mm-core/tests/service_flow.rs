@@ -295,6 +295,9 @@ fn cancel_abandons_before_the_commit_and_finishes_after() {
             .filter(|f| f.state == FileState::Done)
             .count();
         assert_eq!(n_done, done, "step {step}: {rep:?}");
+        // the completion summary: rolled back (stopped mid-write) vs. never started
+        let summary = mm_core::history::list(&lab.store, 0, 1).unwrap().remove(0);
+        assert_eq!(summary.rolled_back, 1 - done, "step {step}: {summary:?}");
         assert_eq!(listing(), 3, "no temporary file left (step {step})");
         let changed = lab
             .hashes()
