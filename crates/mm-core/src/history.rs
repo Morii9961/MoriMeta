@@ -146,11 +146,70 @@ pub fn detail(store: &Store, op_id: &str) -> Result<OpDetail, CoreError> {
     })
 }
 
-/// "Export Log": the detail as JSON, written to a new file (never replacing one).
-pub fn export_log(store: &Store, op_id: &str, out: &std::path::Path) -> Result<(), CoreError> {
+/// What an exported log may contain (SECURITY_MODEL §8: redacted unless the user chooses).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExportOptions {
+    /// Full paths instead of `asset#n.ext`.
+    pub include_paths: bool,
+    /// Field values before and after (creator, copyright, time, GPS…).
+    pub include_values: bool,
+}
+
+/// The detail as it is exported: paths become `asset#n.ext` and field values are left out unless
+/// `opts` includes them; error texts are scrubbed of the Operation's paths and the user's name.
+pub fn export_view(store: &Store, op_id: &str, opts: ExportOptions) -> Result<OpDetail, CoreError> {
+    let mut d = detail(store, op_id)?;
+    let known: Vec<(String, String)> = d
+        .files_detail
+        .iter()
+        .flat_map(|f| {
+            let a = crate::privacy::alias(f.seq, &f.path);
+            let folder = std::path::Path::new(&f.path)
+                .parent()
+                .map(|p| (p.to_string_lossy().into_owned(), "<folder>".to_string()));
+            [Some((f.path.clone(), a)), folder].into_iter().flatten()
+        })
+        .collect();
+    let scrub = |t: &str| -> String {
+        if opts.include_paths {
+            t.to_owned()
+        } else {
+            crate::privacy::scrub(t, &known)
+        }
+    };
+    let title = scrub(&d.summary.title);
+    d.summary.title = title;
+    for f in &mut d.files_detail {
+        f.error = f.error.as_deref().map(scrub);
+        if !opts.include_paths {
+            f.path = crate::privacy::alias(f.seq, &f.path);
+        }
+        if !opts.include_values {
+            for c in &mut f.changes {
+                c.before = None;
+                c.after = None;
+            }
+        }
+    }
+    Ok(d)
+}
+
+/// "Export Log": the redacted detail (see [`export_view`]) as JSON, written to a new file (never
+/// replacing one). The caller shows the user what it will contain first (ARCHITECTURE §12).
+pub fn export_log(
+    store: &Store,
+    op_id: &str,
+    out: &std::path::Path,
+    opts: ExportOptions,
+) -> Result<(), CoreError> {
     use std::io::Write;
-    let d = detail(store, op_id)?;
-    let text = serde_json::to_string_pretty(&d).map_err(|e| CoreError::Internal(e.to_string()))?;
+    let d = export_view(store, op_id, opts)?;
+    let mut v = serde_json::to_value(&d).map_err(|e| CoreError::Internal(e.to_string()))?;
+    v["redacted"] = serde_json::json!({
+        "paths": !opts.include_paths,
+        "values": !opts.include_values,
+    });
+    let text = serde_json::to_string_pretty(&v).map_err(|e| CoreError::Internal(e.to_string()))?;
     let mut f = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

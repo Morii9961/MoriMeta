@@ -41,7 +41,9 @@
 //!   plan-retry OP_ID --out PLAN.json   the failed and skipped files of an Operation again
 //!   plan-again OP_ID --out PLAN.json   the same edit, read afresh, for the failed, skipped and
 //!                             conflicting files of an Operation
-//!   export-log OP_ID --out FILE.json   the Operation with field-level before/after (a new file)
+//!   export-log OP_ID --out FILE.json [--include-paths] [--include-values]
+//!                             the Operation for a report (a new file); paths become asset#n.ext
+//!                             and field values are left out unless included
 //!   backups [--now-ms MS]     backup usage, protection and what the retention policy would prune
 //!   prune [--requested] OP_ID...   remove backups (the policy's choice, or the user's with
 //!                             --requested); unfinished Operations are always refused
@@ -783,8 +785,13 @@ fn main() -> ExitCode {
             }
             "export-log" => {
                 let out = take_opt(&mut args, "--out").ok_or("export-log OP_ID --out FILE.json")?;
+                let opts = history::ExportOptions {
+                    include_paths: take_flag(&mut args, "--include-paths"),
+                    include_values: take_flag(&mut args, "--include-values"),
+                };
                 let op = args.first().ok_or("export-log OP_ID --out FILE.json")?;
-                history::export_log(&store, op, Path::new(&out)).map_err(|e| e.to_string())?;
+                history::export_log(&store, op, Path::new(&out), opts)
+                    .map_err(|e| e.to_string())?;
                 println!("{}", json!({"written": out}));
                 Ok(ExitCode::SUCCESS)
             }

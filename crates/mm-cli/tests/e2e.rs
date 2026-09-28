@@ -3364,17 +3364,53 @@ fn history_summary_and_export_log() {
         (Some(true), Some(false))
     );
 
+    // by default no paths, no values, no user name (SECURITY_MODEL §8, T-14)
     let out = lab.dir.join("log.json");
     let o = lab.cli(&["export-log", &op, "--out", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
-    let log: Value = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+    let text = std::fs::read_to_string(&out).unwrap();
+    let log: Value = serde_json::from_str(&text).unwrap();
     let first = &log["files_detail"][0];
+    assert_eq!(first["path"], "asset#0.jpg", "{first}");
     assert_eq!(first["changes"][0]["field"], "creator", "{first}");
+    assert!(first["changes"][0]["after"].is_null(), "{first}");
+    assert!(!text.contains("Morii"), "a value was exported");
+    let folder = lab.photos[0]
+        .parent()
+        .unwrap()
+        .to_string_lossy()
+        .to_lowercase();
+    assert!(
+        !text.to_lowercase().contains(&folder),
+        "a path was exported"
+    );
+    if let Some(user) = std::env::var_os("USERNAME") {
+        let u = user.to_string_lossy().to_lowercase();
+        assert!(
+            !text.to_lowercase().contains(&format!("users\\\\{u}")), // JSON-escaped separator
+            "the user name was exported"
+        );
+    }
+    assert_eq!(log["redacted"]["paths"], true);
+    // the user may include them
+    let full = lab.dir.join("full.json");
+    let o = lab.cli(&[
+        "export-log",
+        &op,
+        "--out",
+        full.to_str().unwrap(),
+        "--include-paths",
+        "--include-values",
+    ]);
+    assert!(o.status.success());
+    let log: Value = serde_json::from_slice(&std::fs::read(&full).unwrap()).unwrap();
+    let first = &log["files_detail"][0];
     assert_eq!(
         first["changes"][0]["after"],
         serde_json::json!(["Morii"]),
         "{first}"
     );
+    assert!(first["path"].as_str().unwrap().ends_with("Writer.jpg"));
     assert!(
         !lab.cli(&["export-log", &op, "--out", out.to_str().unwrap()])
             .status
