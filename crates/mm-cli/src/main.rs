@@ -12,7 +12,7 @@
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   inspect FILE              Inspector data: fields with sources, every tag (and the sidecar's)
 //!   attention [--files-from UTF8_FILE] FILE...   "Needs attention": read-only, conflicts, cloud
-//!                             placeholders, darktable sidecars, C2PA, links, unreadable (indexes)
+//!                             placeholders and files, darktable sidecars, C2PA, links, unreadable
 //!   aggregate [--files-from UTF8_FILE] FILE...   per field, which values how many files hold
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-time (--absolute "YYYY:MM:DD HH:MM:SS" | --shift [+|-][Nd]HH:MM:SS

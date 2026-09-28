@@ -14,10 +14,10 @@ use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, GetLastError, HANDLE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FileIdInfo, FlushFileBuffers, GetDiskFreeSpaceExW, GetDriveTypeW,
-    GetFileInformationByHandle, GetFileInformationByHandleEx, GetVolumePathNameW,
-    MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_ID_INFO, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo, FlushFileBuffers,
+    GetDiskFreeSpaceExW, GetDriveTypeW, GetFileInformationByHandle, GetFileInformationByHandleEx,
+    GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -121,14 +121,84 @@ pub fn open_lock(p: &Path) -> io::Result<File> {
         .open(p)
 }
 
+/// Reparse tag of the file behind `f`; 0 when it is not a reparse point.
+pub fn reparse_tag(f: &File) -> io::Result<u32> {
+    // SAFETY: `info` is a properly sized, writable FILE_ATTRIBUTE_TAG_INFO; the handle is valid.
+    unsafe {
+        let mut info: FILE_ATTRIBUTE_TAG_INFO = std::mem::zeroed();
+        if GetFileInformationByHandleEx(
+            f.as_raw_handle() as HANDLE,
+            FileAttributeTagInfo,
+            &mut info as *mut _ as *mut _,
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        ) == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            info.ReparseTag
+        } else {
+            0
+        })
+    }
+}
+
+/// What kind of reparse point a path is (SAFETY_MODEL §8.3, §8.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reparse {
+    None,
+    /// A name surrogate: symbolic link, junction and the like, pointing somewhere else.
+    Link,
+    /// A file of a cloud sync client (OneDrive and others using the Cloud Files API), downloaded
+    /// or not.
+    Cloud,
+    /// Any other kind (deduplication, compression overlays…).
+    Other,
+}
+
+impl Reparse {
+    pub fn of_tag(tag: u32) -> Reparse {
+        const NAME_SURROGATE: u32 = 0x2000_0000;
+        const CLOUD: u32 = 0x9000_001A; // IO_REPARSE_TAG_CLOUD; CLOUD_1..F set bits 12..15
+        match tag {
+            0 => Reparse::None,
+            t if t & 0xFFFF_0FFF == CLOUD => Reparse::Cloud,
+            t if t & NAME_SURROGATE != 0 => Reparse::Link,
+            _ => Reparse::Other,
+        }
+    }
+}
+
 /// Properties relevant to the pre-check (SAFETY_MODEL §4.1 step 2, §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Probe {
     pub read_only: bool,
     pub reparse_point: bool,
+    pub reparse: Reparse,
     pub cloud_placeholder: bool,
     pub links: u32,
     pub size: u64,
+}
+
+impl Probe {
+    /// Why this file is not written in place, if it is not (SAFETY_MODEL §8.1, §8.3, §8.6, §8.7).
+    pub fn refusal(&self) -> Option<&'static str> {
+        Some(if self.cloud_placeholder {
+            "cloud placeholder that is not downloaded"
+        } else if self.reparse == Reparse::Cloud {
+            "cloud file of a sync client: writing through the sync client is not verified yet"
+        } else if self.reparse == Reparse::Link {
+            "symbolic link or junction (not written)"
+        } else if self.reparse_point {
+            "reparse point (not written)"
+        } else if self.links > 1 {
+            "file has more than one hard link (not written)"
+        } else if self.read_only {
+            "read-only attribute is set (treated as locked by the user)"
+        } else {
+            return None;
+        })
+    }
 }
 
 pub fn probe(p: &Path) -> io::Result<Probe> {
@@ -138,6 +208,7 @@ pub fn probe(p: &Path) -> io::Result<Probe> {
     Ok(Probe {
         read_only: a & FILE_ATTRIBUTE_READONLY != 0,
         reparse_point: a & FILE_ATTRIBUTE_REPARSE_POINT != 0,
+        reparse: Reparse::of_tag(reparse_tag(&f)?),
         cloud_placeholder: a & (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_OFFLINE) != 0,
         links: link_count(&f)?,
         size: m.len(),
@@ -926,5 +997,55 @@ mod tests {
             sibling_name(Path::new(r"C:\p\IMG_1.JPG"), ".mmbak-", "ab"),
             PathBuf::from(r"C:\p\IMG_1.mmbak-ab.JPG")
         );
+    }
+}
+
+#[cfg(test)]
+mod reparse_tests {
+    use super::*;
+
+    #[test]
+    fn reparse_tags_are_classified() {
+        assert_eq!(Reparse::of_tag(0), Reparse::None);
+        assert_eq!(Reparse::of_tag(0xA000_000C), Reparse::Link); // symbolic link
+        assert_eq!(Reparse::of_tag(0xA000_0003), Reparse::Link); // junction
+        assert_eq!(Reparse::of_tag(0x9000_001A), Reparse::Cloud);
+        assert_eq!(Reparse::of_tag(0x9000_601A), Reparse::Cloud); // CLOUD_6 (OneDrive)
+        assert_eq!(Reparse::of_tag(0x8000_0013), Reparse::Other); // deduplication
+    }
+
+    /// A junction is probed as a link and refused as one; a placeholder is refused as a
+    /// placeholder before anything else, a read-only file last.
+    #[test]
+    fn probe_names_the_reason() {
+        let d = std::env::temp_dir().join(format!("mm-reparse-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("target")).unwrap();
+        let j = d.join("j");
+        let ok = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&j)
+            .arg(d.join("target"))
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J failed");
+        let pr = probe(&j).unwrap();
+        assert_eq!(pr.reparse, Reparse::Link);
+        assert_eq!(
+            pr.refusal(),
+            Some("symbolic link or junction (not written)")
+        );
+        let f = d.join("a.jpg");
+        std::fs::write(&f, b"a").unwrap();
+        let mut pr = probe(&f).unwrap();
+        assert_eq!((pr.reparse, pr.refusal()), (Reparse::None, None));
+        pr.read_only = true;
+        assert!(pr.refusal().unwrap().starts_with("read-only"));
+        pr.cloud_placeholder = true;
+        assert!(pr.refusal().unwrap().starts_with("cloud placeholder"));
+        std::fs::remove_dir(&j).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

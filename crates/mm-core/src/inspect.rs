@@ -146,6 +146,8 @@ pub struct Attention {
     /// Creator or copyright locations that disagree.
     pub conflicts: Vec<usize>,
     pub cloud_placeholders: Vec<usize>,
+    /// Downloaded files of a cloud sync client: not written in this build (SAFETY_MODEL §8.3).
+    pub cloud_files: Vec<usize>,
     /// RAWs with a darktable `<name>.<ext>.xmp` sidecar (read-only for MoriMeta).
     pub darktable_sidecars: Vec<usize>,
     pub c2pa: Vec<usize>,
@@ -189,8 +191,11 @@ pub fn attention(
                 if pr.read_only {
                     a.read_only.push(i);
                 }
-                if pr.links > 1 || pr.reparse_point {
-                    a.links.push(i);
+                match pr.reparse {
+                    mm_fs::Reparse::Cloud if !pr.cloud_placeholder => a.cloud_files.push(i),
+                    mm_fs::Reparse::Link | mm_fs::Reparse::Other => a.links.push(i),
+                    _ if pr.links > 1 => a.links.push(i),
+                    _ => {}
                 }
                 if pr.cloud_placeholder {
                     a.cloud_placeholders.push(i);

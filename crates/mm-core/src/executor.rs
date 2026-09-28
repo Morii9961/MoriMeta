@@ -978,11 +978,8 @@ fn one_file(
         ));
     }
     let probe = mm_fs::probe(&f.path)?;
-    if probe.read_only {
-        return Ok(Outcome::Skipped("read-only attribute is set".into()));
-    }
-    if probe.links > 1 || probe.reparse_point {
-        return Ok(Outcome::Skipped("hard link or reparse point".into()));
+    if let Some(why) = probe.refusal() {
+        return Ok(Outcome::Skipped(why.into()));
     }
     fault(opts, seq, 2)?;
     // 2 backup through the lock handle
@@ -1211,11 +1208,8 @@ fn move_to_backup_store(
         ));
     }
     let probe = mm_fs::probe(&f.path)?;
-    if probe.read_only {
-        return Ok(Outcome::Skipped("read-only attribute is set".into()));
-    }
-    if probe.links > 1 || probe.reparse_point {
-        return Ok(Outcome::Skipped("hard link or reparse point".into()));
+    if let Some(why) = probe.refusal() {
+        return Ok(Outcome::Skipped(why.into()));
     }
     fault(opts, seq, 2)?;
     lock.rewind()?;

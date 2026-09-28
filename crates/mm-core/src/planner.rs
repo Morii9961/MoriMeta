@@ -82,19 +82,10 @@ const PROGRESS_EVERY: usize = 100;
 /// Environment checks at planning time (SAFETY_MODEL §8). Repeated at execution.
 fn precheck(p: &std::path::Path) -> Result<(), String> {
     let pr = mm_fs::probe(p).map_err(|e| format!("cannot inspect file: {e}"))?;
-    if pr.reparse_point {
-        return Err("symbolic link or reparse point (not written)".into());
+    match pr.refusal() {
+        Some(why) => Err(why.into()),
+        None => Ok(()),
     }
-    if pr.links > 1 {
-        return Err("file has more than one hard link (not written)".into());
-    }
-    if pr.read_only {
-        return Err("read-only attribute is set (treated as locked by the user)".into());
-    }
-    if pr.cloud_placeholder {
-        return Err("cloud placeholder that is not downloaded".into());
-    }
-    Ok(())
 }
 
 pub fn plan_creator(
