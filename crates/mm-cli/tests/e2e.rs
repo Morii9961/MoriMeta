@@ -4732,7 +4732,24 @@ fn fixture_regression_through_every_write() {
             "6 preset remove gps",
             &["plan-preset", "--id", "builtin:Remove GPS"][..],
         ),
+        // the template again, with defaults: {creator} and {year} rendered per file
+        (
+            "7 preset copyright template with defaults",
+            &["plan-preset", "--id", "builtin:Copyright Template"][..],
+        ),
     ] {
+        if write.starts_with('7') {
+            let set = lab.cli(&[
+                "setting",
+                "metadata.copyright_template",
+                "© {creator|Morii} {year|2026}",
+            ]);
+            assert!(
+                set.status.success(),
+                "{}",
+                String::from_utf8_lossy(&set.stdout)
+            );
+        }
         let (p, pj) = lab.plan_on(cmd, &refs, &format!("w{}.json", &write[..1]));
         for e in pj["entries"].as_array().unwrap() {
             let st = &e["status"];
