@@ -4723,6 +4723,15 @@ fn fixture_regression_through_every_write() {
         ),
         ("3 gps", &["plan-gps", "--set", "35.6586,139.7454,40"][..]),
         ("4 time", &["plan-time", "--shift", "+01:00:00"][..]),
+        // the built-in Presets: rules and per-file templates over every odd file
+        (
+            "5 preset copyright template",
+            &["plan-preset", "--id", "builtin:Copyright Template"][..],
+        ),
+        (
+            "6 preset remove gps",
+            &["plan-preset", "--id", "builtin:Remove GPS"][..],
+        ),
     ] {
         let (p, pj) = lab.plan_on(cmd, &refs, &format!("w{}.json", &write[..1]));
         for e in pj["entries"].as_array().unwrap() {
@@ -4737,12 +4746,27 @@ fn fixture_regression_through_every_write() {
                 .or_default()
                 .insert(write.to_owned(), s);
         }
-        let a = lab.cli(&["apply", p.to_str().unwrap()]);
+        // one worker: files finish in plan order, so the circuit breaker (counted in completion
+        // order) stops at the same place on every machine
+        let a = lab.cli(&["apply", p.to_str().unwrap(), "--workers", "1"]);
         let r = Lab::json(&a);
         if let Some(op) = r["op_id"].as_str() {
-            for f in r["files"].as_array().unwrap() {
+            let mut how = r["status"].as_str().unwrap().to_owned();
+            if r["status"] == "cancelled" {
+                // paused (the breaker): the files it held back are tried by resume
+                how = format!("{how} ({}); resumed", r["note"].as_str().unwrap_or("?"));
+                let res = lab.cli(&["resume", op, "--workers", "1"]);
+                assert!(
+                    res.status.code().is_some_and(|c| c == 0 || c == 3),
+                    "{write}"
+                );
+            }
+            got.entry("_operations".into())
+                .or_default()
+                .insert(write.to_owned(), how);
+            for f in lab.show(op)["files"].as_array().unwrap() {
                 let n = name(f["path"].as_str().unwrap());
-                let s = match (f["state"].as_str().unwrap(), f["reason"].as_str()) {
+                let s = match (f["state"].as_str().unwrap(), f["error"].as_str()) {
                     ("done", _) => "done".to_owned(),
                     (k, Some(why)) => format!("{k}: {}", scrub(why)),
                     (k, None) => k.to_owned(),
