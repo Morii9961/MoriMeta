@@ -4238,3 +4238,218 @@ fn settings_are_listed_checked_and_used() {
     assert!(log.contains("workers=\"2\""), "{log}");
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// The IO-error and simulated disk-full injections at the first and the last file (the fault
+/// matrix had them at file 2 only): same per-file outcomes, and every case ends byte-identical.
+#[test]
+fn io_errors_and_disk_full_at_the_first_and_last_file() {
+    let pkg = require!();
+    let last = SAMPLES.len() as u64 - 1;
+    for seq in [0, last] {
+        for step in [1u8, 4, 7, 8, 10] {
+            for kind in ["fail", "disk-full"] {
+                let case = format!("{kind} at {seq}:{step}");
+                let lab = Lab::new(&format!("edge-{kind}-{seq}-{step}"), &pkg);
+                let plan = lab.plan("Morii", "p.json");
+                let flag = format!("--{kind}-at");
+                let at = format!("{seq}:{step}");
+                let o = lab.cli_env(
+                    &[
+                        "apply",
+                        plan.to_str().unwrap(),
+                        &flag,
+                        &at,
+                        "--workers",
+                        "1",
+                    ],
+                    true,
+                );
+                let r = Lab::json(&o);
+                let op = r["op_id"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{case}: {r}"))
+                    .to_owned();
+                let committed = step >= 8;
+                for s in 0..=last {
+                    let want = match (s.cmp(&seq), kind) {
+                        (std::cmp::Ordering::Less, _) => "done",
+                        (std::cmp::Ordering::Equal, _) if committed => "done",
+                        (std::cmp::Ordering::Equal, "fail") => "failed",
+                        (_, "fail") => "done",
+                        _ => "cancelled",
+                    };
+                    assert_eq!(state_of(&r, s), want, "{case} file {s}: {r}");
+                }
+                if !committed {
+                    let p = &lab.photos[seq as usize];
+                    assert_eq!(blake(p).as_deref(), Some(lab.truth[p].as_str()), "{case}");
+                }
+                // a disk-full stop with no file left to start is not reported as paused
+                let status = match kind {
+                    "fail" if committed => "completed",
+                    "fail" => "completed_with_errors",
+                    _ if committed && seq == last => "completed",
+                    _ => "cancelled",
+                };
+                assert_eq!(r["status"], status, "{case}: {r}");
+                assert_eq!(r["note"].is_string(), status == "cancelled", "{case}: {r}");
+                assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+                assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+                if kind == "disk-full" {
+                    let res = lab.cli(&["resume", &op]);
+                    assert!(
+                        res.status.success(),
+                        "{case}: {}",
+                        String::from_utf8_lossy(&res.stdout)
+                    );
+                    assert!(
+                        creators(&lab)
+                            .iter()
+                            .all(|c| c == &serde_json::json!(["Morii"])),
+                        "{case}"
+                    );
+                }
+                lab.undo(&op);
+                lab.assert_all_original();
+                assert!(lab.leftovers().is_empty(), "{case}");
+                let _ = std::fs::remove_dir_all(&lab.dir);
+            }
+        }
+    }
+}
+
+/// SAFETY_MODEL 搂8.13 on the Undo path: a simulated ERROR_DISK_FULL at every fault point pauses
+/// the Undo Operation; each file is its applied or its original content; resume finishes the Undo.
+#[test]
+fn disk_full_during_undo_pauses_and_resume_completes_it() {
+    let pkg = require!();
+    for step in 1u8..=10 {
+        let case = format!("undo disk full at 2:{step}");
+        let lab = Lab::new(&format!("undo-full-{step}"), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let op = lab.apply_ok(&plan);
+        let applied = lab.snapshot();
+        let u = lab.dir.join("undo.json");
+        assert!(
+            lab.cli(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+                .status
+                .success()
+        );
+        let o = lab.cli_env(
+            &[
+                "apply",
+                u.to_str().unwrap(),
+                "--disk-full-at",
+                &format!("2:{step}"),
+                "--workers",
+                "1",
+            ],
+            true,
+        );
+        assert_eq!(o.status.code(), Some(3), "{case}");
+        let r = Lab::json(&o);
+        let undo_op = r["op_id"].as_str().unwrap().to_owned();
+        assert_ne!(undo_op, op, "{case}");
+        assert_eq!(r["status"], "cancelled", "{case}: {r}");
+        for seq in 0..SAMPLES.len() as u64 {
+            let want = match seq {
+                0 | 1 => "done",
+                2 if step >= 8 => "done",
+                _ => "cancelled",
+            };
+            assert_eq!(state_of(&r, seq), want, "{case} file {seq}: {r}");
+        }
+        for (i, p) in lab.photos.iter().enumerate().skip(2) {
+            if i > 2 || step <= 7 {
+                assert_eq!(blake(p).as_deref(), Some(applied[p].as_str()), "{case}");
+            }
+        }
+        lab.assert_recovered_of(&undo_op, &applied);
+        let res = lab.cli(&["resume", &undo_op]);
+        assert!(
+            res.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&res.stdout)
+        );
+        lab.assert_all_original();
+        assert!(lab.leftovers().is_empty(), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// Updating an existing sidecar (a NEF's second Operation): crash and IO error at every fault
+/// point. The sidecar only ever holds the first or the second Operation's complete content;
+/// recovery, resume and both undos return to no sidecar, and the NEF is never touched.
+#[test]
+fn nef_sidecar_update_crashes_and_io_errors_recover() {
+    let pkg = require!();
+    for (kind, step) in (1u8..=10)
+        .map(|s| ("crash", s))
+        .chain((1u8..=10).map(|s| ("fail", s)))
+    {
+        let case = format!("sidecar update {kind} at 0:{step}");
+        let lab = Lab::new(&format!("nef-upd-{kind}-{step}"), &pkg);
+        let nef = lab.add_nef("DSC_0001.NEF");
+        let xmp = nef.with_file_name("DSC_0001.xmp");
+        let (p1, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "c1.json");
+        let op1 = lab.apply_ok(&p1);
+        let first = blake(&xmp).expect("sidecar created");
+        let (p2, _) = lab.plan_on(&["plan-creator", "--set", "Someone"], &[&nef], "c2.json");
+        let flag = if kind == "crash" {
+            "--crash-at"
+        } else {
+            "--fail-at"
+        };
+        let o = lab.cli_env(
+            &["apply", p2.to_str().unwrap(), flag, &format!("0:{step}")],
+            true,
+        );
+        let op2 = lab.last_op();
+        assert_ne!(op2, op1, "{case}: not registered");
+        // true: the complete second sidecar; false: still the first one; anything else fails
+        let second = |when: &str| -> bool {
+            if blake(&xmp).as_deref() == Some(first.as_str()) {
+                return false;
+            }
+            assert_eq!(
+                lab.xmp_tags(&xmp).get("XMP-dc:Creator"),
+                Some(&serde_json::json!("Someone")),
+                "{case} {when}: neither the first nor the complete second sidecar"
+            );
+            true
+        };
+        if kind == "crash" {
+            assert_eq!(o.status.code(), Some(77), "{case}");
+            if xmp.exists() {
+                second("before recovery");
+            }
+            assert!(lab.cli(&["recover"]).status.success(), "{case}");
+            second("after recovery");
+            assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+            assert!(lab.cli(&["fsck", &op2]).status.success(), "{case}");
+            let res = lab.cli(&["resume", &op2]);
+            assert!(
+                res.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&res.stdout)
+            );
+            assert!(second("after resume"), "{case}");
+        } else {
+            let r = Lab::json(&o);
+            assert_ne!(r["status"], "running", "{case}: {r}");
+            let want = if step <= 7 { "failed" } else { "done" };
+            assert_eq!(state_of(&r, 0), want, "{case}: {r}");
+            assert_eq!(second("after the error"), step >= 8, "{case}");
+            assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+            assert!(lab.cli(&["fsck", &op2]).status.success(), "{case}");
+        }
+        if blake(&xmp).as_deref() != Some(first.as_str()) {
+            lab.undo(&op2);
+        }
+        assert_eq!(blake(&xmp).as_deref(), Some(first.as_str()), "{case}");
+        lab.undo(&op1);
+        assert!(!xmp.exists(), "{case}");
+        assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}

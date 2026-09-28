@@ -38,6 +38,9 @@
 | Undo | 随机终止 | 50–750 ms | 12 | 通过（第二轮新增） |
 | Undo（重建已删除文件，G-6） | 进程终止、IO 错误 | 故障点 1、5–10 × 文件 2 | 14 | 通过（第三轮新增）：原路径始终只为“不存在”或完整原件 |
 | Undo（移入备份库，撤销一次重建） | 进程终止、IO 错误 | 故障点 1–4、7–10 × 文件 2 | 16 | 通过（第四轮新增）：内容始终在原路径、bak 名或备份库之一，最终只在原路径或备份库 |
+| Apply | IO 错误、磁盘满（模拟） | 故障点 1、4、7、8、10 × 首个文件（0）与末个文件（7） | 20 | 通过（第六轮新增）；**发现并修正一处状态报告问题**（见下） |
+| Undo | 磁盘满（模拟） | 故障点 1–10 × 文件 2 | 10 | 通过（第六轮新增）：撤销 Operation 暂停，每个文件为执行后或原始内容，`resume` 完成撤销 |
+| Apply（更新已有 NEF sidecar） | 进程终止、IO 错误 | 故障点 1–10 × 唯一文件 | 20 | 通过（第六轮新增）：sidecar 始终为第一次或完整的第二次内容；两次撤销后 sidecar 不存在，NEF 逐字节不变 |
 
 `cargo test --workspace`（2026-09-27，本机，`ReplaceFileW` 可用）：第一轮 62 个、第二轮 66 个测试通过、0 失败；两次运行中 `real_disk_full_on_small_volume` 均因未设置 `MM_E2E_SMALL_VOLUME` 而跳过。第一轮之后在 64 MB 测试卷上以 `MM_E2E_SMALL_VOLUME` 单独运行该测试：通过（两个场景）；该卷随后已卸载，第二轮未重跑。`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
 
@@ -56,6 +59,7 @@
 - **磁盘满（模拟）**：按 SAFETY_MODEL §8.13 实现为暂停——当前文件经判定表结算：提交前为 `cancelled`（原内容不变，`resume` 会重试），提交后为 done；其后所有文件 `cancelled`，Operation 状态 `cancelled`，说明为 `paused: a volume is full; free space, then resume`。按此前的代码，磁盘满只会使文件逐个 failed 直到熔断，且 failed 文件不会被 `resume` 重试（代码核对，未单独测试）。
 - **Undo 路径**（Restore 分支）的崩溃、IO 错误与随机终止与 Apply 路径同样恢复；Undo 部分失败后，再次对原 Operation 规划 Undo 只恢复仍被修改的文件。
 - **`resume` 的 Journal 写失败（缺陷，已修正）**：`resume` 原先先把待重试文件逐个改回 `planned`，最后才把 Operation 设为 `running`。第 3 个重新登记写入失败时，文件 2、3 停在 `planned`，而 Operation 仍为 `cancelled`：恢复不检查已结束的 Operation，`resume` 只重试 `not_started`/`cancelled`，这两个文件从此无法重试（照片未被触碰，没有数据风险）。改为先设 `running` 再重新登记；失败后 Operation 对恢复可见，`recover` 将其归为未开始，`resume` 完成。回归测试 `resume_journal_failure_leaves_operation_recoverable`。
+- **最后一个文件提交后才停止（第六轮，已修正）**：磁盘满发生在末个文件的提交之后（故障点 8–10）时，所有文件都已完成，但 Operation 仍记为 `cancelled`，说明为"卷已满，释放空间后继续"，而此时没有可继续的文件。用户取消与失败熔断在同一边界也会如此。改为：只有仍有未开始或已取消的文件时才记为 `cancelled` 并附说明；否则按文件结果记为 `completed` 或 `completed_with_errors`。回归断言在 e2e `io_errors_and_disk_full_at_the_first_and_last_file`。
 - **恢复自身的 Journal 写失败**：合成 `ReplaceFileW` 中途终止的状态（原路径不存在、原内容在登记的 bak 名下），恢复已把 bak 移回原路径后记录失败。磁盘动作已发生而记录缺失，再次 `recover` 按磁盘哈希判定为未开始，不重复动作也不丢数据。
 - **manifest.json 写入失败**（真实文件系统拒绝：在临时名处放一个目录，Win32 5）：开始时失败 → Operation 已登记但未触碰任何文件，`recover` 归为未开始；结束时失败 → 所有文件已完成，Journal 状态为 `completed`，`apply` 仍报错；恢复时失败 → Journal 已记为 `recovered`。三者都不引入未记录的不可逆动作。**但 manifest 会停留在失败前的内容**：手动核对结束时失败的情形，Journal 为 `completed`，manifest 仍是开始时的版本（状态 `running`、每个文件 `planned`、无 H0），之后的 `recover` 也不会重写它。
 
@@ -78,6 +82,6 @@
 | 真实磁盘满的其他位置 | 只在两个填充时机（2:4 照片卷、2:2 数据卷）各做一次；未在提交后、Undo 中、或卷“接近满”而非完全满时测试 | 需要再次挂载测试卷（管理员运行 `small_volume.ps1`） |
 | `SQLITE_IOERR` 形式的 Journal 失败 | 未产生 | 需要能注入存储 IO 错误的环境 |
 | `manifest.jsonl` 追加失败 | 2026-09-28 已单独注入（模拟 IO 错误，`--journal-fail-at log:N`）：登记期间与执行中第 0、3、12、20、33 次追加，单次或持续失败。单次失败按 Journal 与磁盘就地结算该文件（提交前 → 失败、原文件不变；提交后且磁盘确认 → 完成并保留错误说明），Operation 继续；持续失败使 Operation 停在 running，恢复后继续、撤销，全部逐字节还原 | 通过（e2e `manifest_log_append_failures_recover`） |
-| 故障点位置 | 每类注入只在 1–2 个文件序号上做 | 可在本地扩大 |
+| 故障点位置 | IO 错误与模拟磁盘满已覆盖首个、中间（2）、末个文件；进程终止与 Journal 写失败仍只在 1–2 个文件序号上做 | 可在本地扩大 |
 | 规模 | 每例 8 个小文件；SAFETY_MODEL §12 要求 5,000 文件规模重做 | 真实语料（D-13）或合成规模测试 |
 | 断电、exFAT/FAT32、云同步目录、真实 NAS | 未测（G-3） | 虚拟机、介质、同步目录、NAS（D-13） |

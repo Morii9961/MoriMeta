@@ -652,8 +652,13 @@ fn run(
         return Err(e);
     }
     let store = journal.0.into_inner().unwrap_or_else(|p| p.into_inner());
-    let tripped = sched.tripped;
     let files = store.files(op_id)?;
+    // a stop (disk full, Cancel, the breaker) that came when no file was left to start leaves
+    // nothing to resume: the Operation is reported as what it is, not as paused
+    let resumable = files
+        .iter()
+        .any(|f| matches!(f.state, FileState::Cancelled | FileState::NotStarted));
+    let tripped = sched.tripped.filter(|_| resumable);
     let status = if tripped.is_some() {
         OpStatus::Cancelled
     } else if files.iter().all(|f| f.state == FileState::Done) {
