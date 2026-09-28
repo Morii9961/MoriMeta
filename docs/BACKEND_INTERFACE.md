@@ -44,7 +44,8 @@
 | 重试失败 | `history::retry_plan` | `plan-retry` | 仍为只读的文件保持排除 |
 | 重新规划 | `history::replan` | `plan-again` | 按 Plan 来源对失败、跳过、冲突的文件重新读取 |
 | 恢复备份到文件夹 | `history::restore_backups_to` | `restore-to` | 新文件，不覆盖，核对哈希 |
-| `recovery_status` | `recovery::summary` | `recovery-status` | 启动时先 `recovery::recover` 与 `retention::finish_interrupted` |
+| 启动 | `service::startup` | —（`recover`） | 崩溃恢复、完成中断的清理、恢复摘要、提权状态与备份位置问题；提权运行时不做恢复（它也会写入） |
+| `recovery_status` | `recovery::summary` | `recovery-status` | 恢复对话框的数据 |
 | `recovery_resolve` | `recovery::resolve_keep`、`dismiss` | `resolve`、`dismiss` | 需要处理的文件保持现状；保持现状并关闭 |
 
 ## 5. Preset、设置、备份

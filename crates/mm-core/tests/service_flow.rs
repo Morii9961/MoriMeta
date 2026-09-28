@@ -688,3 +688,43 @@ fn read_only_formats_are_shown_not_written() {
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }
+
+/// SAFETY_MODEL §10 launch sequence: an Operation stopped by a lasting journal failure is
+/// recovered at startup, and the Recovery dialog data lists it with its remaining files.
+#[test]
+fn startup_recovers_and_reports_what_needs_a_decision() {
+    let Some(mut lab) = Lab::new("startup", 3) else {
+        return;
+    };
+    let plan = lab.plan_creator();
+    let second = plan.executable().nth(1).unwrap().seq;
+    lab.store.arm_write_fault(mm_store::WriteFault {
+        target: mm_store::WriteTarget::File {
+            seq: second,
+            state: FileState::BackedUp,
+        },
+        persistent: true,
+    });
+    let r = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &plan,
+        &ExecOptions::default(),
+    );
+    assert!(r.is_err(), "the journal failed for good");
+    // a new process: the old connection (and the lock it holds) goes away, the database stays
+    let spare = Store::open(&lab.dir.join("spare")).unwrap();
+    drop(std::mem::replace(&mut lab.store, spare));
+    let mut store = Store::open(&lab.dir.join("data")).unwrap();
+    let s = mm_core::service::startup(&mut store).unwrap();
+    if s.elevated {
+        eprintln!("SKIP: elevated (CI runner); recovery waits for a normal launch");
+    } else {
+        assert_eq!(s.recovered.len(), 1, "{s:?}");
+        assert_eq!(s.needs_decision.len(), 1, "{s:?}");
+        assert!(s.needs_decision[0].remaining >= 1, "{s:?}");
+        assert!(s.backup_problem.is_none());
+    }
+    drop(store);
+    lab.close();
+}

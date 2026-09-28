@@ -441,6 +441,45 @@ impl PlanBook {
     }
 }
 
+/// What the app learns at launch, before any write (SAFETY_MODEL §10, INTERACTION_SPEC §13).
+#[derive(Debug)]
+pub struct Startup {
+    /// Files settled by crash recovery, per Operation.
+    pub recovered: Vec<crate::recovery::RecoveryReport>,
+    /// Prunes that were interrupted and are now finished.
+    pub prunes_finished: Vec<String>,
+    /// Operations that still ask for a decision (the Recovery dialog).
+    pub needs_decision: Vec<crate::recovery::RecoverySummary>,
+    /// Running with administrator rights: every write is refused.
+    pub elevated: bool,
+    /// The backup location is not usable: every write is refused until it is.
+    pub backup_problem: Option<String>,
+}
+
+/// Launch sequence: crash recovery, unfinished prunes, then what the user must decide. Recovery
+/// itself writes (it may put an original back from its bak name), so it is skipped when running
+/// elevated; it then happens at the next normal launch.
+pub fn startup(store: &mut Store) -> Result<Startup, ServiceError> {
+    let elevated = mm_fs::is_elevated().unwrap_or(true);
+    let (recovered, prunes_finished) = if elevated {
+        (vec![], vec![])
+    } else {
+        (
+            crate::recovery::recover(store)?,
+            crate::retention::finish_interrupted(store)?,
+        )
+    };
+    Ok(Startup {
+        recovered,
+        prunes_finished,
+        needs_decision: crate::recovery::summary(store)?,
+        elevated,
+        backup_problem: crate::executor::check_backup_location(store)
+            .err()
+            .map(|e| e.to_string()),
+    })
+}
+
 /// "Clear read-only attribute…" (INTERACTION_SPEC §7, SAFETY_MODEL §8.1): MoriMeta never clears
 /// the attribute by itself; this is the user's explicit, separate action, taken under the write
 /// gate and written to the log. Returns whether the attribute was set.
