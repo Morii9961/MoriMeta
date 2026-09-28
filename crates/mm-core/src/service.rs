@@ -33,6 +33,9 @@ pub enum ServiceError {
     Elevated,
     /// Another MoriMeta (the app or `mm-cli`) holds this data directory (SAFETY_MODEL §8.17).
     AnotherInstance,
+    /// Writing is disabled for this run, e.g. the bundled ExifTool is not as shipped
+    /// (SECURITY_MODEL §5); the text says why.
+    WritesDisabled(String),
     Core(CoreError),
 }
 
@@ -605,6 +608,8 @@ pub fn clear_read_only(gate: &OperationGate, path: &Path) -> Result<bool, Servic
 struct GateState {
     writers: usize,
     exclusive: bool,
+    /// Why every write is refused from now on in this process.
+    refused: Option<String>,
 }
 
 /// Shared by writes (Apply, Undo, Recovery, Export) and the update installer (ARCHITECTURE
@@ -634,11 +639,20 @@ impl OperationGate {
         }
     }
 
+    /// Refuse every later write of this process (an integrity check failed). Installing an update
+    /// stays possible: it is the way out.
+    pub fn refuse_writes(&self, why: impl Into<String>) {
+        self.lock().refused = Some(why.into());
+    }
+
     pub fn write(&self) -> Result<WritePermit<'_>, ServiceError> {
         if self.elevated {
             return Err(ServiceError::Elevated);
         }
         let mut s = self.lock();
+        if let Some(why) = &s.refused {
+            return Err(ServiceError::WritesDisabled(why.clone()));
+        }
         if s.exclusive {
             return Err(ServiceError::Busy("an update is being installed".into()));
         }
@@ -682,6 +696,16 @@ impl Drop for ExclusivePermit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refused_writes_stay_refused() {
+        let gate = OperationGate::default();
+        drop(gate.write().unwrap());
+        gate.refuse_writes("ExifTool changed");
+        assert!(
+            matches!(gate.write(), Err(ServiceError::WritesDisabled(w)) if w == "ExifTool changed")
+        );
+    }
 
     #[test]
     fn one_instance_per_data_directory() {

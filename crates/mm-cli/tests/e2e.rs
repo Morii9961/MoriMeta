@@ -4799,3 +4799,91 @@ fn google_hdr_plus_jpeg_is_written_and_a_real_change_still_refused() {
     assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SECURITY_MODEL §5: the pinned package matches the manifest made from the official download
+/// (`research/exiftool-<version>.manifest.json`, every file), and a package whose key file was
+/// changed refuses every write before ExifTool runs.
+#[test]
+fn exiftool_package_integrity() {
+    let pkg = require!();
+    let lab = Lab::new("integrity", &pkg);
+    let lock: Value = serde_json::from_str(
+        &std::fs::read_to_string(repo().join("research/exiftool.lock.json")).unwrap(),
+    )
+    .unwrap();
+    let v = lock["version"].as_str().unwrap();
+    let manifest = repo().join(format!("research/exiftool-{v}.manifest.json"));
+    let m: Value = serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+    assert_eq!(m["version"], v);
+    let run = |pkg: &Path, args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+            .arg("--data")
+            .arg(&lab.data)
+            .arg("--exiftool")
+            .arg(pkg)
+            .args(args)
+            .output()
+            .unwrap();
+        (o.status.code(), Lab::json(&o))
+    };
+    let (code, r) = run(
+        &pkg,
+        &[
+            "exiftool-check",
+            "--full",
+            "--manifest",
+            manifest.to_str().unwrap(),
+        ],
+    );
+    assert_eq!((code, &r["intact"]), (Some(0), &Value::Bool(true)), "{r}");
+
+    // a small package with its manifest inside: writes go ahead only while the key files match
+    let fake = lab.dir.join("fake-package");
+    for rel in mm_core::integrity::KEY_FILES {
+        let f = fake.join(rel);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, rel.as_bytes()).unwrap();
+    }
+    let made = lab.dir.join("made.manifest");
+    let (code, _) = run(
+        &fake,
+        &[
+            "exiftool-manifest",
+            fake.to_str().unwrap(),
+            "--version",
+            "test",
+            "--out",
+            made.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code, Some(0));
+    std::fs::copy(&made, fake.join(mm_core::integrity::MANIFEST_NAME)).unwrap();
+    let missing_plan = lab.dir.join("no-such-plan.json");
+    let (_, r) = run(&fake, &["apply", missing_plan.to_str().unwrap()]);
+    assert!(
+        !r["error"].as_str().unwrap().contains("not as shipped"),
+        "intact package refused: {r}"
+    );
+    std::fs::write(fake.join("exiftool_files/perl532.dll"), b"patched").unwrap();
+    let (code, r) = run(&fake, &["exiftool-check"]);
+    assert_eq!(code, Some(3), "{r}");
+    assert!(
+        r["problem"]
+            .as_str()
+            .unwrap()
+            .contains("changed: exiftool_files/perl532.dll"),
+        "{r}"
+    );
+    for cmd in [
+        &["apply", missing_plan.to_str().unwrap()][..],
+        &["recover"][..],
+    ] {
+        let (code, r) = run(&fake, cmd);
+        assert_eq!(code, Some(1), "{cmd:?}: {r}");
+        assert!(
+            r["error"].as_str().unwrap().contains("writing is disabled"),
+            "{cmd:?}: {r}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

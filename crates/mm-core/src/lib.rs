@@ -9,6 +9,7 @@ pub mod executor;
 pub mod fsck;
 pub mod history;
 pub mod inspect;
+pub mod integrity;
 pub mod log;
 pub mod planner;
 pub mod preflight;

@@ -56,6 +56,7 @@
 | `settings_*` | `settings::KEYS`、`get`、`set` | `settings`、`setting` | 已知键、默认值与校验；未知键拒绝 |
 | `backup_usage` / `prune_plan` | `retention::usage`、`prune_plan`、`prune` | `backups`、`prune`、`keep` | 保留策略来自设置；未完成的 Operation 从不清理 |
 | 清除只读属性 | `service::clear_read_only` | `clear-readonly` | 仅用户显式操作，写入日志 |
+| ExifTool 完整性 | `integrity::check_package`（`Scope::Key` 启动前、`Scope::All` 之后在后台）；失败时 `OperationGate::refuse_writes` | `exiftool-check`、`exiftool-manifest` | SECURITY_MODEL §5；不一致时禁止写入并提示重新安装 |
 | 日志 | `log::init`、`log::set_debug_since` | `debug-log` | 每日文件，7 天 / 50 MB；调试日志 24 小时 |
 
 ## 6. 尚缺

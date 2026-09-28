@@ -93,7 +93,7 @@
 
 白名单在构建时由脚本对照 ExifTool `-listw` 生成并与禁止表求差，结果入库并在 ExifTool 升级时复核。
 
-实现状态（2026-09-28）：写入层兜底检查 `engine::check_writable`（System/File/Composite/MakerNotes 组、上表标签、除 `GPS:all` 外的整组写入一律拒绝），字段注册表之外的第二道防线；`-listw` 生成白名单尚未做。启动后校验 `-ver` 等于 `EXIFTOOL_VERSION`（测试保证与 `research/exiftool.lock.json` 一致），打包文件完整性校验待打包（§5）。提权检测 `mm_fs::is_elevated`：`OperationGate::for_this_process()` 与 `mm-cli` 的写命令在提权时拒绝写入（无法判断时同样拒绝）；`MM_ALLOW_ELEVATED=1` 只供 CI（runner 以提权运行）。
+实现状态（2026-09-28）：写入层兜底检查 `engine::check_writable`（System/File/Composite/MakerNotes 组、上表标签、除 `GPS:all` 外的整组写入一律拒绝），字段注册表之外的第二道防线；`-listw` 生成白名单尚未做。启动后校验 `-ver` 等于 `EXIFTOOL_VERSION`（测试保证与 `research/exiftool.lock.json` 一致）。打包文件完整性（§5）：校验机制已实现（2026-09-28，`mm-core::integrity`），打包步骤本身待 Phase 4。提权检测 `mm_fs::is_elevated`：`OperationGate::for_this_process()` 与 `mm-cli` 的写命令在提权时拒绝写入（无法判断时同样拒绝）；`MM_ALLOW_ELEVATED=1` 只供 CI（runner 以提权运行）。
 
 ---
 
@@ -104,6 +104,7 @@
 - 版本策略：锁定**包含全部已知安全修复的最新版本**（当前 13.59）；**安全更新 SLA**：ExifTool 发布安全更新后 14 天内发布 MoriMeta 补丁版本（需通过语料回归）。2026 年已有 13.50（macOS）、13.53（Windows）、13.54、13.59 四次安全更新 [F-06]，这是持续性义务。
 - 调用方式（ARCHITECTURE ADR-03，D-17）：官方 launcher（CC0）或直接调用包内 `perl.exe`（S0 验证行为等价）。两种方式对环境变量注入同样敏感，环境清空不可省略。
 - Perl 运行时：Windows 包内为 Perl 5.32.1 [F-30]，该主版本已不在 Perl 上游支持周期内。风险：ExifTool 解析不可信数据时依赖该运行时（如正则引擎）。选项：(a) 使用官方包（广泛测试，维护成本低）；(b) 自行以当前 Strawberry Perl 构建包（运行时更新，但需自行承担测试与兼容性）。**MVP 建议 (a)**，并跟踪上游是否更新运行时；列为残余风险 R-3。
+- 实现状态（2026-09-28）：`mm-core::integrity` 生成与校验清单（相对路径 → BLAKE3）。关键文件（`perl.exe`、`perl532.dll`、`exiftool.pl`、`lib/Image/ExifTool.pm` 与顶层启动器）在 ExifTool 首次运行前校验；全量校验另外报告 `exiftool_files/` 中清单之外的文件（Perl 从那里加载代码）。不一致时 `OperationGate::refuse_writes` 禁止本次运行的所有写入（更新安装仍可进行）。`research/exiftool-13.59.manifest.json` 由核对过 SHA-256 的官方 zip 生成（510 个文件）；`mm-cli` 在包内有 `exiftool.manifest` 时，写命令前先做关键文件校验。e2e：固定版本的包与清单一致；关键文件被改动的包拒绝写入。
 - 自定义 ExifTool 路径（v1 Advanced）：显示风险、校验版本 ≥ 锁定版本、不做完整性校验（用户自担），默认关闭。
 
 ---

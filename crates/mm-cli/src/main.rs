@@ -25,6 +25,10 @@
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
 //!   clear-readonly FILE       the user's explicit "Clear read-only attribute" (never automatic)
 //!   debug-log on | off         ExifTool commands (values cut) and timings in the log, for 24 hours
+//!   exiftool-manifest DIR --version V --out FILE   manifest of a package (build step, SECURITY_MODEL §5)
+//!   exiftool-check [--full] [--manifest FILE]   the package against its manifest (default
+//!                             <package>/exiftool.manifest); write commands check the key files
+//!                             first whenever the package has a manifest
 //!   settings                  every known setting with its value, default and meaning
 //!   setting KEY [VALUE | --clear]   checked before it is kept; unknown keys are refused   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3),
@@ -125,12 +129,15 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
-fn engine_config(g: &Global) -> Result<EngineConfig, String> {
-    let pkg = g
-        .exiftool
+fn package_dir(g: &Global) -> Result<PathBuf, String> {
+    g.exiftool
         .clone()
         .or_else(|| std::env::var_os("MM_EXIFTOOL_PKG").map(PathBuf::from))
-        .ok_or("no ExifTool package: pass --exiftool DIR or set MM_EXIFTOOL_PKG")?;
+        .ok_or_else(|| "no ExifTool package: pass --exiftool DIR or set MM_EXIFTOOL_PKG".into())
+}
+
+fn engine_config(g: &Global) -> Result<EngineConfig, String> {
+    let pkg = package_dir(g)?;
     let run = g.data.join("run");
     let cwd = run.join("exiftool-cwd");
     let temp = run.join("tmp");
@@ -438,6 +445,18 @@ fn main() -> ExitCode {
     if g.workers == 0 {
         g.workers = mm_core::settings::workers(&store);
     }
+    // SECURITY_MODEL §5: a package that has a manifest must match it (key files) before a write
+    if WRITES.contains(&cmd.as_str())
+        && let Ok(pkg) = package_dir(&g)
+    {
+        let manifest = pkg.join(mm_core::integrity::MANIFEST_NAME);
+        if manifest.exists()
+            && let Err(e) =
+                mm_core::integrity::check_package(&pkg, &manifest, mm_core::integrity::Scope::Key)
+        {
+            return fail(e);
+        }
+    }
     let res: Result<ExitCode, String> = (|| {
         match cmd.as_str() {
             "scan" => {
@@ -629,6 +648,38 @@ fn main() -> ExitCode {
                         .map_err(|e| e.to_string())?;
                 println!("{}", json!({"cleared": was}));
                 Ok(ExitCode::SUCCESS)
+            }
+            "exiftool-manifest" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out FILE is required")?;
+                let version = take_opt(&mut args, "--version").ok_or("--version V is required")?;
+                let dir = PathBuf::from(args.first().ok_or("exiftool-manifest DIR")?);
+                let m = mm_core::integrity::generate(&dir, &version).map_err(|e| e.to_string())?;
+                let text = serde_json::to_string_pretty(&m).map_err(|e| e.to_string())? + "\n";
+                std::fs::write(&out, text).map_err(|e| format!("{out}: {e}"))?;
+                println!("{}", json!({"version": version, "files": m.files.len()}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "exiftool-check" => {
+                let full = take_flag(&mut args, "--full");
+                let pkg = package_dir(&g)?;
+                let manifest = take_opt(&mut args, "--manifest")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| pkg.join(mm_core::integrity::MANIFEST_NAME));
+                let scope = if full {
+                    mm_core::integrity::Scope::All
+                } else {
+                    mm_core::integrity::Scope::Key
+                };
+                match mm_core::integrity::check_package(&pkg, &manifest, scope) {
+                    Ok(()) => {
+                        println!("{}", json!({"intact": true, "full": full}));
+                        Ok(ExitCode::SUCCESS)
+                    }
+                    Err(e) => {
+                        println!("{}", json!({"intact": false, "full": full, "problem": e}));
+                        Ok(ExitCode::from(3))
+                    }
+                }
             }
             "debug-log" => {
                 let key = mm_core::log::SETTING_DEBUG_SINCE;
