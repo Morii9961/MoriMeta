@@ -47,6 +47,21 @@ pub fn recover(store: &mut Store) -> Result<Vec<RecoveryReport>, CoreError> {
                     ..Default::default()
                 },
             )?;
+            crate::log::event(
+                if to == FileState::Attention {
+                    "warn"
+                } else {
+                    "info"
+                },
+                "recovered",
+                &[
+                    ("op", &op_id),
+                    ("asset", &crate::privacy::alias(f.seq, &f.path)),
+                    ("from", &f.state.as_str()),
+                    ("to", &to.as_str()),
+                    ("action", &crate::log::scrub_for(&action, f.seq, &f.path)),
+                ],
+            );
             rep.files.push(RecoveredFile {
                 seq: f.seq,
                 path: f.path.clone(),

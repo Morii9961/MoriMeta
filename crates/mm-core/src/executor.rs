@@ -510,6 +510,16 @@ fn run(
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     let rows = store.files(op_id)?;
+    crate::log::event(
+        "info",
+        "operation started",
+        &[
+            ("op", &op_id),
+            ("kind", &plan.kind_name()),
+            ("files", &seqs.len()),
+            ("workers", &engines.len()),
+        ],
+    );
     // Best effort: an Operation that cannot hold the system awake still runs.
     let _awake = mm_fs::KeepAwake::new().ok();
     let journal = Journal(Mutex::new(store));
@@ -622,6 +632,16 @@ fn run(
         OpStatus::CompletedWithErrors
     };
     store.finish_operation(op_id, status)?;
+    crate::log::event(
+        "info",
+        "operation finished",
+        &[
+            ("op", &op_id),
+            ("status", &status.as_str()),
+            ("files", &files.len()),
+            ("stopped", &tripped.as_deref().unwrap_or("-")),
+        ],
+    );
     Ok(OpReport {
         op_id: op_id.to_owned(),
         status,
@@ -725,6 +745,28 @@ fn settle(
         }
         Outcome::Cancelled(r) => (FileState::Cancelled, Some(r), false),
     };
+    let asset = crate::privacy::alias(seq, &row.path);
+    match &reason {
+        Some(r) => crate::log::event(
+            "warn",
+            "file",
+            &[
+                ("op", &op_id),
+                ("asset", &asset),
+                ("state", &state.as_str()),
+                ("reason", &crate::log::scrub_for(r, seq, &row.path)),
+            ],
+        ),
+        None => crate::log::event(
+            "info",
+            "file",
+            &[
+                ("op", &op_id),
+                ("asset", &asset),
+                ("state", &state.as_str()),
+            ],
+        ),
+    }
     if state != FileState::Done {
         journal.set_state(
             op_id,

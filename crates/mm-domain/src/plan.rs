@@ -344,6 +344,14 @@ pub struct PlanSummary {
 }
 
 impl Plan {
+    /// `apply` or `undo`, for logs.
+    pub fn kind_name(&self) -> &'static str {
+        match self.kind {
+            PlanKind::Apply => "apply",
+            PlanKind::Undo { .. } => "undo",
+        }
+    }
+
     pub fn summary(&self) -> PlanSummary {
         let mut s = PlanSummary {
             files: self.entries.len(),

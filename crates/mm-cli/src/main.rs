@@ -407,6 +407,8 @@ fn main() -> ExitCode {
     let with_engine = |g: &Global| -> Result<Engine, String> {
         Engine::start(engine_config(g)?).map_err(|e| e.to_string())
     };
+    // the program's log (ARCHITECTURE §12); best effort
+    let _ = mm_core::log::init(&g.data);
     let res: Result<ExitCode, String> = (|| {
         match cmd.as_str() {
             "scan" => {

@@ -3744,3 +3744,66 @@ fn manifest_log_append_failures_recover() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+/// SECURITY_MODEL §8 / T-14: the log file records Operations, files as asset#n.ext and their
+/// states, recovery decisions, and nothing private: no written value, no photo path, no user
+/// name.
+#[test]
+fn log_file_holds_no_private_data() {
+    let pkg = require!();
+    let lab = Lab::new("log-privacy", &pkg);
+    let value = "LogPrivacyCheck Studio";
+    let plan = lab.plan(value, "p.json");
+    let o = lab.cli_env(
+        &[
+            "--workers",
+            "1",
+            "apply",
+            plan.to_str().unwrap(),
+            "--crash-at",
+            "2:7",
+        ],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(77));
+    let op = lab.last_op();
+    assert!(lab.cli(&["recover"]).status.success());
+    assert!(lab.cli(&["resume", &op]).status.success());
+    lab.undo(&op);
+    lab.assert_all_original();
+
+    let logs = lab.data.join("logs");
+    let mut text = String::new();
+    for e in std::fs::read_dir(&logs).unwrap() {
+        text.push_str(&std::fs::read_to_string(e.unwrap().path()).unwrap());
+    }
+    for want in [
+        "operation started",
+        "operation finished",
+        " file ",
+        " recovered ",
+        "asset#2.jpg",
+    ] {
+        assert!(text.contains(want), "no {want:?} in the log:\n{text}");
+    }
+    let lower = text.to_lowercase();
+    assert!(!lower.contains(&value.to_lowercase()), "a value was logged");
+    let folder = lab.photos[0]
+        .parent()
+        .unwrap()
+        .to_string_lossy()
+        .to_lowercase();
+    assert!(!lower.contains(&folder), "a path was logged");
+    assert!(
+        !lower.contains("writer.jpg"),
+        "a file name was logged:\n{text}"
+    );
+    if let Some(user) = std::env::var_os("USERNAME") {
+        let u = user.to_string_lossy().to_lowercase();
+        assert!(
+            !lower.contains(&format!("users\\{u}")),
+            "the user name was logged"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
