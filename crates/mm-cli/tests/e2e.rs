@@ -5177,3 +5177,83 @@ fn every_planned_tag_is_writable_in_the_pinned_exiftool() {
     );
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// G-7 for the other file roles: after the Journal database is lost, Operations that created a
+/// NEF sidecar, updated it, and a time Sequence over JPEG and NEF are rebuilt from their backup
+/// folders with the same History; each can then be undone, newest first, back to no sidecar and
+/// the original JPEGs.
+#[test]
+fn journal_rebuilt_for_sidecar_creation_update_and_sequence() {
+    let pkg = require!();
+    let lab = Lab::new("rebuild-roles", &pkg);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+    let (p1, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "c1.json");
+    let create = lab.apply_ok(&p1);
+    let (p2, _) = lab.plan_on(&["plan-creator", "--set", "Someone"], &[&nef], "c2.json");
+    let update = lab.apply_ok(&p2);
+    let (p3, _) = lab.plan_on(
+        &[
+            "plan-time",
+            "--sequence",
+            "2026:09:28 10:00:00",
+            "--step",
+            "00:00:10",
+            "--order",
+            "name",
+        ],
+        &[&lab.photos[1], &lab.photos[2], &nef],
+        "s.json",
+    );
+    let sequence = lab.apply_ok(&p3);
+    let history = Lab::json(&lab.cli(&["history"]));
+    let shown: Vec<Value> = [&create, &update, &sequence]
+        .iter()
+        .map(|op| lab.show(op))
+        .collect();
+    // older Operations report their files as changed later: the same before and after the rebuild
+    let fsck = |op: &str| Lab::json(&lab.cli(&["fsck", op]));
+    let checked: Vec<Value> = [&create, &update, &sequence]
+        .iter()
+        .map(|op| fsck(op))
+        .collect();
+
+    lab.lose_database();
+    let r = lab.rebuild();
+    let mut imported: Vec<String> = r["imported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect();
+    imported.sort();
+    let mut want = vec![create.clone(), update.clone(), sequence.clone()];
+    want.sort();
+    assert_eq!(imported, want, "{r}");
+    assert_eq!(Lab::json(&lab.cli(&["history"])), history);
+    for ((op, before), check) in [&create, &update, &sequence]
+        .iter()
+        .zip(&shown)
+        .zip(&checked)
+    {
+        assert_eq!(&lab.show(op)["files"], &before["files"], "{op}");
+        assert_eq!(&fsck(op), check, "{op}");
+    }
+    assert!(
+        checked[2]["problems"].as_array().unwrap().is_empty(),
+        "{}",
+        checked[2]
+    );
+    lab.undo(&sequence);
+    lab.undo(&update);
+    assert_eq!(
+        lab.xmp_tags(&xmp).get("XMP-dc:Creator"),
+        Some(&serde_json::json!("Morii"))
+    );
+    lab.undo(&create);
+    assert!(!xmp.exists(), "the created sidecar is undone");
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    lab.assert_all_original();
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
