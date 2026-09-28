@@ -595,7 +595,7 @@ fn main() -> ExitCode {
                 let list = presets::list(&store).map_err(|e| e.to_string())?;
                 println!(
                     "{}",
-                    Value::Array(list.iter().map(|p| json!({"id": p.id, "name": p.name, "builtin": p.builtin, "untrusted": p.untrusted,
+                    Value::Array(list.iter().map(|p| json!({"id": p.id, "name": p.name, "builtin": p.builtin, "untrusted": p.untrusted, "warnings": p.preset.lint(),
                         "fields": p.fields.iter().map(|f| f.name()).collect::<Vec<_>>(), "last_used_ms": p.last_used_ms,
                         "preset": serde_json::to_value(&p.preset).unwrap_or_default()})).collect())
                 );

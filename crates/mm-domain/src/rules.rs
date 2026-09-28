@@ -238,6 +238,46 @@ impl Preset {
         Ok(())
     }
 
+    /// Warnings for the rule builder (INTERACTION_SPEC §1): a template variable that reads a
+    /// field another enabled rule changes (templates see the value from before the Plan).
+    pub fn lint(&self) -> Vec<String> {
+        let reads = |v: &str| match v {
+            "creator" => Some(Field::Creator),
+            "year" | "month" | "day" => Some(Field::CaptureTime),
+            _ => None,
+        };
+        let mut out = Vec::new();
+        for (i, r) in self.rules.iter().enumerate().filter(|(_, r)| r.enabled) {
+            let templates: Vec<&str> = r
+                .then
+                .iter()
+                .flat_map(|a| match a {
+                    Action::SetCreator { names } => names.iter().map(String::as_str).collect(),
+                    Action::SetCopyright { value } => vec![value.as_str()],
+                    _ => vec![],
+                })
+                .collect();
+            for t in templates {
+                let Ok(tm) = Template::parse(t) else { continue };
+                for var in tm.variables() {
+                    let Some(field) = reads(var) else { continue };
+                    for (j, other) in self.rules.iter().enumerate() {
+                        if other.enabled && other.then.iter().any(|a| a.field() == field) {
+                            out.push(format!(
+                                "rule {} uses {{{var}}}, which rule {} changes: the template reads the value from before the Plan",
+                                i + 1,
+                                j + 1
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// Fields this Preset may change (for its summary).
     pub fn fields(&self) -> Vec<Field> {
         let mut out = Vec::new();
@@ -499,6 +539,26 @@ mod tests {
                 .unwrap_err()
                 .contains("conditions")
         );
+    }
+
+    #[test]
+    fn lint_flags_templates_reading_changed_fields() {
+        let p = preset(
+            r#"{"schema_version":1,"name":"t","rules":[
+                {"then":[{"do":"set_creator","names":["Morii"]}]},
+                {"then":[{"do":"set_copyright","value":"© {creator} {year}"}]},
+                {"then":[{"do":"shift_time","by":"+01:00:00"}]},
+                {"enabled":false,"then":[{"do":"clear_creator"}]}
+            ]}"#,
+        );
+        let w = p.lint();
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(
+            w[0].contains("{creator}") && w[0].contains("rule 1"),
+            "{w:?}"
+        );
+        assert!(w[1].contains("{year}") && w[1].contains("rule 3"), "{w:?}");
+        assert!(builtin().iter().all(|b| b.lint().is_empty()));
     }
 
     #[test]

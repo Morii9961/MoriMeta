@@ -32,7 +32,7 @@
 | G-3 | INTERACTION §15：备份位置必须是本地可写磁盘（拒绝网络盘与可移动介质） | **已补**：执行、继续与预检时按卷类型拒绝（网络盘、可移动介质 → BackupUnavailable；可移动介质无测试介质，未实测） |
 | G-4 | INTERACTION §5：确认（如"移除 64 个 JPG 的 GPS"）记录在 Operation 日志中 | **已补**：`Plan::required_acks`（`remove:<字段>`、`unsupported`、`large` >1,000 文件）；`PlanBook::confirm_with` 缺少必需确认时拒绝；确认项写入 Journal（schema v5）与 manifest.jsonl，重建后保留，随导出日志输出 |
 | G-5 | PREVIEW 的 6 种类别中有 Warnings（如 EXIF ≠ XMP：两处都会被设置） | **已补**：备注以 `warning: ` 标记为警告（来源不一致、首次使用的导入 Preset），`PlanEntry::warnings()`，摘要 `warnings` 计数（有警告的就绪条目） |
-| G-6 | INTERACTION §1：规则构建器在模板变量依赖另一规则所设字段时警告 | 规则校验返回此类警告 |
+| G-6 | INTERACTION §1：规则构建器在模板变量依赖另一规则所设字段时警告 | **已补**：`Preset::lint`（`{creator}` ↔ Creator，`{year}`/`{month}`/`{day}` ↔ 拍摄时间），`mm-cli presets` 输出 `warnings` |
 | G-7 | INTERACTION §7 / SCREEN §14："清除只读属性…"是单独、记录在案的操作 | 显式清除只读属性的操作，写入日志（SAFETY_MODEL §8.1：从不自动清除） |
 
 ## 4. 取决于未决决定
