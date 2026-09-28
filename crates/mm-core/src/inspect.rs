@@ -152,6 +152,12 @@ pub struct Attention {
     /// Links (hard links, symbolic links): never written.
     pub links: Vec<usize>,
     pub unreadable: Vec<usize>,
+    /// Paths longer than 260 characters (they work, S0; shown as a risk marker).
+    pub long_paths: Vec<usize>,
+    /// On removable media (writing there is blocked by default, SAFETY_MODEL §8.4).
+    pub removable: Vec<usize>,
+    /// On a network drive (§8.5).
+    pub network: Vec<usize>,
 }
 
 /// One metadata read of the paths plus their file attributes.
@@ -163,7 +169,21 @@ pub fn attention(
     let mut a = Attention::default();
     let mut to_read = Vec::new();
     let mut idx = Vec::new();
+    let mut volumes: std::collections::HashMap<PathBuf, mm_fs::VolumeKind> =
+        std::collections::HashMap::new();
     for (i, p) in paths.iter().enumerate() {
+        if p.as_os_str().len() > 260 {
+            a.long_paths.push(i);
+        }
+        let root = mm_fs::volume_root(p).unwrap_or_default();
+        let kind = *volumes
+            .entry(root.clone())
+            .or_insert_with(|| mm_fs::volume_kind(&root));
+        match kind {
+            mm_fs::VolumeKind::Removable => a.removable.push(i),
+            mm_fs::VolumeKind::Network => a.network.push(i),
+            _ => {}
+        }
         match mm_fs::probe(p) {
             Ok(pr) => {
                 if pr.read_only {

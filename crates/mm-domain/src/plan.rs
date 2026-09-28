@@ -339,6 +339,16 @@ pub struct Plan {
     pub source: Option<PlanSource>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WriteTargets {
+    /// Into the file itself (a JPEG).
+    pub in_file: usize,
+    /// Into an existing XMP sidecar (or an XMP file chosen on its own).
+    pub sidecar: usize,
+    /// A new XMP sidecar next to a RAW.
+    pub new_sidecar: usize,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanSummary {
     pub files: usize,
@@ -350,6 +360,8 @@ pub struct PlanSummary {
     pub excluded: usize,
     /// Ready entries with at least one warning.
     pub warnings: usize,
+    /// Where the executable entries write (PRODUCT_SPEC §6.12 "counts by write target").
+    pub targets: WriteTargets,
     pub changes: usize,
 }
 
@@ -381,6 +393,14 @@ impl Plan {
             }
             if e.status == EntryStatus::Ready && e.warnings().next().is_some() {
                 s.warnings += 1;
+            }
+            if e.status == EntryStatus::Ready && e.action.is_some() {
+                let xmp = e.path.to_ascii_lowercase().ends_with(".xmp");
+                match e.action {
+                    Some(EntryAction::CreateFile { .. }) => s.targets.new_sidecar += 1,
+                    _ if xmp => s.targets.sidecar += 1,
+                    _ => s.targets.in_file += 1,
+                }
             }
             match e.status {
                 EntryStatus::Ready => s.ready += 1,

@@ -75,6 +75,11 @@ pub struct ImportReport {
     pub not_followed: Vec<String>,
     /// Folder import only: cloud files not on this computer, not read (§8.3).
     pub placeholders: Vec<String>,
+    /// Folder import only: system and hidden folders not entered (PRODUCT_SPEC §6.1).
+    pub skipped_folders: Vec<String>,
+    /// Folder import only: XMP files without a main file next to them, taken in on their own
+    /// (PRODUCT_SPEC §6.1 "orphan sidecars are listed separately").
+    pub orphan_sidecars: Vec<AssetId>,
 }
 
 /// The files the user brought in. Paths come only from the backend's own dialogs and drop events;
@@ -149,11 +154,32 @@ impl Session {
     /// or reading cloud placeholders.
     pub fn import_folder(&mut self, dir: &Path) -> ImportReport {
         let w = mm_fs::walk(dir);
-        let (take, other): (Vec<PathBuf>, Vec<PathBuf>) = w
+        // an XMP file whose folder holds no other file of the same name is an orphan sidecar;
+        // `<name>.<ext>.xmp` (darktable) is never taken in
+        let stems: std::collections::HashSet<(PathBuf, String)> = w
             .files
+            .iter()
+            .filter(|p| !is_xmp(p))
+            .map(|p| stem_key(p))
+            .collect();
+        let (orphans, rest): (Vec<PathBuf>, Vec<PathBuf>) = w
+            .files
+            .into_iter()
+            .partition(|p| is_xmp(p) && !is_darktable(p) && !stems.contains(&stem_key(p)));
+        let (take, other): (Vec<PathBuf>, Vec<PathBuf>) = rest
             .into_iter()
             .partition(|p| crate::planner::import_kind(p, false).is_some());
         let mut r = self.import_as(&take, false);
+        let o = self.import_as(&orphans, true);
+        r.orphan_sidecars = o.added.clone();
+        r.added.extend(o.added);
+        r.duplicates.extend(o.duplicates);
+        r.failed.extend(o.failed);
+        r.skipped_folders = w
+            .skipped_folders
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
         let shown = |v: Vec<PathBuf>| v.iter().map(|p| p.display().to_string()).collect();
         r.other_files = other.len();
         r.not_followed = shown(w.not_followed);
@@ -199,6 +225,26 @@ impl Session {
     pub fn assets(&self) -> impl Iterator<Item = (AssetId, &Asset)> {
         self.assets.iter().map(|(&a, x)| (a, x))
     }
+}
+
+fn is_xmp(p: &Path) -> bool {
+    p.extension()
+        .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("xmp"))
+}
+
+/// `<name>.<ext>.xmp`: a darktable sidecar (read-only for MoriMeta).
+fn is_darktable(p: &Path) -> bool {
+    p.file_stem()
+        .is_some_and(|s| Path::new(s).extension().is_some())
+}
+
+fn stem_key(p: &Path) -> (PathBuf, String) {
+    (
+        p.parent().map(Path::to_path_buf).unwrap_or_default(),
+        p.file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default(),
+    )
 }
 
 /// Which entries of a Plan a Preview page shows.
@@ -513,7 +559,7 @@ struct GateState {
 }
 
 /// Shared by writes (Apply, Undo, Recovery, Export) and the update installer (ARCHITECTURE
-/// §5.1a): writes run side by side; installing takes it exclusively, only when no write runs and
+/// §5.1a): one write runs at a time; installing takes it exclusively, only when no write runs and
 /// no Operation awaits recovery, and no write starts until it is released.
 #[derive(Debug, Default)]
 pub struct OperationGate {
@@ -546,6 +592,10 @@ impl OperationGate {
         let mut s = self.lock();
         if s.exclusive {
             return Err(ServiceError::Busy("an update is being installed".into()));
+        }
+        // one write Operation at a time (PRODUCT_SPEC §6.13: no new write while one runs)
+        if s.writers > 0 {
+            return Err(ServiceError::Busy("an Operation is already running".into()));
         }
         s.writers += 1;
         Ok(WritePermit(self))
@@ -733,9 +783,12 @@ mod tests {
         let store = Store::open(&dir).unwrap();
         let g = OperationGate::default();
         let w1 = g.write().unwrap();
-        let w2 = g.write().unwrap();
+        assert!(
+            matches!(g.write(), Err(ServiceError::Busy(_))),
+            "one write at a time"
+        );
         assert!(matches!(g.exclusive(&store), Err(ServiceError::Busy(_))));
-        drop((w1, w2));
+        drop(w1);
         let x = g.exclusive(&store).unwrap();
         assert!(matches!(g.write(), Err(ServiceError::Busy(_))));
         assert!(matches!(g.exclusive(&store), Err(ServiceError::Busy(_))));
@@ -786,6 +839,7 @@ mod tests {
         ];
         assert_eq!(names, want.map(|(n, w)| (n.to_string(), w)), "{r:?}");
         assert_eq!(r.read_only.len(), 2);
+        assert!(r.orphan_sidecars.is_empty(), "c.xmp belongs to c.NEF");
         assert_eq!(r.other_files, 4); // notes.txt, c.xmp and the two transaction names
         // importing the folder again adds nothing
         let again = s.import_folder(&dir);
@@ -796,6 +850,41 @@ mod tests {
         assert_eq!(picked.added.len(), 1);
         assert!(s.asset(picked.added[0]).unwrap().writable);
         assert_eq!(picked.failed.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn orphan_sidecars_and_system_folders() {
+        let dir = std::env::temp_dir().join(format!("mm-orphan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("$RECYCLE.BIN")).unwrap();
+        for n in [
+            "a.NEF",
+            "a.xmp",
+            "lonely.xmp",
+            "b.NEF.xmp",
+            "$RECYCLE.BIN/x.jpg",
+        ] {
+            std::fs::write(dir.join(n), n).unwrap();
+        }
+        let mut s = Session::default();
+        let r = s.import_folder(&dir);
+        let names: Vec<String> = r
+            .orphan_sidecars
+            .iter()
+            .map(|&a| {
+                s.path(a)
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["lonely.xmp"], "{r:?}");
+        assert!(s.asset(r.orphan_sidecars[0]).unwrap().writable);
+        assert_eq!(r.added.len(), 2, "a.NEF and lonely.xmp: {r:?}");
+        assert_eq!(r.skipped_folders.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

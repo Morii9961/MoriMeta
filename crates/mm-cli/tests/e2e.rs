@@ -2543,6 +2543,9 @@ fn nef_sidecar_is_created_updated_and_undone() {
     let e = &pj["entries"][0];
     assert_eq!(e["status"]["status"], "ready", "{pj}");
     assert_eq!(e["path"], xmp.to_str().unwrap(), "{pj}");
+    // PRODUCT_SPEC §6.12: counts by write target
+    assert_eq!(pj["summary"]["targets"]["new_sidecar"], 1, "{pj}");
+    assert_eq!(pj["summary"]["targets"]["in_file"], 0, "{pj}");
     let op1 = lab.apply_ok(&p);
     assert_eq!(
         lab.xmp_tags(&xmp),

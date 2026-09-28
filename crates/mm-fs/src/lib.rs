@@ -460,7 +460,23 @@ pub struct Walk {
     pub not_followed: Vec<PathBuf>,
     /// Cloud files that are not on this computer (SAFETY_MODEL §8.3): not read by default.
     pub placeholders: Vec<PathBuf>,
+    /// System and hidden folders (`$RECYCLE.BIN`, `System Volume Information`…): not entered
+    /// (PRODUCT_SPEC §6.1).
+    pub skipped_folders: Vec<PathBuf>,
     pub errors: Vec<(PathBuf, String)>,
+}
+
+/// A folder an import does not enter: marked system or hidden, or one of Windows' own.
+fn is_system_folder(path: &Path, attributes: u32) -> bool {
+    const HIDDEN: u32 = 0x2;
+    const SYSTEM: u32 = 0x4;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    attributes & (HIDDEN | SYSTEM) != 0
+        || name == "$recycle.bin"
+        || name == "system volume information"
 }
 
 /// Every file under `root`, depth first, in name order within a folder.
@@ -499,6 +515,8 @@ pub fn walk(root: &Path) -> Walk {
             if a & FILE_ATTRIBUTE_DIRECTORY != 0 {
                 if a & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
                     w.not_followed.push(path);
+                } else if is_system_folder(&path, a) {
+                    w.skipped_folders.push(path);
                 } else {
                     subdirs.push(path);
                 }
@@ -669,6 +687,8 @@ mod tests {
         std::fs::write(outside.join("elsewhere.jpg"), b"x").unwrap();
         std::fs::create_dir_all(d.join("b").join("c")).unwrap();
         std::fs::write(d.join("a.jpg"), b"a").unwrap();
+        std::fs::create_dir_all(d.join("$RECYCLE.BIN")).unwrap();
+        std::fs::write(d.join("$RECYCLE.BIN").join("deleted.jpg"), b"d").unwrap();
         std::fs::write(d.join("b").join("c").join("deep.nef"), b"n").unwrap();
         let cloud = d.join("b").join("cloud.jpg");
         std::fs::write(&cloud, b"c").unwrap();
@@ -701,6 +721,7 @@ mod tests {
         assert_eq!(rel(&w.files), ["a.jpg", "b/c/deep.nef"]);
         assert_eq!(rel(&w.placeholders), ["b/cloud.jpg"]);
         assert_eq!(rel(&w.not_followed), ["j"]);
+        assert_eq!(rel(&w.skipped_folders), ["$RECYCLE.BIN"]);
         assert!(w.errors.is_empty(), "{:?}", w.errors);
         // SAFETY: as above.
         unsafe { SetFileAttributesW(wide(&cloud).as_ptr(), FILE_ATTRIBUTE_NORMAL) };
