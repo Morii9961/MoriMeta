@@ -4774,3 +4774,31 @@ fn fixture_regression_through_every_write() {
     }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// RESEARCH_NOTES F-104: a Google HDR+ JPEG (unknown protobuf fields that ExifTool decodes
+/// differently on a second read in one process) is written and undone; the same-state re-read
+/// that makes this possible does not hide a real collateral change.
+#[test]
+fn google_hdr_plus_jpeg_is_written_and_a_real_change_still_refused() {
+    let pkg = require!();
+    let lab = Lab::new("google", &pkg);
+    let g = lab.photos[0].parent().unwrap().join("Google.jpg");
+    std::fs::copy(timages().join("Google.jpg"), &g).unwrap();
+    let before = blake(&g).unwrap();
+    let (p, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&g], "g.json");
+    let o = lab.cli_env(
+        &["apply", p.to_str().unwrap(), "--tamper-at", "0:extra-tag"],
+        true,
+    );
+    let r = Lab::json(&o);
+    assert_eq!(state_of(&r, 0), "failed", "{r}");
+    let why = r["files"][0]["reason"].as_str().unwrap();
+    assert!(why.ends_with("unexpected changes: XMP-dc:Title"), "{why}");
+    assert_eq!(blake(&g).as_deref(), Some(before.as_str()));
+    let op = lab.apply_ok(&p);
+    assert_ne!(blake(&g).as_deref(), Some(before.as_str()));
+    lab.undo(&op);
+    assert_eq!(blake(&g).as_deref(), Some(before.as_str()));
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

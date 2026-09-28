@@ -1052,7 +1052,18 @@ fn one_file(
                 remove_if_exists(&f.temp);
                 return Ok(Outcome::Conflict(e.to_string()));
             }
-            if let Err(e) = verify::check_output(src, tmp, ops, expect) {
+            let mut checked = verify::check_output(src, tmp, ops, expect);
+            if matches!(checked, Err(VerifyError::Collateral(_))) {
+                // ExifTool keeps decoding state of unknown protobuf fields (Google HDR+ maker
+                // notes) from one file to the next in a process, so the second of two reads of
+                // the same data can show fewer fields (RESEARCH_NOTES F-104). Read both again,
+                // now in the same state; a real collateral change shows again.
+                let again = engine.read_full(&[f.backup.as_path(), f.temp.as_path()])?;
+                if let (Some(src), Some(tmp)) = (again[0].as_ref(), again[1].as_ref()) {
+                    checked = verify::check_output(src, tmp, ops, expect);
+                }
+            }
+            if let Err(e) = checked {
                 remove_if_exists(&f.temp);
                 return Ok(Outcome::Failed(format!("verification: {e}")));
             }

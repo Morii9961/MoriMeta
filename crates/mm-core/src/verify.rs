@@ -11,7 +11,10 @@ use mm_exiftool::Output;
 const NON_STORED: &[&str] = &["System:", "File:", "Composite:", "ExifTool:"];
 
 /// Tags whose value legitimately changes whenever ExifTool rewrites the file.
-const DERIVED: &[&str] = &["XMP-x:XMPToolkit"];
+/// `HasExtendedXMP` is the GUID of the extended XMP: ExifTool moves extended XMP back into the
+/// main packet when it fits (or writes it with a new GUID); the extended content itself is
+/// compared tag by tag like everything else.
+const DERIVED: &[&str] = &["XMP-x:XMPToolkit", "XMP-xmpNote:HasExtendedXMP"];
 
 /// Pointer tags (e.g. `IFD1:ThumbnailOffset`, `Pentax:PreviewImageStart`, `MPF0:MPImageStart`):
 /// their values are file offsets that move when a metadata block grows. What they point to is
