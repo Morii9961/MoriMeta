@@ -143,6 +143,14 @@ fn default_workers() -> usize {
         .clamp(1, 4)
 }
 
+/// Planning reads metadata with as many ExifTool sessions as the executor uses workers.
+fn plan_ctl(g: &Global) -> planner::PlanCtl {
+    planner::PlanCtl {
+        readers: g.workers,
+        ..Default::default()
+    }
+}
+
 /// `n` ExifTool sessions for the executor's workers, started side by side.
 fn start_engines(g: &Global, n: usize) -> Result<Vec<Engine>, String> {
     let cfg = engine_config(g)?;
@@ -429,7 +437,7 @@ fn main() -> ExitCode {
             "aggregate" => {
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let a = inspect::selection_aggregate(&mut eng, &paths, &Default::default())
+                let a = inspect::selection_aggregate(&mut eng, &paths, &plan_ctl(&g))
                     .map_err(|e| e.to_string())?;
                 println!("{}", serde_json::to_value(&a).unwrap_or_default());
                 Ok(ExitCode::SUCCESS)
@@ -443,9 +451,8 @@ fn main() -> ExitCode {
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan =
-                    planner::plan_creator(&mut eng, &paths, &edit, &title, &Default::default())
-                        .map_err(|e| e.to_string())?;
+                let plan = planner::plan_creator(&mut eng, &paths, &edit, &title, &plan_ctl(&g))
+                    .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
@@ -504,7 +511,7 @@ fn main() -> ExitCode {
                     &tool,
                     digitized,
                     &title,
-                    &Default::default(),
+                    &plan_ctl(&g),
                 )
                 .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
@@ -526,7 +533,7 @@ fn main() -> ExitCode {
                 });
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_gps(&mut eng, &paths, &edit, &title, &Default::default())
+                let plan = planner::plan_gps(&mut eng, &paths, &edit, &title, &plan_ctl(&g))
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
@@ -619,7 +626,7 @@ fn main() -> ExitCode {
                     };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_preset(&mut eng, &paths, &preset, &Default::default())
+                let plan = planner::plan_preset(&mut eng, &paths, &preset, &plan_ctl(&g))
                     .map_err(|e| e.to_string())?;
                 if let Some(id) = used {
                     presets::used(&mut store, &id).map_err(|e| e.to_string())?;
@@ -639,9 +646,8 @@ fn main() -> ExitCode {
                 };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan =
-                    planner::plan_copyright(&mut eng, &paths, &edit, &title, &Default::default())
-                        .map_err(|e| e.to_string())?;
+                let plan = planner::plan_copyright(&mut eng, &paths, &edit, &title, &plan_ctl(&g))
+                    .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
@@ -762,7 +768,7 @@ fn main() -> ExitCode {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
                 let op = args.first().ok_or("plan-again OP_ID --out PLAN.json")?;
                 let mut eng = with_engine(&g)?;
-                let plan = history::replan(&mut eng, &store, op, &Default::default())
+                let plan = history::replan(&mut eng, &store, op, &plan_ctl(&g))
                     .map_err(|e| e.to_string())?;
                 write_plan(&plan, &out)?;
                 println!("{}", plan_json(&plan));

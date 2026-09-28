@@ -51,6 +51,8 @@ pub type PlanProgressFn = Arc<dyn Fn(&PlanProgress) + Send + Sync>;
 pub struct PlanCtl {
     pub progress: Option<PlanProgressFn>,
     pub cancel: Option<Arc<AtomicBool>>,
+    /// ExifTool sessions reading metadata side by side (0 or 1: the planning engine alone).
+    pub readers: usize,
 }
 
 impl PlanCtl {
@@ -731,7 +733,7 @@ fn plan_with(
     }
     ctl.report(PlanStage::Files, inputs.len(), inputs.len())?;
     let mut snaps = engine
-        .read_snapshots_with(&to_read, &mut |done, total| {
+        .read_snapshots_parallel(&to_read, ctl.readers, &mut |done, total| {
             ctl.report(PlanStage::Metadata, done, total)
         })?
         .into_iter();

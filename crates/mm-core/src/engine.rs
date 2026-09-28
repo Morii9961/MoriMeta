@@ -32,6 +32,11 @@ impl KillSwitch {
     }
 }
 
+/// Files per ExifTool read command (ARCHITECTURE §6.1: 100–200).
+const READ_CHUNK: usize = 100;
+
+type ChunkResult = Result<Vec<Result<Snapshot, String>>, CoreError>;
+
 /// Read timeout: 10 s + 0.2 s/MB; write: 30 s + 0.5 s/MB (initial values, S4 calibrates).
 pub fn read_timeout(bytes: u64) -> Duration {
     Duration::from_millis(10_000 + bytes / 5_000)
@@ -131,36 +136,116 @@ impl Engine {
         between: &mut dyn FnMut(usize, usize) -> Result<(), CoreError>,
     ) -> Result<Vec<Result<Snapshot, String>>, CoreError> {
         let mut results = Vec::with_capacity(paths.len());
-        for chunk in paths.chunks(100) {
+        for chunk in paths.chunks(READ_CHUNK) {
             between(results.len(), paths.len())?;
-            let mut c = Command::read_json();
-            c.push(Line::option("-G1"));
-            numeric_gps_then_all(&mut c);
-            let mut bytes = 0u64;
-            for p in chunk {
-                c.push(path_line(p)?);
-                bytes += std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-            }
-            let out = self.exec(&c, read_timeout(bytes))?;
-            let arr = out.json().unwrap_or(serde_json::Value::Array(vec![]));
-            let by_source: std::collections::HashMap<String, &serde_json::Value> = arr
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|o| Some((o.get("SourceFile")?.as_str()?.to_owned(), o)))
-                        .collect()
-                })
-                .unwrap_or_default();
-            for p in chunk {
-                let key = source_key(p).unwrap_or_default();
-                results.push(match by_source.get(&key) {
-                    Some(o) => Ok(Snapshot::from_json(o)),
-                    None => Err(format!("no metadata result ({})", out.stderr_text().trim())),
-                });
-            }
+            results.extend(self.read_chunk(chunk)?);
         }
         between(results.len(), paths.len())?;
         Ok(results)
+    }
+
+    /// [`Engine::read_snapshots_with`] with up to `readers` ExifTool sessions: this one plus
+    /// temporary sessions started from the same configuration, each taking the next chunk of
+    /// 100 files. Results come back in the order of `paths`. Small selections, where starting a
+    /// session costs more than it saves, are read by this session alone.
+    pub fn read_snapshots_parallel(
+        &mut self,
+        paths: &[PathBuf],
+        readers: usize,
+        between: &mut dyn FnMut(usize, usize) -> Result<(), CoreError>,
+    ) -> Result<Vec<Result<Snapshot, String>>, CoreError> {
+        let chunks: Vec<&[PathBuf]> = paths.chunks(READ_CHUNK).collect();
+        let helpers = readers.min(chunks.len() / 2).saturating_sub(1);
+        if helpers == 0 {
+            return self.read_snapshots_with(paths, between);
+        }
+        let mut extra: Vec<Engine> = std::thread::scope(|s| {
+            let started: Vec<_> = (0..helpers)
+                .map(|_| s.spawn(|| Engine::start(self.cfg.clone())))
+                .collect();
+            started
+                .into_iter()
+                .filter_map(|h| h.join().ok().and_then(Result::ok))
+                .collect()
+        });
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel::<(usize, ChunkResult)>();
+        let mut slots: Vec<Option<Vec<Result<Snapshot, String>>>> = vec![None; chunks.len()];
+        let outcome = std::thread::scope(|s| {
+            let mut sessions: Vec<&mut Engine> = extra.iter_mut().collect();
+            sessions.push(self);
+            for engine in sessions {
+                let (tx, next, chunks) = (tx.clone(), &next, &chunks);
+                s.spawn(move || {
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let Some(chunk) = chunks.get(i) else {
+                            return;
+                        };
+                        let r = engine.read_chunk(chunk);
+                        let failed = r.is_err();
+                        if tx.send((i, r)).is_err() || failed {
+                            return;
+                        }
+                    }
+                });
+            }
+            drop(tx);
+            let mut done = 0;
+            between(0, paths.len())?;
+            for (i, r) in rx {
+                let r = r?;
+                done += r.len();
+                slots[i] = Some(r);
+                if let Err(e) = between(done, paths.len()) {
+                    // stop handing out chunks; the sessions finish the one they read
+                    next.store(chunks.len(), std::sync::atomic::Ordering::SeqCst);
+                    return Err(e);
+                }
+            }
+            Ok(())
+        });
+        for e in extra {
+            e.close();
+        }
+        outcome?;
+        let mut results = Vec::with_capacity(paths.len());
+        for s in slots {
+            results.extend(s.ok_or_else(|| CoreError::Internal("a chunk was not read".into()))?);
+        }
+        Ok(results)
+    }
+
+    /// One ExifTool command for up to 100 files, results matched by `SourceFile`.
+    fn read_chunk(&mut self, chunk: &[PathBuf]) -> ChunkResult {
+        let mut c = Command::read_json();
+        c.push(Line::option("-G1"));
+        numeric_gps_then_all(&mut c);
+        let mut bytes = 0u64;
+        for p in chunk {
+            c.push(path_line(p)?);
+            bytes += std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        }
+        let out = self.exec(&c, read_timeout(bytes))?;
+        let arr = out.json().unwrap_or(serde_json::Value::Array(vec![]));
+        let by_source: std::collections::HashMap<String, &serde_json::Value> = arr
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|o| Some((o.get("SourceFile")?.as_str()?.to_owned(), o)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(chunk
+            .iter()
+            .map(|p| {
+                let key = source_key(p).unwrap_or_default();
+                match by_source.get(&key) {
+                    Some(o) => Ok(Snapshot::from_json(o)),
+                    None => Err(format!("no metadata result ({})", out.stderr_text().trim())),
+                }
+            })
+            .collect())
     }
 
     /// Full read for verification: every tag (`-a -G1 -u`) plus `ImageDataHash` (SHA-256).

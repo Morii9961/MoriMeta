@@ -396,6 +396,7 @@ fn plan_progress_and_cancel() {
             ev.lock().unwrap().push(*p)
         })),
         cancel: None,
+        ..Default::default()
     };
     let edit = CreatorEdit::Set(vec!["Morii".into()]);
     let plan = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl).unwrap();
@@ -419,6 +420,7 @@ fn plan_progress_and_cancel() {
             }
         })),
         cancel: Some(cancel),
+        ..Default::default()
     };
     let r = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl);
     assert!(matches!(r, Err(mm_core::CoreError::Cancelled)), "{r:?}");
@@ -556,6 +558,64 @@ fn cancel_ends_a_long_exiftool_write() {
         },
     )
     .unwrap();
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
+
+/// Planning with several ExifTool readers gives exactly the Plan of one reader (entries in the
+/// input order), reports progress up to the total, and stops on Cancel.
+#[test]
+fn parallel_metadata_reads_match_one_reader() {
+    let Some(mut lab) = Lab::new("parallel-read", 450) else {
+        return;
+    };
+    let edit = CreatorEdit::Set(vec!["Morii".into()]);
+    let one = planner::plan_creator(
+        &mut lab.engines[0],
+        &lab.files,
+        &edit,
+        "C",
+        &PlanCtl::default(),
+    )
+    .unwrap();
+    let events = Arc::new(Mutex::new(Vec::<PlanProgress>::new()));
+    let ev = events.clone();
+    let ctl = PlanCtl {
+        progress: Some(Arc::new(move |p: &PlanProgress| {
+            ev.lock().unwrap().push(*p)
+        })),
+        readers: 4,
+        ..Default::default()
+    };
+    let t = std::time::Instant::now();
+    let four = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl).unwrap();
+    eprintln!("4 readers: {:?}", t.elapsed());
+    assert_eq!(one.entries, four.entries);
+    let meta: Vec<usize> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|p| p.stage == PlanStage::Metadata)
+        .map(|p| p.done)
+        .collect();
+    assert_eq!(meta.first(), Some(&0));
+    assert_eq!(meta.last(), Some(&450), "{meta:?}");
+    assert!(meta.windows(2).all(|w| w[0] <= w[1]), "{meta:?}");
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    let c = cancel.clone();
+    let ctl = PlanCtl {
+        progress: Some(Arc::new(move |p: &PlanProgress| {
+            if p.stage == PlanStage::Metadata && p.done >= 100 {
+                c.store(true, Ordering::SeqCst);
+            }
+        })),
+        cancel: Some(cancel),
+        readers: 4,
+    };
+    let r = planner::plan_creator(&mut lab.engines[0], &lab.files, &edit, "C", &ctl);
+    assert!(matches!(r, Err(mm_core::CoreError::Cancelled)), "{r:?}");
+    assert_eq!(lab.plan_creator().executable().count(), 450);
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }

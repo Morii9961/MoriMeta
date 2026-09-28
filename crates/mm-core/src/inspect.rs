@@ -191,7 +191,7 @@ pub fn selection_aggregate(
         .cloned()
         .chain(existing.iter().cloned())
         .collect();
-    let snaps = engine.read_snapshots_with(&all, &mut |done, total| {
+    let snaps = engine.read_snapshots_parallel(&all, ctl.readers, &mut |done, total| {
         ctl.report(crate::planner::PlanStage::Metadata, done, total)
     })?;
     let (main_snaps, sc_snaps) = snaps.split_at(main.len());
