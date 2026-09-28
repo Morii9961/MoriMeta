@@ -3295,6 +3295,23 @@ fn preset_rules_plan_apply_and_undo() {
         lab.photos[0].to_str().unwrap(),
     ]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    // SECURITY_MODEL §9: the first use of an imported Preset says so in the Preview, later ones not
+    let untrusted = |o: &Output| {
+        Lab::json(o)["entries"]
+            .to_string()
+            .contains("imported Preset")
+    };
+    assert!(untrusted(&o), "{}", String::from_utf8_lossy(&o.stdout));
+    let again = lab.cli(&[
+        "plan-preset",
+        "--id",
+        &id,
+        "--out",
+        lab.dir.join("by-id-2.json").to_str().unwrap(),
+        lab.photos[0].to_str().unwrap(),
+    ]);
+    assert!(again.status.success());
+    assert!(!untrusted(&again));
     let list = Lab::json(&lab.cli(&["presets"]));
     let saved = list
         .as_array()

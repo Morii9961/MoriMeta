@@ -20,6 +20,13 @@ use crate::time::{self, TimeItem, TimeOp};
 
 pub const PRESET_SCHEMA_VERSION: u32 = 1;
 
+/// Limits of an imported Preset (SECURITY_MODEL §9).
+pub const MAX_PRESET_BYTES: usize = 1 << 20;
+pub const MAX_RULES: usize = 100;
+pub const MAX_CONDITIONS: usize = 20;
+pub const MAX_ACTIONS: usize = 20;
+pub const MAX_ITEMS: usize = 50;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Field {
@@ -146,6 +153,13 @@ pub struct Preset {
 impl Preset {
     /// Parse and check a Preset (import must pass this, PRODUCT_SPEC §6.11).
     pub fn from_json(s: &str) -> Result<Preset, String> {
+        if s.len() > MAX_PRESET_BYTES {
+            return Err(format!(
+                "a preset file is at most {} KB (this one is {} KB)",
+                MAX_PRESET_BYTES >> 10,
+                s.len() >> 10
+            ));
+        }
         let v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("not JSON: {e}"))?;
         match v.get("schema_version").and_then(serde_json::Value::as_u64) {
             Some(n) if n == u64::from(PRESET_SCHEMA_VERSION) => {}
@@ -165,12 +179,25 @@ impl Preset {
         if self.rules.is_empty() {
             return Err("a preset needs at least one rule".into());
         }
+        if self.rules.len() > MAX_RULES {
+            return Err(format!("a preset has at most {MAX_RULES} rules"));
+        }
         for (i, r) in self.rules.iter().enumerate() {
             let at = |e: String| format!("rule {} ({}): {e}", i + 1, r.name);
             if r.then.is_empty() {
                 return Err(at("no action".into()));
             }
+            if r.when.len() > MAX_CONDITIONS || r.then.len() > MAX_ACTIONS {
+                return Err(at(format!(
+                    "at most {MAX_CONDITIONS} conditions and {MAX_ACTIONS} actions"
+                )));
+            }
             for c in &r.when {
+                if let Condition::Extension { any } = c
+                    && any.len() > MAX_ITEMS
+                {
+                    return Err(at(format!("at most {MAX_ITEMS} extensions")));
+                }
                 if let Condition::Extension { any } = c
                     && any.is_empty()
                 {
@@ -180,6 +207,9 @@ impl Preset {
             for a in &r.then {
                 match a {
                     Action::SetCreator { names } => {
+                        if names.len() > MAX_ITEMS {
+                            return Err(at(format!("at most {MAX_ITEMS} names")));
+                        }
                         if names.is_empty() {
                             return Err(at("set_creator without names".into()));
                         }
@@ -443,6 +473,31 @@ mod tests {
         let extra =
             r#"{"schema_version":1,"name":"x","rules":[{"then":[{"do":"remove_gps"}],"also":1}]}"#;
         assert!(Preset::from_json(extra).is_err());
+    }
+
+    #[test]
+    fn import_limits() {
+        let big = format!(
+            r#"{{"schema_version":1,"name":"{}","rules":[{{"then":[{{"do":"remove_gps"}}]}}]}}"#,
+            "x".repeat(MAX_PRESET_BYTES)
+        );
+        assert!(Preset::from_json(&big).unwrap_err().contains("at most"));
+        let rule = r#"{"then":[{"do":"remove_gps"}]}"#;
+        let many = format!(
+            r#"{{"schema_version":1,"name":"x","rules":[{}]}}"#,
+            vec![rule; MAX_RULES + 1].join(",")
+        );
+        assert!(Preset::from_json(&many).unwrap_err().contains("rules"));
+        let cond = r#"{"if":"empty","field":"gps"}"#;
+        let conds = format!(
+            r#"{{"schema_version":1,"name":"x","rules":[{{"when":[{}],"then":[{{"do":"remove_gps"}}]}}]}}"#,
+            vec![cond; MAX_CONDITIONS + 1].join(",")
+        );
+        assert!(
+            Preset::from_json(&conds)
+                .unwrap_err()
+                .contains("conditions")
+        );
     }
 
     #[test]

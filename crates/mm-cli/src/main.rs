@@ -563,7 +563,7 @@ fn main() -> ExitCode {
                 let list = presets::list(&store).map_err(|e| e.to_string())?;
                 println!(
                     "{}",
-                    Value::Array(list.iter().map(|p| json!({"id": p.id, "name": p.name, "builtin": p.builtin,
+                    Value::Array(list.iter().map(|p| json!({"id": p.id, "name": p.name, "builtin": p.builtin, "untrusted": p.untrusted,
                         "fields": p.fields.iter().map(|f| f.name()).collect::<Vec<_>>(), "last_used_ms": p.last_used_ms,
                         "preset": serde_json::to_value(&p.preset).unwrap_or_default()})).collect())
                 );
@@ -639,18 +639,20 @@ fn main() -> ExitCode {
             }
             "plan-preset" => {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
-                let (preset, used) =
+                // an imported Preset's first use, or a file used directly, is marked untrusted
+                let (preset, used, untrusted) =
                     match (take_opt(&mut args, "--id"), take_opt(&mut args, "--preset")) {
-                        (Some(id), None) => (
-                            presets::get(&store, &id).map_err(|e| e.to_string())?.preset,
-                            Some(id),
-                        ),
+                        (Some(id), None) => {
+                            let info = presets::get(&store, &id).map_err(|e| e.to_string())?;
+                            (info.preset, Some(id), info.untrusted)
+                        }
                         (None, Some(file)) => {
                             let text = std::fs::read_to_string(&file)
                                 .map_err(|e| format!("{file}: {e}"))?;
                             (
                                 rules::Preset::from_json(text.trim_start_matches('\u{feff}'))?,
                                 None,
+                                true,
                             )
                         }
                         _ => {
@@ -662,8 +664,11 @@ fn main() -> ExitCode {
                     };
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;
-                let plan = planner::plan_preset(&mut eng, &paths, &preset, &plan_ctl(&g))
+                let mut plan = planner::plan_preset(&mut eng, &paths, &preset, &plan_ctl(&g))
                     .map_err(|e| e.to_string())?;
+                if untrusted {
+                    presets::mark_untrusted(&mut plan);
+                }
                 if let Some(id) = used {
                     presets::used(&mut store, &id).map_err(|e| e.to_string())?;
                 }

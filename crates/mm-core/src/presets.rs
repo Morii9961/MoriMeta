@@ -16,6 +16,8 @@ pub struct PresetInfo {
     pub builtin: bool,
     pub fields: Vec<Field>,
     pub last_used_ms: Option<i64>,
+    /// Came from a file and not applied yet: its first Preview says so (SECURITY_MODEL §9).
+    pub untrusted: bool,
     pub preset: Preset,
 }
 
@@ -30,6 +32,7 @@ pub fn list(store: &Store) -> Result<Vec<PresetInfo>, CoreError> {
             builtin: true,
             fields: p.fields(),
             last_used_ms: None,
+            untrusted: false,
             preset: p,
         })
         .collect();
@@ -43,6 +46,7 @@ pub fn list(store: &Store) -> Result<Vec<PresetInfo>, CoreError> {
             builtin: false,
             fields: p.fields(),
             last_used_ms: r.last_used_ms,
+            untrusted: r.imported && r.last_used_ms.is_none(),
             preset: p,
         });
     }
@@ -58,6 +62,15 @@ pub fn get(store: &Store, id: &str) -> Result<PresetInfo, CoreError> {
 
 /// Save a new Preset, or replace the one with `id`; returns its id.
 pub fn save(store: &mut Store, id: Option<&str>, preset: &Preset) -> Result<String, CoreError> {
+    save_as(store, id, preset, false)
+}
+
+fn save_as(
+    store: &mut Store,
+    id: Option<&str>,
+    preset: &Preset,
+    imported: bool,
+) -> Result<String, CoreError> {
     preset.validate().map_err(CoreError::Input)?;
     let id = match id {
         Some(i) if i.starts_with(BUILTIN) => {
@@ -73,14 +86,14 @@ pub fn save(store: &mut Store, id: Option<&str>, preset: &Preset) -> Result<Stri
         }
         None => new_id("preset")?,
     };
-    store.save_preset(&id, &preset.name, &preset.to_json())?;
+    store.save_preset(&id, &preset.name, &preset.to_json(), imported)?;
     Ok(id)
 }
 
 /// Import from a file's text (schema-checked, PRODUCT_SPEC §6.11): always a new Preset.
 pub fn import(store: &mut Store, json: &str) -> Result<String, CoreError> {
     let p = Preset::from_json(json.trim_start_matches('\u{feff}')).map_err(CoreError::Input)?;
-    save(store, None, &p)
+    save_as(store, None, &p, true)
 }
 
 pub fn duplicate(store: &mut Store, id: &str) -> Result<String, CoreError> {
@@ -99,6 +112,17 @@ pub fn delete(store: &mut Store, id: &str) -> Result<(), CoreError> {
         return Err(CoreError::Input(format!("no preset {id}")));
     }
     Ok(())
+}
+
+/// Note on every changed entry of a Plan made from an imported Preset's first use (SECURITY_MODEL
+/// §9): the user checks what someone else's rules do before anything is written.
+pub const UNTRUSTED_NOTE: &str =
+    "from an imported Preset used for the first time: check these changes before applying";
+
+pub fn mark_untrusted(plan: &mut mm_domain::plan::Plan) {
+    for e in plan.entries.iter_mut().filter(|e| !e.changes.is_empty()) {
+        e.notes.insert(0, UNTRUSTED_NOTE.into());
+    }
 }
 
 /// Note that a Preset was applied (its "last used" time).

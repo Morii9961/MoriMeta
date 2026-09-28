@@ -161,6 +161,7 @@
 - JSON Schema 严格校验（`deny_unknown_fields`）；大小上限 1 MB；规则数、条件深度上限。
 - FieldId 必须存在于当前注册表；模板变量必须在允许列表内；不支持任何表达式求值。
 - 导入后作为"未信任"显示，首次应用时 Preview 中标注"来自导入的 Preset"。
+- 实现状态（2026-09-28）：`deny_unknown_fields`、`schema_version`、1 MB、≤100 条规则、每条 ≤20 个条件与 ≤20 个动作、≤50 个扩展名或姓名；字段为固定枚举，模板变量白名单，无表达式求值；导入的 Preset 在数据库中带 `imported` 标记（schema v4），首次使用前列为 `untrusted`，首次生成的 Plan 中每个有修改的条目注明"来自首次使用的导入 Preset"；直接用文件生成 Plan 时同样注明。
 
 ---
 

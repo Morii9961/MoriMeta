@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
@@ -206,6 +206,8 @@ pub struct PresetRow {
     pub created_ms: i64,
     pub updated_ms: i64,
     pub last_used_ms: Option<i64>,
+    /// Came from a file (SECURITY_MODEL §9).
+    pub imported: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -326,6 +328,14 @@ impl Store {
                    created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL, last_used_ms INTEGER);
                  CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
                  PRAGMA user_version = 3;
+                 COMMIT;",
+            )?;
+        }
+        if v < 4 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE presets ADD COLUMN imported INTEGER NOT NULL DEFAULT 0;
+                 PRAGMA user_version = 4;
                  COMMIT;",
             )?;
         }
@@ -598,19 +608,22 @@ impl Store {
     }
 
     /// Insert or replace a user Preset (its JSON is checked by the caller).
-    pub fn save_preset(&mut self, id: &str, name: &str, json: &str) -> Result<()> {
+    /// `imported`: it came from a file (untrusted until first applied, SECURITY_MODEL §9); a later
+    /// save by the user keeps the flag.
+    pub fn save_preset(&mut self, id: &str, name: &str, json: &str, imported: bool) -> Result<()> {
         let now = now_ms();
         self.conn.execute(
-            "INSERT INTO presets(id, name, json, created_ms, updated_ms) VALUES(?1, ?2, ?3, ?4, ?4)
+            "INSERT INTO presets(id, name, json, created_ms, updated_ms, imported)
+             VALUES(?1, ?2, ?3, ?4, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET name = ?2, json = ?3, updated_ms = ?4",
-            params![id, name, json, now],
+            params![id, name, json, now, imported],
         )?;
         Ok(())
     }
 
     pub fn presets(&self) -> Result<Vec<PresetRow>> {
         let mut st = self.conn.prepare(
-            "SELECT id, name, json, created_ms, updated_ms, last_used_ms FROM presets
+            "SELECT id, name, json, created_ms, updated_ms, last_used_ms, imported FROM presets
              ORDER BY name COLLATE NOCASE, id",
         )?;
         let rows = st
@@ -622,6 +635,7 @@ impl Store {
                     created_ms: r.get(3)?,
                     updated_ms: r.get(4)?,
                     last_used_ms: r.get(5)?,
+                    imported: r.get(6)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1080,8 +1094,12 @@ mod tests {
         assert!(o.keep && o.pruned_ms.is_none());
         s.set_setting("k", "v").unwrap();
         assert_eq!(s.setting("k").unwrap().as_deref(), Some("v"));
-        s.save_preset("p1", "P", "{}").unwrap();
-        s.save_preset("p1", "Q", "{}").unwrap();
+        s.save_preset("p1", "P", "{}", true).unwrap();
+        s.save_preset("p1", "Q", "{}", false).unwrap();
+        assert!(
+            s.presets().unwrap()[0].imported,
+            "a later save keeps the flag"
+        );
         assert_eq!(s.presets().unwrap()[0].name, "Q");
     }
 
