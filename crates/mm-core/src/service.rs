@@ -517,11 +517,22 @@ impl InstanceLock {
     }
 }
 
-/// Open the data directory for this process: the instance lock first, then the Journal. Keep the
-/// lock for as long as the Store is used.
+/// Open the data directory for this process: the instance lock first, then the Journal, then the
+/// settings every later call depends on: where new backups go (`backup.root`, SAFETY_MODEL §6),
+/// the program log and whether the debug log is on (ARCHITECTURE §12). Keep the lock for as long
+/// as the Store is used.
 pub fn open_data(data: &Path) -> Result<(InstanceLock, Store), ServiceError> {
     let lock = InstanceLock::acquire(data)?;
-    let store = Store::open(data)?;
+    let mut store = Store::open(data)?;
+    if let Some(root) = store.setting("backup.root")?.filter(|r| !r.is_empty()) {
+        store.set_backup_root(std::path::PathBuf::from(root));
+    }
+    let _ = crate::log::init(data); // best effort: no log is no reason not to start
+    crate::log::set_debug_since(
+        store
+            .setting(crate::log::SETTING_DEBUG_SINCE)?
+            .and_then(|v| v.parse().ok()),
+    );
     Ok((lock, store))
 }
 

@@ -28,7 +28,7 @@
 
 | 命令 | mm-core | mm-cli | 说明 |
 |---|---|---|---|
-| `op_execute(plan_id, version, token)` | `PlanBook::execute`（`executor::start`） | `apply` | 一次性令牌；备份位置、空间与恢复状态检查；worker 数来自设置 |
+| `op_execute(plan_id, version, token)` | `PlanBook::execute`（`executor::start`） | `apply` | 一次性令牌；备份位置、空间与恢复状态检查；worker 数（即 ExifTool 会话数）用 `settings::workers` |
 | 进度 Channel | `ExecOptions.progress`（`ExecProgress`） | — | 每个文件结算后回调；批量合并在适配层 |
 | `op_cancel` | `ExecOptions.cancel` | — | 不再启动新文件；提交前的文件放弃；立即结束 ExifTool |
 | 继续剩余文件 | `executor::resume` | `resume` | |
@@ -44,7 +44,7 @@
 | 重试失败 | `history::retry_plan` | `plan-retry` | 仍为只读的文件保持排除 |
 | 重新规划 | `history::replan` | `plan-again` | 按 Plan 来源对失败、跳过、冲突的文件重新读取 |
 | 恢复备份到文件夹 | `history::restore_backups_to` | `restore-to` | 新文件，不覆盖，核对哈希 |
-| 启动 | `service::open_data`（单实例锁 + Journal）、`service::startup` | —（`recover`） | 先取单实例锁（另一个 MoriMeta 或 `mm-cli` 占用同一数据目录时 `AnotherInstance`），再打开 Journal；崩溃恢复、完成中断的清理、恢复摘要、提权状态与备份位置问题；提权运行时不做恢复（它也会写入） |
+| 启动 | `service::open_data`（单实例锁 + Journal）、`service::startup` | —（`recover`） | 先取单实例锁（另一个 MoriMeta 或 `mm-cli` 占用同一数据目录时 `AnotherInstance`），再打开 Journal 并应用备份位置、程序日志与调试日志设置（适配层不必重复）；崩溃恢复、完成中断的清理、恢复摘要、提权状态与备份位置问题；提权运行时不做恢复（它也会写入） |
 | `recovery_status` | `recovery::summary` | `recovery-status` | 恢复对话框的数据 |
 | `recovery_resolve` | `recovery::resolve_keep`、`dismiss` | `resolve`、`dismiss` | 需要处理的文件保持现状；保持现状并关闭 |
 

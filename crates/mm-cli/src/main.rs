@@ -153,14 +153,6 @@ fn engine_config(g: &Global) -> Result<EngineConfig, String> {
     }
 }
 
-/// ARCHITECTURE §7.5: clamp(physical cores / 2, 1, 4); logical cores / 2 approximates it.
-fn default_workers() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get() / 2)
-        .unwrap_or(1)
-        .clamp(1, 4)
-}
-
 /// Planning reads metadata with as many ExifTool sessions as the executor uses workers.
 fn plan_ctl(g: &Global) -> planner::PlanCtl {
     planner::PlanCtl {
@@ -444,27 +436,8 @@ fn main() -> ExitCode {
         );
     }
     if g.workers == 0 {
-        g.workers = store
-            .setting("exec.workers")
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(default_workers);
+        g.workers = mm_core::settings::workers(&store);
     }
-    // SAFETY_MODEL §6: where new Operations keep their backups (setting backup.root)
-    if let Ok(Some(root)) = store.setting("backup.root") {
-        store.set_backup_root(PathBuf::from(root));
-    }
-    // the program's log (ARCHITECTURE §12); best effort. The debug log is on for 24 hours after
-    // the user turned it on (setting log.debug_since_ms).
-    let _ = mm_core::log::init(&g.data);
-    mm_core::log::set_debug_since(
-        store
-            .setting(mm_core::log::SETTING_DEBUG_SINCE)
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse().ok()),
-    );
     let res: Result<ExitCode, String> = (|| {
         match cmd.as_str() {
             "scan" => {

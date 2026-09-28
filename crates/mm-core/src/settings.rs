@@ -163,6 +163,23 @@ pub fn set(store: &mut Store, name: &str, value: &str) -> Result<(), CoreError> 
     Ok(())
 }
 
+/// Files written side by side: the `exec.workers` setting, else ARCHITECTURE §8's
+/// clamp(physical cores / 2, 1, 4) (logical cores / 2 approximates it).
+pub fn workers(store: &Store) -> usize {
+    store
+        .setting("exec.workers")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .filter(|n| (1..=16).contains(n))
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get() / 2)
+                .unwrap_or(1)
+                .clamp(1, 4)
+        })
+}
+
 /// The stored value or the default.
 pub fn get(store: &Store, name: &str) -> Result<String, CoreError> {
     let k = key(name)?;
@@ -199,6 +216,9 @@ mod tests {
             "unchanged by a refusal"
         );
         set(&mut s, "metadata.copyright_template", "© {year} Studio").unwrap();
+        assert!((1..=4).contains(&workers(&s)), "default");
+        set(&mut s, "exec.workers", "7").unwrap();
+        assert_eq!(workers(&s), 7);
         set(&mut s, "backup.max_age_days", "").unwrap();
         assert_eq!(get(&s, "backup.max_age_days").unwrap(), "30");
         drop(s);
