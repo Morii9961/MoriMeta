@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
@@ -342,6 +342,14 @@ impl Store {
                  COMMIT;",
             )?;
         }
+        if v < 5 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE operations ADD COLUMN acks TEXT;
+                 PRAGMA user_version = 5;
+                 COMMIT;",
+            )?;
+        }
         Ok(Store {
             conn,
             data_dir: data_dir.to_path_buf(),
@@ -650,6 +658,32 @@ impl Store {
             .query_map([], row_to_op)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// The acknowledgements given for an Operation (INTERACTION_SPEC §5), in the database and the
+    /// append-only record.
+    pub fn set_acks(&mut self, op_id: &str, acks: &[String]) -> Result<()> {
+        let text = serde_json::to_string(acks).unwrap_or_default();
+        self.conn.execute(
+            "UPDATE operations SET acks = ?2 WHERE id = ?1",
+            params![op_id, text],
+        )?;
+        self.log(op_id, json!({"t": "acks", "acks": acks}), true)
+    }
+
+    pub fn acks(&self, op_id: &str) -> Result<Vec<String>> {
+        let text: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT acks FROM operations WHERE id = ?1",
+                params![op_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(text
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default())
     }
 
     /// Mark (or unmark) an Operation as kept: its backups are never pruned automatically.
@@ -1117,6 +1151,7 @@ mod tests {
                 .execute_batch(
                     "ALTER TABLE operations DROP COLUMN keep;
                      ALTER TABLE operations DROP COLUMN pruned_ms;
+                     ALTER TABLE operations DROP COLUMN acks;
                      DROP TABLE presets;
                      DROP TABLE settings;
                      PRAGMA user_version = 1;",

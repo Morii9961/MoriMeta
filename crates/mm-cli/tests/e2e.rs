@@ -4056,3 +4056,54 @@ fn sequence_gives_a_raw_and_its_jpg_one_time() {
     assert_eq!(after(2), "2024:05:01 09:01:00", "{pj}");
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// INTERACTION_SPEC §4–5: a Plan that removes a field lists the acknowledgement it needs; the
+/// ones given are recorded with the Operation, exported with its log, and survive a rebuilt
+/// journal.
+#[test]
+fn acknowledgements_are_recorded_with_the_operation() {
+    let pkg = require!();
+    let lab = Lab::new("acks", &pkg);
+    let gps = lab
+        .photos
+        .iter()
+        .find(|p| p.ends_with("GPS.jpg"))
+        .unwrap()
+        .clone();
+    let (p, pj) = lab.plan_gps(&["--remove"], &[&gps], "r.json");
+    assert_eq!(
+        pj["required_acks"],
+        serde_json::json!(["remove:gps"]),
+        "{pj}"
+    );
+    let a = lab.cli(&["apply", p.to_str().unwrap(), "--ack", "remove:gps"]);
+    assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    let log = lab.dir.join("log.json");
+    assert!(
+        lab.cli(&["export-log", &op, "--out", log.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let v: Value = serde_json::from_slice(&std::fs::read(&log).unwrap()).unwrap();
+    assert_eq!(v["acks"], serde_json::json!(["remove:gps"]));
+
+    lab.lose_database();
+    lab.rebuild();
+    let log2 = lab.dir.join("log2.json");
+    assert!(
+        lab.cli(&["export-log", &op, "--out", log2.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let v: Value = serde_json::from_slice(&std::fs::read(&log2).unwrap()).unwrap();
+    assert_eq!(
+        v["acks"],
+        serde_json::json!(["remove:gps"]),
+        "after rebuild"
+    );
+    assert!(lab.cli(&["recover"]).status.success());
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

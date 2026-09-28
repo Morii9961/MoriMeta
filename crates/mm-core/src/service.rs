@@ -25,6 +25,8 @@ pub enum ServiceError {
     },
     /// No confirmation token for this version, or a different one (tokens are single use).
     NotConfirmed,
+    /// A high-risk Plan needs these acknowledgements first (INTERACTION_SPEC §4–5).
+    NotAcknowledged(Vec<String>),
     /// The OperationGate refused: a write or an update installation is in progress.
     Busy(String),
     /// Running with administrator rights: writes are disabled (SECURITY_MODEL §4.1).
@@ -223,8 +225,9 @@ pub struct PlanPage<'a> {
 struct Stored {
     /// Every version; the last is current. Older ones stay readable for the history of a Preview.
     versions: Vec<Plan>,
-    /// The confirmation token of the current version, once the user confirmed it.
-    token: Option<String>,
+    /// The confirmation token of the current version, once the user confirmed it, with the
+    /// acknowledgements given then.
+    token: Option<(String, Vec<String>)>,
 }
 
 /// Plans awaiting Preview and confirmation. A Plan is immutable; excluding entries makes a new
@@ -349,23 +352,52 @@ impl PlanBook {
 
     /// The user confirmed `version` in Preview: a token that allows executing exactly it, once.
     pub fn confirm(&mut self, id: &str, version: u32) -> Result<String, ServiceError> {
+        self.confirm_with(id, version, &[])
+    }
+
+    /// Confirm with the acknowledgements the dialog collected; every one the Plan requires
+    /// ([`Plan::required_acks`]) must be among them. They are recorded with the Operation.
+    pub fn confirm_with(
+        &mut self,
+        id: &str,
+        version: u32,
+        acks: &[String],
+    ) -> Result<String, ServiceError> {
         let s = self.current_mut(id, version)?;
+        let plan = s.versions.last().expect("a stored plan has a version");
+        let missing: Vec<String> = plan
+            .required_acks()
+            .into_iter()
+            .filter(|a| !acks.contains(a))
+            .collect();
+        if !missing.is_empty() {
+            return Err(ServiceError::NotAcknowledged(missing));
+        }
         let t = format!("{}{}", mm_fs::random_token()?, mm_fs::random_token()?);
-        s.token = Some(t.clone());
+        s.token = Some((t.clone(), acks.to_vec()));
         Ok(t)
     }
 
     /// Hand out the confirmed version for execution and use up its token.
-    fn take(&mut self, id: &str, version: u32, token: &str) -> Result<Plan, ServiceError> {
+    fn take(
+        &mut self,
+        id: &str,
+        version: u32,
+        token: &str,
+    ) -> Result<(Plan, Vec<String>), ServiceError> {
         let s = self.current_mut(id, version)?;
-        if s.token.as_deref() != Some(token) {
-            return Err(ServiceError::NotConfirmed);
-        }
+        let acks = match &s.token {
+            Some((t, acks)) if t == token => acks.clone(),
+            _ => return Err(ServiceError::NotConfirmed),
+        };
         s.token = None;
-        Ok(s.versions
-            .last()
-            .cloned()
-            .expect("a stored plan has a version"))
+        Ok((
+            s.versions
+                .last()
+                .cloned()
+                .expect("a stored plan has a version"),
+            acks,
+        ))
     }
 
     /// Execute the confirmed version under the write permit of `gate` (`op_execute`).
@@ -381,8 +413,12 @@ impl PlanBook {
         opts: &ExecOptions,
     ) -> Result<OpReport, ServiceError> {
         let _permit = gate.write()?;
-        let plan = self.take(id, version, token)?;
-        Ok(executor::start(store, engines, &plan, opts)?)
+        let (plan, acks) = self.take(id, version, token)?;
+        let opts = ExecOptions {
+            acks,
+            ..opts.clone()
+        };
+        Ok(executor::start(store, engines, &plan, &opts)?)
     }
 }
 
@@ -574,11 +610,36 @@ mod tests {
             Err(ServiceError::NotConfirmed)
         ));
         let t2 = b.confirm(&id, v2).unwrap();
-        assert_eq!(b.take(&id, v2, &t2).unwrap().version, 2);
+        assert_eq!(b.take(&id, v2, &t2).unwrap().0.version, 2);
         assert!(matches!(
             b.take(&id, v2, &t2),
             Err(ServiceError::NotConfirmed)
         ));
+    }
+
+    #[test]
+    fn high_risk_plans_need_their_acknowledgements() {
+        use mm_domain::plan::{ChangeKind, EntryAction, FieldChange};
+        let mut p = plan(3);
+        p.entries[0].action = Some(EntryAction::Write {
+            ops: vec![],
+            expect: vec![],
+        });
+        p.entries[0].changes.push(FieldChange {
+            field: "gps".into(),
+            before: Some(vec!["1, 2".into()]),
+            after: None,
+            kind: ChangeKind::Remove,
+        });
+        assert_eq!(p.required_acks(), ["remove:gps"]);
+        let mut b = PlanBook::default();
+        let (id, v) = b.insert(p);
+        assert!(matches!(
+            b.confirm(&id, v),
+            Err(ServiceError::NotAcknowledged(m)) if m == ["remove:gps"]
+        ));
+        let t = b.confirm_with(&id, v, &["remove:gps".into()]).unwrap();
+        assert_eq!(b.take(&id, v, &t).unwrap().1, ["remove:gps"]);
     }
 
     #[test]

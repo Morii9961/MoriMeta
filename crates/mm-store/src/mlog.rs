@@ -49,6 +49,8 @@ struct OpRec {
     status: String,
     finished_ms: Option<i64>,
     files: BTreeMap<u32, FileRec>,
+    /// The acknowledgements given for the Operation, as JSON.
+    acks: Option<String>,
 }
 
 fn text(v: &Value, k: &str) -> Option<String> {
@@ -77,6 +79,7 @@ fn replay(path: &Path) -> std::result::Result<OpRec, String> {
                 status: "running".into(),
                 finished_ms: None,
                 files: BTreeMap::new(),
+                acks: None,
             });
             continue;
         }
@@ -121,6 +124,9 @@ fn replay(path: &Path) -> std::result::Result<OpRec, String> {
                 f.backup = text(&v, "backup").unwrap_or_default();
                 f.state = "planned".into();
                 (f.h0, f.h1, f.error) = (None, None, None);
+            }
+            ("acks", _) => {
+                o.acks = v.get("acks").map(Value::to_string);
             }
             ("status", _) => {
                 o.status = text(&v, "status").unwrap_or_default();
@@ -178,8 +184,8 @@ impl Store {
             let h = &op.header;
             let tx = self.conn.transaction()?;
             tx.execute(
-                "INSERT INTO operations(id, kind, title, status, created_ms, finished_ms, plan_json, app_version, exiftool_version, registry_version, undo_of, backup_dir)
-                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO operations(id, kind, title, status, created_ms, finished_ms, plan_json, app_version, exiftool_version, registry_version, undo_of, backup_dir, acks)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     id,
                     text(h, "kind").unwrap_or_default(),
@@ -193,6 +199,7 @@ impl Store {
                     h.get("registry_version").and_then(Value::as_i64).unwrap_or(0),
                     text(h, "undo_of"),
                     dir.to_string_lossy(),
+                    op.acks,
                 ],
             )?;
             for (seq, f) in &op.files {

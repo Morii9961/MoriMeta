@@ -373,6 +373,33 @@ impl Plan {
         s
     }
 
+    /// What the user must acknowledge before this Plan runs (INTERACTION_SPEC §4–5): `remove:<field>`
+    /// for every field it removes somewhere, `unsupported` when some file cannot take a change,
+    /// `large` above 1,000 files. Sorted; empty for a low-risk Plan.
+    pub fn required_acks(&self) -> Vec<String> {
+        let mut out = std::collections::BTreeSet::new();
+        let mut files = 0usize;
+        for e in self.executable() {
+            files += 1;
+            for c in &e.changes {
+                if c.kind == ChangeKind::Remove {
+                    out.insert(format!("remove:{}", c.field));
+                }
+            }
+        }
+        if self
+            .entries
+            .iter()
+            .any(|e| !e.excluded && matches!(e.status, EntryStatus::Unsupported(_)))
+        {
+            out.insert("unsupported".into());
+        }
+        if files > 1000 {
+            out.insert("large".into());
+        }
+        out.into_iter().collect()
+    }
+
     /// Entries that an Operation will execute.
     pub fn executable(&self) -> impl Iterator<Item = &PlanEntry> {
         self.entries

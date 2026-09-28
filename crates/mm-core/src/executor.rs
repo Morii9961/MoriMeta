@@ -58,6 +58,9 @@ pub struct ExecOptions {
     pub cancel: Option<Arc<AtomicBool>>,
     /// Set `cancel` when this point is reached, as if the user pressed Cancel there (tests).
     pub cancel_at: Option<FaultPoint>,
+    /// The acknowledgements the user gave for this Plan (INTERACTION_SPEC §5), recorded with the
+    /// Operation.
+    pub acks: Vec<String>,
     /// Keep each written file's modification time (setting `metadata.preserve_mtime`, D-6; off
     /// by default: incremental backup tools rely on it to see the change).
     pub preserve_mtime: bool,
@@ -329,6 +332,9 @@ pub fn start(
         },
         &files,
     )?;
+    if !opts.acks.is_empty() {
+        store.set_acks(&op_id, &opts.acks)?;
+    }
     let seqs: Vec<u32> = files.iter().map(|f| f.seq).collect();
     run(store, engines, &op_id, plan, &seqs, opts)
 }

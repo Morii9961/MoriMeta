@@ -50,6 +50,8 @@ pub struct OpDetail {
     pub summary: OpSummary,
     pub app_version: String,
     pub exiftool_version: String,
+    /// What the user acknowledged before it ran (INTERACTION_SPEC §5).
+    pub acks: Vec<String>,
     pub files_detail: Vec<FileDetail>,
 }
 
@@ -142,6 +144,7 @@ pub fn detail(store: &Store, op_id: &str) -> Result<OpDetail, CoreError> {
         summary: summarize(store, o, &all)?,
         app_version: o.app_version.clone(),
         exiftool_version: o.exiftool_version.clone(),
+        acks: store.acks(op_id)?,
         files_detail,
     })
 }

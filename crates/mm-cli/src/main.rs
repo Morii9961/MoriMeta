@@ -29,7 +29,8 @@
 //!                             modification time (off by default, SAFETY_MODEL §8.9, D-6)
 //!   preflight PLAN.json       before Apply: files changed since the Preview, backup location,
 //!                             space, ExifTool version (exit 3 when something is in the way)
-//!   apply PLAN.json [FAULTS]
+//!   apply PLAN.json [--ack KEY]... [FAULTS]   KEY from the Plan's required_acks (recorded with
+//!                             the Operation; the UI's service layer requires them)
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
 //!                             disk (the backup stays; plan-undo --force-conflicts restores it)
@@ -364,6 +365,7 @@ fn plan_json(p: &Plan) -> Value {
         "plan_id": p.id,
         "kind": serde_json::to_value(&p.kind).unwrap_or_default(),
         "summary": serde_json::to_value(p.summary()).unwrap_or_default(),
+        "required_acks": p.required_acks(),
         "entries": p.entries.iter().map(|e| json!({
             "seq": e.seq, "path": e.path, "status": serde_json::to_value(&e.status).unwrap_or_default(),
             "changes": serde_json::to_value(&e.changes).unwrap_or_default(), "notes": e.notes,
@@ -724,7 +726,10 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             "apply" => {
-                let opts = exec_options(&mut args, &mut store)?;
+                let mut opts = exec_options(&mut args, &mut store)?;
+                while let Some(a) = take_opt(&mut args, "--ack") {
+                    opts.acks.push(a);
+                }
                 let file = args.first().ok_or("apply PLAN.json")?;
                 let plan: Plan =
                     serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
