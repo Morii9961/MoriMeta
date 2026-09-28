@@ -2,7 +2,9 @@
 
 **A local-first batch photo-metadata tool for photographers — preview every change, then apply it, and undo it while the backup is kept.** Windows first. Built on [ExifTool](https://exiftool.org/).
 
-> **Status: pre-alpha, research and foundation phase.** There is no usable release, no installer, and no signed binary. Documents in `docs/` are drafts (v0.3) and not approved specifications. Licensed under GPL-3.0-or-later (see [License](#license)).
+[![ci](https://github.com/Morii9961/MoriMeta/actions/workflows/ci.yml/badge.svg)](https://github.com/Morii9961/MoriMeta/actions/workflows/ci.yml)
+
+> **Status: pre-alpha.** The core engine (planning, the transactional writer, recovery, undo) exists and is driven by a development command-line tool; there is **no user interface yet**, no usable release, no installer and no signed binary. Documents in `docs/` are drafts (v0.3) and not approved specifications. Licensed under GPL-3.0-or-later (see [License](#license)).
 
 ## What it is meant to do
 
@@ -18,20 +20,22 @@ It is not a DAM, a raw converter, a photo editor or a cloud service. No telemetr
 Safety claims are limited to what has been tested (see [`docs/SPIKE_REPORT.md`](docs/SPIKE_REPORT.md) and [`docs/SAFETY_MODEL.md`](docs/SAFETY_MODEL.md) §0):
 
 - On local NTFS and SMB (tested over loopback), a prototype of the single-file transaction survived 90 injected crash points and 450 random process kills with no file left damaged after recovery.
-- exFAT/FAT32 cards, cloud-sync folders, power loss and real NAS devices have **not** been tested yet.
+- The product core is tested the same way on every change (CI): a crash at every step of every transaction kind, random process kills with four parallel workers, injected IO and journal-write failures, simulated disk full; afterwards recovery, resume and undo must leave every file byte-identical to its original. A real disk-full run on a small NTFS test volume passed (run manually; see [`docs/PHASE1B_FAULT_MATRIX.md`](docs/PHASE1B_FAULT_MATRIX.md)).
+- The test photos are ExifTool's own sample files (and, in local runs, three real Nikon NEFs); that is not yet a broad camera corpus, and third-party software reading the written metadata (Lightroom, Capture One, NX Studio) has not been checked.
+- exFAT/FAT32 cards, real cloud-sync clients, power loss and real NAS devices have **not** been tested yet.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `docs/` | Product spec, architecture, metadata/safety/security models, development and release plans, spike report (Chinese, drafts) |
-| `crates/` | Rust workspace: `mm-exiftool` (ExifTool process protocol), `mm-fs` (Windows file primitives), `mm-domain` (time tools and value rules), more to come |
+| `crates/` | Rust workspace: `mm-exiftool` (ExifTool process protocol), `mm-fs` (Windows file primitives), `mm-domain` (fields, time tools, templates, rules; no IO), `mm-store` (SQLite journal, backup manifests), `mm-core` (planner, transactional executor, recovery, undo, retention, backend interface for the future UI), `mm-cli` (development driver and end-to-end tests) |
 | `research/` | Reproducible Phase 0 experiments and throwaway prototypes (not product code) |
 | `tools/` | Repository checks |
 
 ## Building and testing
 
-Requirements: Windows 10/11 x64, Rust stable, Python 3.11+ (for research scripts).
+Requirements: Windows 10/11 x64, Rust 1.88 or newer, Python 3.11+ (for research scripts).
 
 ```text
 python research/scripts/fetch_exiftool.py     # pinned ExifTool, SHA-256 verified (needed by integration tests)
@@ -63,4 +67,4 @@ ExifTool is © Phil Harvey and is distributed under the same terms as Perl; it i
 
 ## 简体中文
 
-MoriMeta 是面向摄影师的本地批量照片元数据工具：先完整预览，再执行；在备份保留期内、且文件没有被其他软件改动时可以撤销。目前处于预发布前的研究与基础实现阶段，没有可用版本；`docs/` 中是 v0.3 草案，尚未批准。许可证为 GPL-3.0-or-later（见 `LICENSE`）。
+MoriMeta 是面向摄影师的本地批量照片元数据工具：先完整预览，再执行；在备份保留期内、且文件没有被其他软件改动时可以撤销。目前处于预发布阶段：核心引擎（规划、事务写入、恢复、撤销）已实现并由开发用命令行驱动，尚无用户界面与可用版本；`docs/` 中是 v0.3 草案，尚未批准。许可证为 GPL-3.0-or-later（见 `LICENSE`）。
