@@ -619,3 +619,69 @@ fn parallel_metadata_reads_match_one_reader() {
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }
+
+/// Photo formats this build does not write enter the Session read-only (user decision
+/// 2026-09-28): the Inspector reads them, every Plan marks them Unsupported, nothing is written.
+#[test]
+fn read_only_formats_are_shown_not_written() {
+    let Some(mut lab) = Lab::new("read-only", 1) else {
+        return;
+    };
+    let v = version().unwrap();
+    let images = repo().join(format!(
+        "research/.work/exiftool/{v}/src/Image-ExifTool-{v}/t/images"
+    ));
+    let photos = lab.files[0].parent().unwrap().to_path_buf();
+    let mut read_only = Vec::new();
+    for n in ["PNG.png", "ExifTool.tif", "DNG.dng", "CanonRaw.cr3"] {
+        let p = photos.join(n);
+        std::fs::copy(images.join(n), &p).unwrap();
+        read_only.push((p.clone(), hash(&p)));
+    }
+    let mut session = Session::default();
+    let r = session.import_folder(&photos);
+    assert_eq!((r.added.len(), r.read_only.len()), (5, 4), "{r:?}");
+    for &a in &r.read_only {
+        let asset = session.asset(a).unwrap();
+        assert!(!asset.writable);
+        let d = inspect::asset_detail(&mut lab.engines[0], &asset.path).unwrap();
+        assert!(!d.tags.is_empty(), "{}", asset.path.display());
+    }
+    let paths = session.paths(&r.added).unwrap();
+    let plan = planner::plan_creator(
+        &mut lab.engines[0],
+        &paths,
+        &CreatorEdit::Set(vec!["Morii".into()]),
+        "C",
+        &Default::default(),
+    )
+    .unwrap();
+    let unsupported = plan
+        .entries
+        .iter()
+        .filter(|e| matches!(e.status, mm_domain::plan::EntryStatus::Unsupported(_)))
+        .count();
+    assert_eq!(unsupported, 4, "{:?}", plan.entries);
+    assert_eq!(plan.executable().count(), 1);
+    let rep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &plan,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rep.files.len(), 1);
+    for (p, h) in &read_only {
+        assert_eq!(&hash(p), h, "{} was written", p.display());
+    }
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &up,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}

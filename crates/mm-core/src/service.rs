@@ -59,11 +59,13 @@ pub struct AssetId(pub u64);
 #[derive(Debug, Default)]
 pub struct ImportReport {
     pub added: Vec<AssetId>,
+    /// Those of `added` in a format this build reads but does not write (shown read-only).
+    pub read_only: Vec<AssetId>,
     /// Already in the Session (same volume and File ID, SAFETY_MODEL §8.8), possibly by another
     /// path: the id it already has.
     pub duplicates: Vec<AssetId>,
     pub failed: Vec<(String, String)>,
-    /// Folder import only: files of other formats (and XMP files, which come with their RAW).
+    /// Folder import only: files that are not photos (and XMP files, which come with their RAW).
     pub other_files: usize,
     /// Folder import only: directory links not entered (§8.6).
     pub not_followed: Vec<String>,
@@ -76,14 +78,33 @@ pub struct ImportReport {
 #[derive(Debug, Default)]
 pub struct Session {
     next: u64,
-    assets: BTreeMap<AssetId, PathBuf>,
+    assets: BTreeMap<AssetId, Asset>,
     by_identity: HashMap<String, AssetId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asset {
+    pub path: PathBuf,
+    /// False for photo formats this build does not write: shown and inspected, never planned.
+    pub writable: bool,
+}
+
 impl Session {
+    /// Files the user picked (dialog, drop).
     pub fn import(&mut self, paths: &[PathBuf]) -> ImportReport {
+        self.import_as(paths, true)
+    }
+
+    fn import_as(&mut self, paths: &[PathBuf], chosen: bool) -> ImportReport {
         let mut r = ImportReport::default();
         for p in paths {
+            let Some(kind) = crate::planner::import_kind(p, chosen) else {
+                r.failed.push((
+                    p.display().to_string(),
+                    "not a photo format MoriMeta reads".into(),
+                ));
+                continue;
+            };
             let id = normalize(p).and_then(|abs| {
                 let fid = mm_fs::file_id_of_path(&abs)?;
                 Ok((abs, file_id_hex(&fid)))
@@ -96,9 +117,19 @@ impl Session {
                     }
                     self.next += 1;
                     let a = AssetId(self.next);
-                    self.assets.insert(a, abs);
+                    let writable = kind == crate::planner::ImportKind::Writable;
+                    self.assets.insert(
+                        a,
+                        Asset {
+                            path: abs,
+                            writable,
+                        },
+                    );
                     self.by_identity.insert(identity, a);
                     r.added.push(a);
+                    if !writable {
+                        r.read_only.push(a);
+                    }
                 }
                 Err(e) => r.failed.push((p.display().to_string(), e.to_string())),
             }
@@ -113,8 +144,8 @@ impl Session {
         let (take, other): (Vec<PathBuf>, Vec<PathBuf>) = w
             .files
             .into_iter()
-            .partition(|p| crate::planner::importable(p));
-        let mut r = self.import(&take);
+            .partition(|p| crate::planner::import_kind(p, false).is_some());
+        let mut r = self.import_as(&take, false);
         let shown = |v: Vec<PathBuf>| v.iter().map(|p| p.display().to_string()).collect();
         r.other_files = other.len();
         r.not_followed = shown(w.not_followed);
@@ -128,10 +159,11 @@ impl Session {
     }
 
     pub fn path(&self, id: AssetId) -> Result<&Path, ServiceError> {
-        self.assets
-            .get(&id)
-            .map(PathBuf::as_path)
-            .ok_or(ServiceError::UnknownAsset(id))
+        self.asset(id).map(|a| a.path.as_path())
+    }
+
+    pub fn asset(&self, id: AssetId) -> Result<&Asset, ServiceError> {
+        self.assets.get(&id).ok_or(ServiceError::UnknownAsset(id))
     }
 
     /// The paths of a selection, for the planner.
@@ -141,8 +173,8 @@ impl Session {
             .collect()
     }
 
-    pub fn assets(&self) -> impl Iterator<Item = (AssetId, &Path)> {
-        self.assets.iter().map(|(&a, p)| (a, p.as_path()))
+    pub fn assets(&self) -> impl Iterator<Item = (AssetId, &Asset)> {
+        self.assets.iter().map(|(&a, x)| (a, x))
     }
 }
 
@@ -539,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn folder_import_takes_supported_formats_only() {
+    fn folder_import_takes_photos_and_marks_read_only_formats() {
         let dir = std::env::temp_dir().join(format!("mm-folder-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("raw")).unwrap();
@@ -552,21 +584,38 @@ mod tests {
             "raw/c.NEF",
             "raw/c.xmp",
             "raw/d.png",
+            "raw/e.CR3",
         ] {
             std::fs::write(dir.join(n), n).unwrap();
         }
         let mut s = Session::default();
         let r = s.import_folder(&dir);
-        let names: Vec<String> = s
+        let names: Vec<(String, bool)> = s
             .assets()
-            .map(|(_, p)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .map(|(_, a)| {
+                let n = a.path.file_name().unwrap().to_string_lossy().into_owned();
+                (n, a.writable)
+            })
             .collect();
-        assert_eq!(names, ["a.JPG", "b.jpeg", "c.NEF"], "{r:?}");
-        assert_eq!(r.other_files, 5);
+        let want = [
+            ("a.JPG", true),
+            ("b.jpeg", true),
+            ("c.NEF", true),
+            ("d.png", false),
+            ("e.CR3", false),
+        ];
+        assert_eq!(names, want.map(|(n, w)| (n.to_string(), w)), "{r:?}");
+        assert_eq!(r.read_only.len(), 2);
+        assert_eq!(r.other_files, 4); // notes.txt, c.xmp and the two transaction names
         // importing the folder again adds nothing
         let again = s.import_folder(&dir);
         assert!(again.added.is_empty());
-        assert_eq!(again.duplicates.len(), 3);
+        assert_eq!(again.duplicates.len(), 5);
+        // picked on its own, an XMP file is writable; a text file is refused
+        let picked = s.import(&[dir.join("raw/c.xmp"), dir.join("notes.txt")]);
+        assert_eq!(picked.added.len(), 1);
+        assert!(s.asset(picked.added[0]).unwrap().writable);
+        assert_eq!(picked.failed.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

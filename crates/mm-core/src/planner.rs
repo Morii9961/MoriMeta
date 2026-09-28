@@ -485,18 +485,43 @@ pub(crate) fn policy(p: &Path) -> Policy {
     }
 }
 
-/// Whether a folder import takes the file in: a format this build plans for, except XMP files
-/// (they come with their RAW, §3.1) and the transaction's own temporary and backup names
-/// (`IMG_1.mmtmp-….JPG`), which recovery handles.
-pub fn importable(p: &Path) -> bool {
+/// How the Session takes a file in (user decision 2026-09-28: photo formats this build does not
+/// write are shown read-only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportKind {
+    /// Planned and written (JPEG in place; NEF/NRW through their sidecar; an XMP file chosen on
+    /// its own).
+    Writable,
+    /// Shown and inspected; every Plan marks it Unsupported.
+    ReadOnly,
+}
+
+/// Photo formats read (by ExifTool) but not written by this build.
+const READ_ONLY_PHOTOS: &[&str] = &[
+    "tif", "tiff", "png", "heic", "heif", "hif", "avif", "webp", "jxl", "gif", "bmp", "dng", "cr2",
+    "cr3", "crw", "arw", "srf", "sr2", "raf", "orf", "rw2", "rwl", "pef", "srw", "x3f", "3fr",
+    "fff", "iiq", "erf", "mef", "mos", "mrw", "kdc", "dcr",
+];
+
+/// Whether the Session takes the file in, and how. `chosen`: the user picked this file itself
+/// (dialog, drop); a folder import skips XMP files, which come with their RAW (§3.1). The
+/// transaction's own temporary and backup names (`IMG_1.mmtmp-….JPG`) are never taken in;
+/// recovery handles them.
+pub fn import_kind(p: &Path, chosen: bool) -> Option<ImportKind> {
     let name = p
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     if name.contains(".mmtmp-") || name.contains(".mmbak-") {
-        return false;
+        return None;
     }
-    matches!(policy(p), Policy::Embedded | Policy::RawSidecar)
+    match policy(p) {
+        Policy::Embedded | Policy::RawSidecar => Some(ImportKind::Writable),
+        Policy::OwnSidecar => chosen.then_some(ImportKind::Writable),
+        Policy::Unsupported => READ_ONLY_PHOTOS
+            .contains(&ext_of(p).as_str())
+            .then_some(ImportKind::ReadOnly),
+    }
 }
 
 /// The sidecar of `raw` (SAFETY_MODEL §3.1): `<stem>.xmp` in any letter case (the existing name

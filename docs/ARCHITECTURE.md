@@ -158,7 +158,7 @@ apps/desktop/src/
 - 写操作只能引用后端生成的 `PlanId`；执行命令需要携带 Plan 版本号与用户确认令牌（由 Preview 界面在用户确认时取得）。
 - 输出目录（Clean Export，若 D-15 纳入）也只能来自 Rust 侧的目录对话框，后端返回 `OutputDirId`。
 
-实现状态（2026-09-27，`mm-core::service`）：`Session`（`AssetId`，按卷 + File ID 去重；文件夹导入只依据目录列表，不跟随目录链接、不读取云占位符，跳过 XMP 与事务临时名 `.mmtmp-`/`.mmbak-`；其他格式目前只计数）、`PlanBook`（Plan 不可变；排除生成新版本，旧版本只读；按状态筛选分页，每页 200 行）、一次性确认令牌（绑定 Plan 版本，新版本使旧令牌失效）、`OperationGate`（写许可可并存；独占许可要求无写入且无待恢复 Operation）。单元测试 + 以真实 ExifTool 走完 导入 → Plan → 分页 → 排除 → 确认 → 执行 → 撤销 的集成测试。文件对话框、拖放、进度 Channel 与异步 Plan 生成属于 Tauri 适配层，尚未实现。
+实现状态（2026-09-27，`mm-core::service`）：`Session`（`AssetId`，按卷 + File ID 去重；文件夹导入只依据目录列表，不跟随目录链接、不读取云占位符，跳过 XMP 与事务临时名 `.mmtmp-`/`.mmbak-`；本版本不写入的照片格式（TIFF、PNG、HEIC、DNG 及其他 RAW 等）按用户决定以只读资产进入会话，可在 Inspector 中查看，Plan 中为 Unsupported；非照片文件只计数）、`PlanBook`（Plan 不可变；排除生成新版本，旧版本只读；按状态筛选分页，每页 200 行）、一次性确认令牌（绑定 Plan 版本，新版本使旧令牌失效）、`OperationGate`（写许可可并存；独占许可要求无写入且无待恢复 Operation）。单元测试 + 以真实 ExifTool 走完 导入 → Plan → 分页 → 排除 → 确认 → 执行 → 撤销 的集成测试。文件对话框、拖放、进度 Channel 与异步 Plan 生成属于 Tauri 适配层，尚未实现。
 
 ### 5.1a OperationGate（写操作与更新安装共用）
 
