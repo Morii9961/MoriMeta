@@ -4167,3 +4167,36 @@ fn needs_attention_summary() {
     std::fs::set_permissions(&lab.photos[0], perm).unwrap();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// INTERACTION_SPEC §12 Retry failed: a file skipped because it became read-only is in the retry
+/// Plan but excluded until the user clears the attribute.
+#[test]
+fn retry_waits_for_the_read_only_attribute() {
+    let pkg = require!();
+    let lab = Lab::new("retry-ro", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let f = lab.photos[1].clone();
+    let mut perm = std::fs::metadata(&f).unwrap().permissions();
+    perm.set_readonly(true);
+    std::fs::set_permissions(&f, perm).unwrap();
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    assert_eq!(lab.show(&op)["files"][1]["state"], "skipped");
+
+    let r1 = lab.dir.join("r1.json");
+    let pj = Lab::json(&lab.cli(&["plan-retry", &op, "--out", r1.to_str().unwrap()]));
+    assert_eq!(pj["entries"][0]["excluded"], true, "{pj}");
+    assert!(
+        lab.cli(&["clear-readonly", f.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let r2 = lab.dir.join("r2.json");
+    let pj = Lab::json(&lab.cli(&["plan-retry", &op, "--out", r2.to_str().unwrap()]));
+    assert_eq!(pj["entries"][0]["excluded"], false, "{pj}");
+    let retry = lab.apply_ok(&r2);
+    lab.undo(&retry);
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

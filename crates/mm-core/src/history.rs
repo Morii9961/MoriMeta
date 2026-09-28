@@ -274,6 +274,15 @@ pub fn retry_plan(store: &Store, op_id: &str, exiftool_version: &str) -> Result<
         )));
     }
     plan.entries.retain(|e| retry.contains(&e.seq));
+    // INTERACTION_SPEC §12: a file skipped as read-only comes back only once the attribute is
+    // cleared; until then it stays in the Plan, excluded, with the reason
+    for e in &mut plan.entries {
+        if mm_fs::probe(std::path::Path::new(&e.path)).is_ok_and(|p| p.read_only) {
+            e.excluded = true;
+            e.notes
+                .push("still read-only: clear the attribute to include it".into());
+        }
+    }
     plan.id = crate::new_id("plan")?;
     plan.version = 1;
     plan.title = format!("Retry: {}", plan.title);

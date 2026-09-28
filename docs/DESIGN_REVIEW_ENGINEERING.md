@@ -36,7 +36,11 @@
 | G-6 | INTERACTION §1：规则构建器在模板变量依赖另一规则所设字段时警告 | **已补**：`Preset::lint`（`{creator}` ↔ Creator，`{year}`/`{month}`/`{day}` ↔ 拍摄时间），`mm-cli presets` 输出 `warnings` |
 | G-7 | INTERACTION §7 / SCREEN §14："清除只读属性…"是单独、记录在案的操作 | **已补**：`service::clear_read_only`（经写入闸门、写入日志，提权时拒绝），`mm-cli clear-readonly`；从不自动清除 |
 
-## 4. 取决于未决决定
+## 4. 需要共同决定
+
+- 界面语言：后端给出的原因与备注目前是英文句子（约 130 处）。中英文界面需要"消息码 + 参数"，由界面按语言渲染；消息码的清单与界面文案宜由设计会话与工程一起定，确定后后端统一改造。
+
+## 5. 取决于未决决定
 
 - D-15（隐私范围）：多处建议"改用 Clean export"移除 RAW 内 GPS——Clean Export 是否进入 1.0 未定。
 - D-18（时区修正）：见 R-5。
