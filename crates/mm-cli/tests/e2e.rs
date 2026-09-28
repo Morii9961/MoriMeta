@@ -21,6 +21,12 @@ fn repo() -> PathBuf {
         .unwrap()
 }
 
+/// The temporary folder in the long form mm-cli reports paths in (a runner's TEMP can be an 8.3
+/// short name such as `RUNNER~1`, which mm-cli normalizes).
+fn tmp() -> PathBuf {
+    mm_core::normalize(&std::env::temp_dir()).unwrap()
+}
+
 fn pkg() -> Option<PathBuf> {
     let lock: Value = serde_json::from_str(
         &std::fs::read_to_string(repo().join("research/exiftool.lock.json")).ok()?,
@@ -122,7 +128,7 @@ fn blake(p: &Path) -> Option<String> {
 
 impl Lab {
     fn new(name: &str, pkg: &Path) -> Lab {
-        let dir = std::env::temp_dir().join(format!("mm-e2e-{name}-{}", std::process::id()));
+        let dir = tmp().join(format!("mm-e2e-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         Lab::at(pkg, dir.clone(), dir.join("photos"), dir.join("data"), 1)
     }
@@ -161,7 +167,7 @@ impl Lab {
     }
 
     fn many(name: &str, pkg: &Path, copies: usize) -> Lab {
-        let dir = std::env::temp_dir().join(format!("mm-e2e-{name}-{}", std::process::id()));
+        let dir = tmp().join(format!("mm-e2e-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         Lab::at(
             pkg,
@@ -960,8 +966,7 @@ fn real_disk_full_on_small_volume() {
     };
     for (scenario, point) in [("photos", "2:4"), ("data", "2:2")] {
         let case = format!("real disk full: {scenario} at {point}");
-        let base =
-            std::env::temp_dir().join(format!("mm-e2e-realfull-{scenario}-{}", std::process::id()));
+        let base = tmp().join(format!("mm-e2e-realfull-{scenario}-{}", std::process::id()));
         let on_small = small.join(format!("mm-e2e-{scenario}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&on_small);
