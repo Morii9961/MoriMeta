@@ -113,10 +113,16 @@ impl Engine {
     }
 
     pub fn exec(&mut self, cmd: &Command, timeout: Duration) -> Result<Output, CoreError> {
-        self.session()?.execute(cmd, timeout).map_err(|e| match e {
+        let t = std::time::Instant::now();
+        let r = self.session()?.execute(cmd, timeout).map_err(|e| match e {
             EngineError::Timeout { .. } => CoreError::Engine("ExifTool timed out".into()),
             other => CoreError::Engine(other.to_string()),
-        })
+        });
+        if crate::log::debug_on() {
+            let lines: Vec<&str> = cmd.lines().iter().map(|l| l.as_str()).collect();
+            crate::log::debug_command(&lines, t.elapsed().as_millis(), r.is_ok());
+        }
+        r
     }
 
     /// Read the tags used for planning (`-G1`, all values quoted). Results are matched to the

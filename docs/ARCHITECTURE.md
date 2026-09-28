@@ -421,7 +421,7 @@ struct UserFacingError {
 - 默认级别 info；**默认不记录**元数据值、GPS、完整路径；文件以 `asset#<n>` 与扩展名表示，路径以卷 + 哈希后的目录表示。
 - 调试日志（设置中开启，有明确隐私提示，24 小时后自动关闭）：记录 ExifTool 命令（值被截断）与计时。
 - "导出日志"时再次展示将包含的内容并允许选择是否包含路径。
-- 实现状态（2026-09-28）：未用 `tracing`，而是 `mm-core::log` 的小型写入器（避免新依赖）：`<data>/logs/morimeta-YYYY-MM-DD.log`（UTC），保留 7 天且总量 ≤ 50 MB；记录 Operation 开始/结束、每个文件的结果、恢复判定，文件以 `asset#n.ext` 表示，错误文本经 `privacy::scrub` 替换路径与用户名；只接受调用方给出的非隐私字段。调试日志（ExifTool 命令与计时）尚未实现。
+- 实现状态（2026-09-28）：未用 `tracing`，而是 `mm-core::log` 的小型写入器（避免新依赖）：`<data>/logs/morimeta-YYYY-MM-DD.log`（UTC），保留 7 天且总量 ≤ 50 MB；记录 Operation 开始/结束、每个文件的结果、恢复判定，文件以 `asset#n.ext` 表示，错误文本经 `privacy::scrub` 替换路径与用户名；只接受调用方给出的非隐私字段。调试日志：设置 `log.debug_since_ms`（`mm-cli debug-log on|off`），开启后 24 小时自动失效；记录 ExifTool 命令（每个标签值截断为 12 个字符，路径保留——开启时需明确提示）与耗时。
 
 ---
 

@@ -19,6 +19,55 @@ struct Sink {
 
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
 
+/// Until when (ms since the epoch) the debug log is on; 0 = off.
+static DEBUG_UNTIL: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// The debug log ends by itself after this long (ARCHITECTURE §12).
+pub const DEBUG_HOURS: i64 = 24;
+
+/// Settings key: the time (ms since the epoch) the user turned the debug log on.
+pub const SETTING_DEBUG_SINCE: &str = "log.debug_since_ms";
+
+/// Turn the debug log on from `since_ms` for [`DEBUG_HOURS`] (the user's setting, shown with a
+/// privacy notice: it records ExifTool commands, which name files).
+pub fn set_debug_since(since_ms: Option<i64>) {
+    let until = since_ms.map_or(0, |s| s + DEBUG_HOURS * 3_600_000);
+    DEBUG_UNTIL.store(until, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn debug_on() -> bool {
+    now_ms() < DEBUG_UNTIL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// A debug line: an ExifTool command with every tag value cut to 12 characters, and how long it
+/// took. Only when the debug log is on.
+pub fn debug_command(lines: &[&str], ms: u128, ok: bool) {
+    if !debug_on() {
+        return;
+    }
+    let shown: Vec<String> = lines.iter().map(|l| truncate_value(l)).collect();
+    event(
+        "debug",
+        "exiftool",
+        &[("ms", &ms), ("ok", &ok), ("args", &shown.join(" "))],
+    );
+}
+
+/// `-TAG=value` keeps the tag and at most 12 characters of the value.
+fn truncate_value(line: &str) -> String {
+    match line.split_once('=') {
+        Some((tag, v)) if line.starts_with('-') => {
+            let cut: String = v.chars().take(12).collect();
+            if cut.len() < v.len() {
+                format!("{tag}={cut}…")
+            } else {
+                format!("{tag}={cut}")
+            }
+        }
+        _ => line.to_owned(),
+    }
+}
+
 fn now_ms() -> i64 {
     mm_store::now_ms()
 }
@@ -127,6 +176,22 @@ pub fn scrub_for(text: &str, n: u32, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_lines_cut_values_and_expire() {
+        assert_eq!(
+            truncate_value("-XMP-dc:Creator=Morii Studio Tokyo"),
+            "-XMP-dc:Creator=Morii Studio…"
+        );
+        assert_eq!(truncate_value("-IFD0:Artist=Mori"), "-IFD0:Artist=Mori");
+        assert_eq!(truncate_value("-json"), "-json");
+        set_debug_since(Some(now_ms() - (DEBUG_HOURS * 3_600_000 + 1)));
+        assert!(!debug_on(), "expired after 24 hours");
+        set_debug_since(Some(now_ms()));
+        assert!(debug_on());
+        set_debug_since(None);
+        assert!(!debug_on());
+    }
 
     #[test]
     fn dates_and_retention() {

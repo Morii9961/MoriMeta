@@ -21,6 +21,7 @@
 //!   plan-preset (--id PRESET_ID | --preset PRESET.json) --out PLAN.json [--files-from UTF8_FILE] FILE...
 //!   presets                   built-in (id builtin:NAME) and saved Presets (PRODUCT_SPEC §6.11)
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
+//!   debug-log on | off         ExifTool commands (values cut) and timings in the log, for 24 hours
 //!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3)
 //!                             metadata.preserve_mtime = true keeps each written file's
@@ -407,8 +408,16 @@ fn main() -> ExitCode {
     let with_engine = |g: &Global| -> Result<Engine, String> {
         Engine::start(engine_config(g)?).map_err(|e| e.to_string())
     };
-    // the program's log (ARCHITECTURE §12); best effort
+    // the program's log (ARCHITECTURE §12); best effort. The debug log is on for 24 hours after
+    // the user turned it on (setting log.debug_since_ms).
     let _ = mm_core::log::init(&g.data);
+    mm_core::log::set_debug_since(
+        store
+            .setting(mm_core::log::SETTING_DEBUG_SINCE)
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok()),
+    );
     let res: Result<ExitCode, String> = (|| {
         match cmd.as_str() {
             "scan" => {
@@ -583,6 +592,22 @@ fn main() -> ExitCode {
                 let id = args.first().ok_or("preset-delete ID")?;
                 presets::delete(&mut store, id).map_err(|e| e.to_string())?;
                 println!("{}", json!({"deleted": id}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "debug-log" => {
+                let key = mm_core::log::SETTING_DEBUG_SINCE;
+                match args.first().map(String::as_str) {
+                    Some("on") => store
+                        .set_setting(key, &mm_store::now_ms().to_string())
+                        .map_err(|e| e.to_string())?,
+                    Some("off") => store.clear_setting(key).map_err(|e| e.to_string())?,
+                    _ => return Err("debug-log on | off".into()),
+                }
+                println!(
+                    "{}",
+                    json!({"debug_log": args[0], "hours": mm_core::log::DEBUG_HOURS,
+                           "note": "the debug log records ExifTool commands, which name files; values are cut to 12 characters"})
+                );
                 Ok(ExitCode::SUCCESS)
             }
             "setting" => {

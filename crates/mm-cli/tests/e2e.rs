@@ -3807,3 +3807,36 @@ fn log_file_holds_no_private_data() {
     }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// ARCHITECTURE §12 debug log: off by default; once turned on it records ExifTool commands with
+/// values cut to 12 characters and their timings; turned off, nothing more.
+#[test]
+fn debug_log_records_cut_commands_while_on() {
+    let pkg = require!();
+    let lab = Lab::new("debug-log", &pkg);
+    let read_logs = || {
+        let mut t = String::new();
+        for e in std::fs::read_dir(lab.data.join("logs")).unwrap() {
+            t.push_str(&std::fs::read_to_string(e.unwrap().path()).unwrap());
+        }
+        t
+    };
+    lab.apply_ok(&lab.plan("DebugValueThatIsLong", "a.json"));
+    assert!(!read_logs().contains("exiftool"), "debug lines while off");
+
+    assert!(lab.cli(&["debug-log", "on"]).status.success());
+    let op = lab.apply_ok(&lab.plan("DebugValueThatIsLonger", "b.json"));
+    let t = read_logs();
+    assert!(t.contains(" debug exiftool "), "{t}");
+    assert!(t.contains("=DebugValueTh…"), "{t}");
+    assert!(
+        !t.contains("DebugValueThatIsLonger"),
+        "a full value was logged"
+    );
+
+    assert!(lab.cli(&["debug-log", "off"]).status.success());
+    let before = read_logs().matches(" debug exiftool ").count();
+    lab.undo(&op);
+    assert_eq!(read_logs().matches(" debug exiftool ").count(), before);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
