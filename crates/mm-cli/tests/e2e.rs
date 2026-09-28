@@ -5257,3 +5257,91 @@ fn journal_rebuilt_for_sidecar_creation_update_and_sequence() {
     assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §8.10 through the product: files deeper than 300 characters in folders named in
+/// Chinese and with an emoji, a JPEG and a NEF (new sidecar). "Needs attention" marks the long
+/// paths; Creator and a time shift are written, checked and undone byte for byte, and a crash
+/// right after a commit recovers there too (bak names and backups are longer still).
+#[test]
+fn long_unicode_paths_through_write_crash_and_undo() {
+    let pkg = require!();
+    let lab = Lab::new("longpath", &pkg);
+    let mut dir = lab.photos[0].parent().unwrap().to_path_buf();
+    for i in 0..3 {
+        dir = dir.join(format!("长路径测试📷-{i}-{}", "照片".repeat(30)));
+    }
+    std::fs::create_dir_all(&dir).unwrap();
+    let jpg = dir.join("风景 🌄 Canon.jpg");
+    std::fs::copy(&lab.photos[2], &jpg).unwrap();
+    let nef = dir.join("DSC_0001.NEF");
+    std::fs::copy(timages().join("Nikon.nef"), &nef).unwrap();
+    assert!(jpg.as_os_str().len() > 300, "{}", jpg.as_os_str().len());
+    let before = blake(&jpg).unwrap();
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+
+    let att = Lab::json(&lab.cli(&["attention", jpg.to_str().unwrap(), nef.to_str().unwrap()]));
+    assert_eq!(att["long_paths"], serde_json::json!([0, 1]), "{att}");
+
+    let (p1, pj) = lab.plan_on(
+        &["plan-creator", "--set", "森 Morii"],
+        &[&jpg, &nef],
+        "c.json",
+    );
+    assert!(
+        pj["entries"].to_string().matches("\"ready\"").count() == 2,
+        "{pj}"
+    );
+    let creator = lab.apply_ok(&p1);
+    assert!(lab.cli(&["fsck", &creator]).status.success());
+    assert!(xmp.exists());
+
+    // a crash right after the commit of the first file, then recovery and resume
+    let (p2, _) = lab.plan_on(
+        &["plan-time", "--shift", "+01:00:00"],
+        &[&jpg, &nef],
+        "t.json",
+    );
+    let o = lab.cli_env(
+        &[
+            "apply",
+            p2.to_str().unwrap(),
+            "--crash-at",
+            "0:8",
+            "--workers",
+            "1",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(77),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let shift = lab.last_op();
+    assert!(lab.cli(&["recover"]).status.success());
+    let res = lab.cli(&["resume", &shift]);
+    assert!(
+        res.status.code().is_some_and(|c| c == 0 || c == 3),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    assert!(lab.cli(&["fsck", &shift]).status.success());
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        names
+            .iter()
+            .all(|n| !n.contains(".mmtmp-") && !n.contains(".mmbak-")),
+        "{names:?}"
+    );
+
+    lab.undo(&shift);
+    lab.undo(&creator);
+    assert_eq!(blake(&jpg).as_deref(), Some(before.as_str()));
+    assert!(!xmp.exists());
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
