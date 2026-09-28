@@ -333,6 +333,20 @@ impl PlanBook {
         Ok(v)
     }
 
+    /// Pre-flight of a version (`plan_preflight`): files changed since the Preview, backup
+    /// location, space, ExifTool. Apply stays blocked while it is not ok (INTERACTION_SPEC §4).
+    pub fn preflight(
+        &self,
+        store: &Store,
+        id: &str,
+        version: u32,
+    ) -> Result<crate::preflight::Preflight, ServiceError> {
+        Ok(crate::preflight::preflight(
+            store,
+            self.version(id, version)?,
+        )?)
+    }
+
     /// The user confirmed `version` in Preview: a token that allows executing exactly it, once.
     pub fn confirm(&mut self, id: &str, version: u32) -> Result<String, ServiceError> {
         let s = self.current_mut(id, version)?;

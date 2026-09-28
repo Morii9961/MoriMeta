@@ -3980,3 +3980,45 @@ fn restore_backups_to_a_folder() {
     assert_eq!(now, after, "the written files are not touched");
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// INTERACTION_SPEC §3–4 pre-flight: a clean Plan passes; a file changed after the Preview is
+/// reported for rescan (and Apply would block it as a Conflict); an unusable backup location is
+/// reported; nothing is written by the check.
+#[test]
+fn preflight_reports_rescans_and_backup_problems() {
+    let pkg = require!();
+    let lab = Lab::new("preflight", &pkg);
+    let plan = lab.plan("Morii", "p.json");
+    let check = || lab.cli(&["preflight", plan.to_str().unwrap()]);
+    let o = check();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    assert_eq!(Lab::json(&o)["ok"], true);
+
+    std::thread::sleep(Duration::from_millis(20));
+    let bytes = std::fs::read(&lab.photos[3]).unwrap();
+    std::fs::write(&lab.photos[3], &bytes).unwrap();
+    let o = check();
+    assert_eq!(o.status.code(), Some(3));
+    assert_eq!(Lab::json(&o)["rescan"], serde_json::json!([3]));
+
+    let blocker = lab.dir.join("a-file");
+    std::fs::write(&blocker, b"x").unwrap();
+    let bad = blocker.join("backups");
+    assert!(
+        lab.cli(&["setting", "backup.root", bad.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let r = Lab::json(&check());
+    assert!(
+        r["backup"].as_str().unwrap().contains("BackupUnavailable"),
+        "{r}"
+    );
+    assert!(
+        lab.cli(&["setting", "backup.root", "--clear"])
+            .status
+            .success()
+    );
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

@@ -162,7 +162,27 @@ enum Outcome {
 /// Space pre-check before any file is touched (SAFETY_MODEL §6.2): the backup volume needs
 /// `Σ size × 1.05 + reserve`; each target directory's volume needs `largest file × 1.1` for the
 /// temporary output (one worker).
-fn check_space<'a>(
+/// The backup location exists, accepts a new file, and is a local disk: backups on a network
+/// drive or removable media are refused (INTERACTION_SPEC §15).
+pub fn check_backup_location(store: &Store) -> Result<(), CoreError> {
+    let root = store.backup_root();
+    store
+        .check_backup_root()
+        .map_err(|e| CoreError::BackupUnavailable(format!("{}: {e}", root.display())))?;
+    let volume = mm_fs::volume_root(root)
+        .map_err(|e| CoreError::BackupUnavailable(format!("{}: {e}", root.display())))?;
+    match mm_fs::volume_kind(&volume) {
+        mm_fs::VolumeKind::Network | mm_fs::VolumeKind::Removable => {
+            Err(CoreError::BackupUnavailable(format!(
+                "{}: backups must be on a local disk, not a network drive or removable media",
+                root.display()
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+pub(crate) fn check_space<'a>(
     store: &Store,
     entries: impl Iterator<Item = &'a PlanEntry>,
     reserve: u64,
@@ -258,9 +278,7 @@ pub fn start(
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
     // INTERACTION_SPEC: with the backup location unavailable nothing is written
-    store.check_backup_root().map_err(|e| {
-        CoreError::BackupUnavailable(format!("{}: {e}", store.backup_root().display()))
-    })?;
+    check_backup_location(store)?;
     let version = engine_version(engines)?;
     if plan.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
@@ -324,9 +342,7 @@ pub fn resume(
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
     // INTERACTION_SPEC: with the backup location unavailable nothing is written
-    store.check_backup_root().map_err(|e| {
-        CoreError::BackupUnavailable(format!("{}: {e}", store.backup_root().display()))
-    })?;
+    check_backup_location(store)?;
     let version = engine_version(engines)?;
     let op = store
         .operation(op_id)?

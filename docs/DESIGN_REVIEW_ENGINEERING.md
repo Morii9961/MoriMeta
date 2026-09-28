@@ -27,9 +27,9 @@
 
 | # | 设计稿 | 需要的后端能力 |
 |---|---|---|
-| G-1 | INTERACTION §3：Preview 打开期间文件被改动 → 行标 RESCAN，Apply 被阻止直到重新扫描；§4 预检（备份可写、空间、ExifTool、无需重扫） | 预检接口：逐条目核对指纹、备份位置、空间与 ExifTool 状态，返回需要重扫的条目 |
+| G-1 | INTERACTION §3：Preview 打开期间文件被改动 → 行标 RESCAN，Apply 被阻止直到重新扫描；§4 预检（备份可写、空间、ExifTool、无需重扫） | **已补**：`preflight::preflight` / `PlanBook::preflight`（`mm-cli preflight`），返回需重扫的条目、备份位置、空间与 ExifTool 问题 |
 | G-2 | INTERACTION §17：RAW+JPG 成对的文件共享同一时间戳 | Sequence（及其他按顺序的工具）把同目录同名的 RAW 与 JPG 视为一个位置 |
-| G-3 | INTERACTION §15：备份位置必须是本地可写磁盘（拒绝网络盘与可移动介质） | 设置与检查备份位置时按卷类型拒绝 |
+| G-3 | INTERACTION §15：备份位置必须是本地可写磁盘（拒绝网络盘与可移动介质） | **已补**：执行、继续与预检时按卷类型拒绝（网络盘、可移动介质 → BackupUnavailable；可移动介质无测试介质，未实测） |
 | G-4 | INTERACTION §5：确认（如"移除 64 个 JPG 的 GPS"）记录在 Operation 日志中 | 执行接口接收确认项并写入 Journal 与 manifest |
 | G-5 | PREVIEW 的 6 种类别中有 Warnings（如 EXIF ≠ XMP：两处都会被设置） | 条目 / 修改带警告标记（来源冲突等），摘要中计数 |
 | G-6 | INTERACTION §1：规则构建器在模板变量依赖另一规则所设字段时警告 | 规则校验返回此类警告 |

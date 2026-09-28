@@ -11,6 +11,7 @@ pub mod history;
 pub mod inspect;
 pub mod log;
 pub mod planner;
+pub mod preflight;
 pub mod presets;
 pub mod privacy;
 pub mod recovery;

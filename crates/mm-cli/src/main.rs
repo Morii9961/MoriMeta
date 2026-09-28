@@ -27,6 +27,8 @@
 //!                             backup.root (where new Operations keep their backups)
 //!                             metadata.preserve_mtime = true keeps each written file's
 //!                             modification time (off by default, SAFETY_MODEL §8.9, D-6)
+//!   preflight PLAN.json       before Apply: files changed since the Preview, backup location,
+//!                             space, ExifTool version (exit 3 when something is in the way)
 //!   apply PLAN.json [FAULTS]
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
@@ -866,6 +868,19 @@ fn main() -> ExitCode {
                     .map_err(|e| e.to_string())?;
                 println!("{}", serde_json::to_value(&r).unwrap_or_default());
                 Ok(ExitCode::SUCCESS)
+            }
+            "preflight" => {
+                let file = args.first().ok_or("preflight PLAN.json")?;
+                let plan: Plan =
+                    serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
+                        .map_err(|e| format!("plan file: {e}"))?;
+                let r = mm_core::preflight::preflight(&store, &plan).map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&r).unwrap_or_default());
+                Ok(if r.ok {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::from(3)
+                })
             }
             "plan-again" => {
                 let out = take_opt(&mut args, "--out").ok_or("--out PLAN.json is required")?;
