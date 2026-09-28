@@ -79,7 +79,8 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 ## Waiting / needs the user
 
 - Design session files (`docs/DESIGN.md`, `DESIGN_SYSTEM.md`, `SCREEN_SPEC.md`, `INTERACTION_SPEC.md`): not touched, not committed; review against the architecture after handoff.
-- Decisions: D-1 license + repository owner (then public repo), D-2 signing, D-15 (interim direction (c)), D-18 (after S3 third-party results).
+- Decisions: D-2 signing, D-15 (interim direction (c)), D-18 (after S3 third-party results). (D-1 decided: GPL-3.0-or-later, public repository.)
+- Open questions from 2026-09-28: (1) downloaded cloud files (OneDrive etc.) are still not written, while SAFETY_MODEL §8.3 says "allow with a warning"; allow before V-04 is verified with a safe sync folder? (2) V1 refuses writes whose EXIF rewrite makes ExifTool warn about the file's own defects (GoPro and GE maker notes, IFD0 order, a wrong XMP list type); keep refusing, or accept some warnings when V3 finds nothing? (3) Report F-104 (protobuf decoding state kept between files) to the ExifTool forum? (outward-facing, needs Morii's OK). (4) Dependabot glib alert in the research spike: dismiss or keep.
 - Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, exFAT media, a safe cloud-sync folder.
 
 ## Next engineering steps (no design dependency)

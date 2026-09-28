@@ -2,6 +2,14 @@
 
 > 2026-09-28 · 工程文档。ARCHITECTURE §5.2 列出了界面需要的命令；本文把每个命令对应到已实现的 `mm-core` 函数、开发用 `mm-cli` 命令与测试，并标出尚缺的部分。适配层（`src-tauri`，尚未开始）只做转发、文件对话框与拖放、进度 Channel；业务逻辑都在下列函数中。所有写操作都经过 `service::OperationGate`（提权运行时拒绝）。
 
+## 0. 启动顺序
+
+1. `service::open_data(data)`：单实例锁 → Journal → 备份位置、程序日志、调试日志设置。`AnotherInstance` 时把拖入的文件交给已运行的实例（ARCHITECTURE §9）。
+2. `OperationGate::for_this_process()`（提权时拒绝写入），随后 `service::verify_exiftool(gate, pkg, Scope::Key)`：在 ExifTool 首次运行前校验关键文件；不一致或缺少清单时本次运行禁止写入。
+3. 启动 ExifTool 会话（`Engine::start`，校验 `-ver`）；会话数用 `settings::workers`。
+4. `service::startup(store)`：崩溃恢复、未完成的清理、需要决定的恢复、备份位置问题。
+5. 后台：`service::verify_exiftool(gate, pkg, Scope::All)`。
+
 ## 1. 会话与导入
 
 | 命令（ARCHITECTURE §5.2） | mm-core | mm-cli | 说明 |
