@@ -4690,6 +4690,8 @@ fn fixture_regression_through_every_write() {
         .collect();
     files.sort();
     let refs: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
+    let anchor = dir.join("Canon.jpg");
+    let anchor = anchor.to_str().unwrap();
     let name = |p: &str| {
         Path::new(p)
             .file_name()
@@ -4737,6 +4739,33 @@ fn fixture_regression_through_every_write() {
             "7 preset copyright template with defaults",
             &["plan-preset", "--id", "builtin:Copyright Template"][..],
         ),
+        // the other time tools over every odd timestamp (sub-seconds, offsets, invalid dates)
+        (
+            "8 time absolute",
+            &["plan-time", "--absolute", "2026:09:28 10:00:00"][..],
+        ),
+        (
+            "9 time sequence",
+            &[
+                "plan-time",
+                "--sequence",
+                "2026:09:28 10:00:00",
+                "--step",
+                "00:00:10",
+                "--order",
+                "name",
+            ][..],
+        ),
+        (
+            "10 time preserve relative timing",
+            &[
+                "plan-time",
+                "--preserve",
+                anchor,
+                "--to",
+                "2026:09:28 10:00:00",
+            ][..],
+        ),
     ] {
         if write.starts_with('7') {
             let set = lab.cli(&[
@@ -4750,7 +4779,8 @@ fn fixture_regression_through_every_write() {
                 String::from_utf8_lossy(&set.stdout)
             );
         }
-        let (p, pj) = lab.plan_on(cmd, &refs, &format!("w{}.json", &write[..1]));
+        let n = write.split(' ').next().unwrap();
+        let (p, pj) = lab.plan_on(cmd, &refs, &format!("w{n}.json"));
         for e in pj["entries"].as_array().unwrap() {
             let st = &e["status"];
             let s = match (st["status"].as_str().unwrap(), st["reason"].as_str()) {
