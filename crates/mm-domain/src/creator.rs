@@ -189,10 +189,10 @@ pub fn plan(snap: &Snapshot, edit: &CreatorEdit) -> CreatorPlan {
         _ => ChangeKind::Modify,
     };
     if before.conflicting {
-        notes.push(format!(
-            "locations disagreed before the change: {:?}",
+        notes.push(crate::plan::warning(format!(
+            "locations disagreed before the change, all are set now: {:?}",
             before.sources
-        ));
+        )));
     }
     CreatorPlan {
         status: EntryStatus::Ready,
@@ -312,6 +312,39 @@ fn plan_sidecar(raw: &Snapshot, sidecar: Option<&Snapshot>, edit: &CreatorEdit) 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn disagreeing_locations_are_a_warning() {
+        let s = snap(json!({"IFD0:Artist": "A", "XMP-dc:Creator": "B"}));
+        let p = plan(&s, &CreatorEdit::Set(vec!["C".into()]));
+        let e = crate::plan::PlanEntry {
+            seq: 0,
+            path: "x.jpg".into(),
+            raw: None,
+            fingerprint: crate::plan::Fingerprint {
+                size: 0,
+                file_id: String::new(),
+                mtime: 0,
+            },
+            status: p.status.clone(),
+            changes: p.change.into_iter().collect(),
+            action: None,
+            notes: p.notes,
+            excluded: false,
+        };
+        assert_eq!(e.warnings().count(), 1, "{:?}", e.notes);
+        let plan = crate::plan::Plan {
+            id: "p".into(),
+            version: 1,
+            kind: crate::plan::PlanKind::Apply,
+            title: String::new(),
+            registry_version: 0,
+            exiftool_version: String::new(),
+            entries: vec![e],
+            source: None,
+        };
+        assert_eq!(plan.summary().warnings, 1);
+    }
 
     fn snap(v: serde_json::Value) -> Snapshot {
         Snapshot::from_json(&v)

@@ -242,6 +242,14 @@ pub enum Target<'a> {
     },
 }
 
+/// Notes that Preview counts as Warnings (INTERACTION_SPEC §5: e.g. EXIF ≠ XMP, both will be
+/// set) start with this; the rest are plain notes.
+pub const WARNING: &str = "warning: ";
+
+pub fn warning(text: impl std::fmt::Display) -> String {
+    format!("{WARNING}{text}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanEntry {
     pub seq: u32,
@@ -340,7 +348,16 @@ pub struct PlanSummary {
     pub unsupported: usize,
     /// Left out by the user; not counted in the other groups.
     pub excluded: usize,
+    /// Ready entries with at least one warning.
+    pub warnings: usize,
     pub changes: usize,
+}
+
+impl PlanEntry {
+    /// The warnings among the notes, without the marker.
+    pub fn warnings(&self) -> impl Iterator<Item = &str> {
+        self.notes.iter().filter_map(|n| n.strip_prefix(WARNING))
+    }
 }
 
 impl Plan {
@@ -361,6 +378,9 @@ impl Plan {
             if e.excluded {
                 s.excluded += 1;
                 continue;
+            }
+            if e.status == EntryStatus::Ready && e.warnings().next().is_some() {
+                s.warnings += 1;
             }
             match e.status {
                 EntryStatus::Ready => s.ready += 1,

@@ -117,7 +117,7 @@ pub fn delete(store: &mut Store, id: &str) -> Result<(), CoreError> {
 /// Note on every changed entry of a Plan made from an imported Preset's first use (SECURITY_MODEL
 /// §9): the user checks what someone else's rules do before anything is written.
 pub const UNTRUSTED_NOTE: &str =
-    "from an imported Preset used for the first time: check these changes before applying";
+    "warning: from an imported Preset used for the first time: check these changes before applying";
 
 pub fn mark_untrusted(plan: &mut mm_domain::plan::Plan) {
     for e in plan.entries.iter_mut().filter(|e| !e.changes.is_empty()) {

@@ -164,10 +164,10 @@ pub fn plan(snap: &Snapshot, edit: &CopyrightEdit) -> FieldPlan {
         _ => ChangeKind::Modify,
     };
     if before.conflicting {
-        notes.push(format!(
-            "locations disagreed before the change: {:?}",
+        notes.push(crate::plan::warning(format!(
+            "locations disagreed before the change, all are set now: {:?}",
             before.sources
-        ));
+        )));
     }
     FieldPlan {
         status: EntryStatus::Ready,
