@@ -4200,3 +4200,38 @@ fn retry_waits_for_the_read_only_attribute() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SCREEN_SPEC Settings: every known setting is listed with its default; values are checked,
+/// unknown keys refused; exec.workers becomes the default worker count.
+#[test]
+fn settings_are_listed_checked_and_used() {
+    let pkg = require!();
+    let lab = Lab::new("settings", &pkg);
+    let list = Lab::json(&lab.cli(&["settings"]));
+    let keys: Vec<&str> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k["key"].as_str().unwrap())
+        .collect();
+    for k in [
+        "backup.root",
+        "backup.max_age_days",
+        "metadata.copyright_template",
+        "exec.workers",
+    ] {
+        assert!(keys.contains(&k), "{k} missing: {list}");
+    }
+    assert!(!lab.cli(&["setting", "no.such", "1"]).status.success());
+    assert!(!lab.cli(&["setting", "exec.workers", "0"]).status.success());
+    let o = Lab::json(&lab.cli(&["setting", "exec.workers", "2"]));
+    assert_eq!(o["effective"], "2");
+    let a = lab.cli(&["apply", lab.plan("Morii", "p.json").to_str().unwrap()]);
+    assert!(a.status.success());
+    let log = std::fs::read_dir(lab.data.join("logs"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect::<String>();
+    assert!(log.contains("workers=\"2\""), "{log}");
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

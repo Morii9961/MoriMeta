@@ -25,7 +25,8 @@
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
 //!   clear-readonly FILE       the user's explicit "Clear read-only attribute" (never automatic)
 //!   debug-log on | off         ExifTool commands (values cut) and timings in the log, for 24 hours
-//!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
+//!   settings                  every known setting with its value, default and meaning
+//!   setting KEY [VALUE | --clear]   checked before it is kept; unknown keys are refused   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3),
 //!                             backup.root (where new Operations keep their backups)
 //!                             metadata.preserve_mtime = true keeps each written file's
@@ -396,12 +397,12 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| {
             PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("MoriMeta-dev")
         });
-    let g = Global {
+    let mut g = Global {
         data,
         exiftool: take_opt(&mut args, "--exiftool").map(PathBuf::from),
         engine: take_opt(&mut args, "--engine").unwrap_or_else(|| "launcher".into()),
         workers: match take_opt(&mut args, "--workers").map(|v| v.parse::<usize>()) {
-            None => default_workers(),
+            None => 0, // the setting exec.workers, else the default (below)
             Some(Ok(n)) if (1..=16).contains(&n) => n,
             Some(_) => return fail("--workers takes 1..16"),
         },
@@ -440,6 +441,14 @@ fn main() -> ExitCode {
         return fail(
             "running with administrator rights: MoriMeta does not write files then; start it as a normal user",
         );
+    }
+    if g.workers == 0 {
+        g.workers = store
+            .setting("exec.workers")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_workers);
     }
     // SAFETY_MODEL §6: where new Operations keep their backups (setting backup.root)
     if let Ok(Some(root)) = store.setting("backup.root") {
@@ -671,9 +680,9 @@ fn main() -> ExitCode {
                     .ok_or("setting KEY [VALUE | --clear]")?;
                 let before = store.setting(&key).map_err(|e| e.to_string())?;
                 if clear {
-                    store.clear_setting(&key).map_err(|e| e.to_string())?;
+                    mm_core::settings::set(&mut store, &key, "").map_err(|e| e.to_string())?;
                 } else if let Some(v) = args.get(1) {
-                    store.set_setting(&key, v).map_err(|e| e.to_string())?;
+                    mm_core::settings::set(&mut store, &key, v).map_err(|e| e.to_string())?;
                 }
                 // a policy setting is checked before it is kept: it decides what is deleted
                 if key.starts_with("backup.")
@@ -687,7 +696,20 @@ fn main() -> ExitCode {
                     return Err(e.to_string());
                 }
                 let v = store.setting(&key).map_err(|e| e.to_string())?;
-                println!("{}", json!({"key": key, "value": v}));
+                let effective = mm_core::settings::get(&store, &key).map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    json!({"key": key, "value": v, "effective": effective})
+                );
+                Ok(ExitCode::SUCCESS)
+            }
+            "settings" => {
+                let mut out = Vec::new();
+                for k in mm_core::settings::KEYS {
+                    out.push(json!({"key": k.name, "value": store.setting(k.name).map_err(|e| e.to_string())?,
+                                    "default": k.default, "about": k.about}));
+                }
+                println!("{}", Value::Array(out));
                 Ok(ExitCode::SUCCESS)
             }
             "plan-preset" => {

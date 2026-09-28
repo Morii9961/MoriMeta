@@ -17,6 +17,7 @@ pub mod privacy;
 pub mod recovery;
 pub mod retention;
 pub mod service;
+pub mod settings;
 pub mod undo;
 pub mod verify;
 
