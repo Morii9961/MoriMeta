@@ -539,6 +539,22 @@ pub fn open_data(data: &Path) -> Result<(InstanceLock, Store), ServiceError> {
     Ok((lock, store))
 }
 
+/// Check the bundled ExifTool in `pkg` against its `exiftool.manifest` (SECURITY_MODEL §5) and,
+/// if anything differs or the manifest is missing, refuse every write of this process. The app
+/// calls it with `Scope::Key` before ExifTool first runs and with `Scope::All` afterwards.
+/// Returns the problem shown to the user.
+pub fn verify_exiftool(
+    gate: &OperationGate,
+    pkg: &Path,
+    scope: crate::integrity::Scope,
+) -> Option<String> {
+    let manifest = pkg.join(crate::integrity::MANIFEST_NAME);
+    let problem = crate::integrity::check_package(pkg, &manifest, scope).err()?;
+    crate::log::event("error", "ExifTool integrity check failed", &[]);
+    gate.refuse_writes(problem.clone());
+    Some(problem)
+}
+
 /// What the app learns at launch, before any write (SAFETY_MODEL §10, INTERACTION_SPEC §13).
 #[derive(Debug)]
 pub struct Startup {
@@ -705,6 +721,18 @@ mod tests {
         assert!(
             matches!(gate.write(), Err(ServiceError::WritesDisabled(w)) if w == "ExifTool changed")
         );
+    }
+
+    #[test]
+    fn a_package_without_its_manifest_disables_writes() {
+        let d = std::env::temp_dir().join(format!("mm-verify-et-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let gate = OperationGate::default();
+        let why = verify_exiftool(&gate, &d, crate::integrity::Scope::Key).unwrap();
+        assert!(why.contains("manifest"), "{why}");
+        assert!(matches!(gate.write(), Err(ServiceError::WritesDisabled(_))));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
