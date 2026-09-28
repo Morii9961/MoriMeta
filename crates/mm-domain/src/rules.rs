@@ -297,6 +297,12 @@ impl Preset {
 
 /// Built-in general Presets (PRODUCT_SPEC §6.11).
 pub fn builtin() -> Vec<Preset> {
+    builtin_with("© {creator} {year}")
+}
+
+/// The built-in Presets with the user's copyright template (setting
+/// `metadata.copyright_template`).
+pub fn builtin_with(copyright_template: &str) -> Vec<Preset> {
     vec![
         Preset {
             schema_version: PRESET_SCHEMA_VERSION,
@@ -308,7 +314,7 @@ pub fn builtin() -> Vec<Preset> {
                     field: Field::Copyright,
                 }],
                 then: vec![Action::SetCopyright {
-                    value: "© {creator} {year}".into(),
+                    value: copyright_template.into(),
                 }],
             }],
         },

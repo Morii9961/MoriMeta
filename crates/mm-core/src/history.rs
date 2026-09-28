@@ -35,6 +35,8 @@ pub struct OpSummary {
     /// original unchanged), as the completion summary of a stopped Operation counts them apart
     /// from the files never started (INTERACTION_SPEC §10).
     pub rolled_back: usize,
+    /// Written files whose change carried a warning (the completion summary's "2 warnings").
+    pub warnings: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -105,6 +107,15 @@ fn summarize(
         undoable: !pending
             && o.pruned_ms.is_none()
             && files.iter().any(|f| f.state == FileState::Done),
+        warnings: files
+            .iter()
+            .filter(|f| f.state == FileState::Done)
+            .filter(|f| {
+                plan.as_ref()
+                    .and_then(|p| p.entries.iter().find(|e| e.seq == f.seq))
+                    .is_some_and(|e| e.warnings().next().is_some())
+            })
+            .count(),
         rolled_back: files
             .iter()
             .filter(|f| {

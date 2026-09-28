@@ -24,7 +24,8 @@ pub struct PresetInfo {
 const BUILTIN: &str = "builtin:";
 
 pub fn list(store: &Store) -> Result<Vec<PresetInfo>, CoreError> {
-    let mut out: Vec<PresetInfo> = rules::builtin()
+    let template = crate::settings::get(store, "metadata.copyright_template")?;
+    let mut out: Vec<PresetInfo> = rules::builtin_with(&template)
         .into_iter()
         .map(|p| PresetInfo {
             id: format!("{BUILTIN}{}", p.name),
@@ -143,6 +144,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         let mut s = Store::open(&d).unwrap();
         assert_eq!(list(&s).unwrap().len(), rules::builtin().len());
+        // the built-in Copyright Template follows the user's template
+        crate::settings::set(&mut s, "metadata.copyright_template", "© {year} Studio").unwrap();
+        let ct = get(&s, "builtin:Copyright Template").unwrap().preset;
+        assert!(ct.to_json().contains("© {year} Studio"), "{}", ct.to_json());
         let copy = duplicate(&mut s, "builtin:Remove GPS").unwrap();
         let p = get(&s, &copy).unwrap();
         assert_eq!(p.name, "Remove GPS (copy)");
