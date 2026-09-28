@@ -80,8 +80,6 @@
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
 //! 4 fsck found problems.
 
-use std::fs::OpenOptions;
-use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -187,19 +185,6 @@ fn start_engines(g: &Global, n: usize) -> Result<Vec<Engine>, String> {
             })
             .collect()
     })
-}
-
-/// Single-instance lock (SAFETY_MODEL §8.17): an exclusive handle held for the process lifetime.
-fn instance_lock(data: &Path) -> Result<std::fs::File, String> {
-    std::fs::create_dir_all(data.join("run")).map_err(|e| e.to_string())?;
-    OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .share_mode(0)
-        .open(data.join("run").join("instance.lock"))
-        .map_err(|_| "another MoriMeta instance is using this data directory".to_string())
 }
 
 fn require_fault_injection(flag: &str) -> Result<(), String> {
@@ -427,12 +412,12 @@ fn main() -> ExitCode {
         return usage();
     }
     let cmd = args.remove(0);
-    let _lock = match instance_lock(&g.data) {
-        Ok(l) => l,
-        Err(e) => return fail(e),
-    };
-    let mut store = match Store::open(&g.data) {
-        Ok(s) => s,
+    // SAFETY_MODEL §8.17: the same single-instance lock as the app, held until exit
+    let (_lock, mut store) = match mm_core::service::open_data(&g.data) {
+        Ok(x) => x,
+        Err(mm_core::service::ServiceError::AnotherInstance) => {
+            return fail("another MoriMeta instance is using this data directory");
+        }
         Err(e) => return fail(e),
     };
     let with_engine = |g: &Global| -> Result<Engine, String> {

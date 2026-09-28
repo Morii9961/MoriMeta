@@ -259,7 +259,7 @@ op_undo_plan(op, scope)
 | 8.14 | 系统睡眠 | 执行期间 `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)`；已实现（执行与撤销共用，单元测试核对请求在执行期间保持、结束后清除；未做真实睡眠测试） |
 | 8.15 | 断电 | 提交前刷盘；恢复以磁盘实际哈希判定状态（§10）；**尚未做断电测试**（A-3） |
 | 8.16 | 系统性故障 | 熔断：前 20 个文件中失败率 ≥ 50%，或连续 10 个验证失败 → 暂停并询问 |
-| 8.17 | 两个 MoriMeta 实例 | 单实例锁 |
+| 8.17 | 两个 MoriMeta 实例 | 单实例锁：`<data>/run/instance.lock` 的独占句柄，在打开 Journal 之前获取（`service::open_data`，应用与 `mm-cli` 共用；此前只在 `mm-cli` 中）；单元测试核对第二个实例被拒、释放后可再获取 |
 | 8.18 | Plan 生成后文件被外部修改 | 指纹与锁定期间的内容核对（I-4），`Conflict` |
 
 ---

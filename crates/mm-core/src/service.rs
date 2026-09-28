@@ -31,6 +31,8 @@ pub enum ServiceError {
     Busy(String),
     /// Running with administrator rights: writes are disabled (SECURITY_MODEL §4.1).
     Elevated,
+    /// Another MoriMeta (the app or `mm-cli`) holds this data directory (SAFETY_MODEL §8.17).
+    AnotherInstance,
     Core(CoreError),
 }
 
@@ -487,6 +489,42 @@ impl PlanBook {
     }
 }
 
+/// Single-instance lock (SAFETY_MODEL §8.17, ARCHITECTURE §9 `run/instance.lock`): an exclusive
+/// handle on a file in the data directory, held while the value lives. Two MoriMetas writing the
+/// same files is a data risk, so the app and `mm-cli` both take it before opening the Journal.
+#[derive(Debug)]
+pub struct InstanceLock {
+    _file: std::fs::File,
+}
+
+impl InstanceLock {
+    pub fn acquire(data: &Path) -> Result<InstanceLock, ServiceError> {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::create_dir_all(data.join("run"))?;
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .share_mode(0)
+            .open(data.join("run").join("instance.lock"))
+        {
+            Ok(file) => Ok(InstanceLock { _file: file }),
+            // ERROR_SHARING_VIOLATION: the other instance holds it
+            Err(e) if e.raw_os_error() == Some(32) => Err(ServiceError::AnotherInstance),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+/// Open the data directory for this process: the instance lock first, then the Journal. Keep the
+/// lock for as long as the Store is used.
+pub fn open_data(data: &Path) -> Result<(InstanceLock, Store), ServiceError> {
+    let lock = InstanceLock::acquire(data)?;
+    let store = Store::open(data)?;
+    Ok((lock, store))
+}
+
 /// What the app learns at launch, before any write (SAFETY_MODEL §10, INTERACTION_SPEC §13).
 #[derive(Debug)]
 pub struct Startup {
@@ -633,6 +671,19 @@ impl Drop for ExclusivePermit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_instance_per_data_directory() {
+        let d = std::env::temp_dir().join(format!("mm-instance-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (first, store) = open_data(&d).unwrap();
+        assert!(matches!(open_data(&d), Err(ServiceError::AnotherInstance)));
+        drop(store);
+        drop(first);
+        let again = InstanceLock::acquire(&d).unwrap();
+        drop(again);
+        let _ = std::fs::remove_dir_all(&d);
+    }
     use mm_domain::plan::{Fingerprint, PlanKind};
 
     fn plan(n: u32) -> Plan {
