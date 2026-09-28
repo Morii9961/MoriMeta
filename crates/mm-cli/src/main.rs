@@ -43,6 +43,8 @@
 //!   plan-retry OP_ID --out PLAN.json   the failed and skipped files of an Operation again
 //!   now OP_ID [SEQ...]        each file now vs. after the Operation (as_written / original /
 //!                             changed / missing)
+//!   restore-to OP_ID --dir FOLDER   copies of the files as they were before the Operation
+//!                             (new files; the originals are not touched)
 //!   plan-again OP_ID --out PLAN.json   the same edit, read afresh, for the failed, skipped and
 //!                             conflicting files of an Operation
 //!   export-log OP_ID --out FILE.json [--include-paths] [--include-values]
@@ -855,6 +857,14 @@ fn main() -> ExitCode {
                             .collect()
                     )
                 );
+                Ok(ExitCode::SUCCESS)
+            }
+            "restore-to" => {
+                let dir = take_opt(&mut args, "--dir").ok_or("restore-to OP_ID --dir FOLDER")?;
+                let op = args.first().ok_or("restore-to OP_ID --dir FOLDER")?;
+                let r = history::restore_backups_to(&store, op, Path::new(&dir))
+                    .map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&r).unwrap_or_default());
                 Ok(ExitCode::SUCCESS)
             }
             "plan-again" => {

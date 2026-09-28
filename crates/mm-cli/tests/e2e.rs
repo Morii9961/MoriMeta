@@ -3948,3 +3948,35 @@ fn backup_location_setting_and_unavailable_location() {
     assert!(default_dir.exists());
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SCREEN_SPEC History "Restore backup to folder…": copies of the files as they were before the
+/// Operation, as new files (a taken name gets a number), checked against their hashes; the
+/// written files stay as they are.
+#[test]
+fn restore_backups_to_a_folder() {
+    let pkg = require!();
+    let lab = Lab::new("restore-to", &pkg);
+    let op = lab.apply_ok(&lab.plan("Morii", "p.json"));
+    let after: Vec<String> = lab.photos.iter().map(|p| blake(p).unwrap()).collect();
+    let out = lab.dir.join("restored");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("Writer.jpg"), b"already here").unwrap();
+    let r = Lab::json(&lab.cli(&["restore-to", &op, "--dir", out.to_str().unwrap()]));
+    let rows = r.as_array().unwrap();
+    assert_eq!(rows.len(), lab.photos.len(), "{r}");
+    for (row, p) in rows.iter().zip(&lab.photos) {
+        let to = PathBuf::from(row["to"].as_str().unwrap());
+        assert_eq!(blake(&to).as_deref(), Some(lab.truth[p].as_str()), "{row}");
+    }
+    assert!(
+        rows[0]["to"].as_str().unwrap().ends_with("Writer (2).jpg"),
+        "{r}"
+    );
+    assert_eq!(
+        std::fs::read(out.join("Writer.jpg")).unwrap(),
+        b"already here"
+    );
+    let now: Vec<String> = lab.photos.iter().map(|p| blake(p).unwrap()).collect();
+    assert_eq!(now, after, "the written files are not touched");
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

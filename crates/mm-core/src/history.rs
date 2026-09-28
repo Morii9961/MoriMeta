@@ -396,3 +396,96 @@ pub fn now_vs_after(
     }
     Ok(out)
 }
+
+/// One file of "Restore backup to folder…".
+#[derive(Debug, Clone, Serialize)]
+pub struct Restored {
+    pub seq: u32,
+    /// The new file, or None when this file has no backup (it did not exist before) or the
+    /// backup is missing or damaged.
+    pub to: Option<String>,
+    pub note: Option<String>,
+}
+
+/// "Restore backup to folder…" (SCREEN_SPEC History): copy the content every file had before the
+/// Operation into `dir` as new files named like the originals (`name (2).jpg` when taken). The
+/// originals are not touched; each copy is checked against the recorded hash, and a copy that
+/// does not match is removed again.
+pub fn restore_backups_to(
+    store: &Store,
+    op_id: &str,
+    dir: &std::path::Path,
+) -> Result<Vec<Restored>, CoreError> {
+    let o = store
+        .operation(op_id)?
+        .ok_or_else(|| CoreError::Input(format!("no operation {op_id}")))?;
+    if o.pruned_ms.is_some() {
+        return Err(CoreError::Input(format!(
+            "the backups of {op_id} were removed by the retention policy"
+        )));
+    }
+    std::fs::create_dir_all(dir)?;
+    let mut out = Vec::new();
+    for f in store.files(op_id)? {
+        let backup = std::path::Path::new(&f.backup_path);
+        let Some(h0) = f.h0.clone() else {
+            out.push(Restored {
+                seq: f.seq,
+                to: None,
+                note: Some("no backup: the file did not exist before or was not reached".into()),
+            });
+            continue;
+        };
+        if crate::hash_opt(backup).as_deref() != Some(h0.as_str()) {
+            out.push(Restored {
+                seq: f.seq,
+                to: None,
+                note: Some("backup missing or damaged".into()),
+            });
+            continue;
+        }
+        let name = std::path::Path::new(&f.path);
+        let stem = name
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("file{}", f.seq));
+        let ext = name
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
+        let mut src = std::fs::File::open(backup)?;
+        let mut copied = None;
+        for n in 1..10_000 {
+            let candidate = if n == 1 {
+                dir.join(format!("{stem}{ext}"))
+            } else {
+                dir.join(format!("{stem} ({n}){ext}"))
+            };
+            // never replaces: a taken name is skipped
+            match mm_fs::copy_new_hashing(&mut src, &candidate) {
+                Ok(h) => {
+                    copied = Some((candidate, mm_fs::hex(&h)));
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let (to, h) = copied.ok_or_else(|| CoreError::Input("no free file name".into()))?;
+        if h != h0 {
+            let _ = std::fs::remove_file(&to);
+            out.push(Restored {
+                seq: f.seq,
+                to: None,
+                note: Some("copy does not match the backup's hash; removed".into()),
+            });
+            continue;
+        }
+        out.push(Restored {
+            seq: f.seq,
+            to: Some(to.to_string_lossy().into_owned()),
+            note: None,
+        });
+    }
+    Ok(out)
+}
