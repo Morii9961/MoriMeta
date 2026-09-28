@@ -28,7 +28,7 @@ Safety claims are limited to what has been tested (see [`docs/SPIKE_REPORT.md`](
 
 | Path | Contents |
 |---|---|
-| `docs/` | Product spec, architecture, metadata/safety/security models, development and release plans, spike report (Chinese, drafts) |
+| `docs/` | Product spec, architecture, metadata/safety/security models, development and release plans, spike report, backend interface map for the future UI adapter (`BACKEND_INTERFACE.md`) and the engineering review of the design (Chinese, drafts) |
 | `crates/` | Rust workspace: `mm-exiftool` (ExifTool process protocol), `mm-fs` (Windows file primitives), `mm-domain` (fields, time tools, templates, rules; no IO), `mm-store` (SQLite journal, backup manifests), `mm-core` (planner, transactional executor, recovery, undo, retention, backend interface for the future UI), `mm-cli` (development driver and end-to-end tests) |
 | `research/` | Reproducible Phase 0 experiments and throwaway prototypes (not product code) |
 | `tools/` | Repository checks |
