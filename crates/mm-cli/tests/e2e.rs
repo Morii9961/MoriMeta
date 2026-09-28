@@ -401,7 +401,7 @@ fn apply_then_undo_is_byte_identical() {
 #[test]
 fn crash_at_every_step_recovers_resumes_and_undoes() {
     let pkg = require!();
-    for seq in [0u32, 3] {
+    for seq in [0u32, 3, 7] {
         for step in 1u8..=10 {
             let lab = Lab::new(&format!("crash-{seq}-{step}"), &pkg);
             let plan = lab.plan("Morii", "p.json");
@@ -711,6 +711,11 @@ fn journal_write_failures_are_settled_or_recovered() {
         "2:ready",
         "2:committed",
         "2:done",
+        // the first and the last file
+        "0:ready",
+        "0:committed",
+        "7:backed_up",
+        "7:done",
         "finish",
     ];
     for target in targets {
@@ -746,8 +751,12 @@ fn journal_write_failures_are_settled_or_recovered() {
             );
             let op = lab.last_op();
             lab.assert_preimages(&op);
-            let target_file = &lab.photos[2];
-            let before_commit = target == "2:backed_up" || target == "2:ready";
+            let seq = target
+                .split_once(':')
+                .and_then(|(s, _)| s.parse::<usize>().ok())
+                .unwrap_or(2);
+            let target_file = &lab.photos[seq];
+            let before_commit = target.ends_with(":backed_up") || target.ends_with(":ready");
             if before_commit {
                 // the file was never committed without its Ready record (I-8)
                 assert_eq!(
@@ -761,7 +770,7 @@ fn journal_write_failures_are_settled_or_recovered() {
                 let r = Lab::json(&o);
                 assert_ne!(r["status"], "running", "{case}");
                 let want = if before_commit { "failed" } else { "done" };
-                assert_eq!(state_of(&r, 2), want, "{case}: {r}");
+                assert_eq!(state_of(&r, seq as u64), want, "{case}: {r}");
             } else {
                 // the journal stayed unavailable: the Operation is left for recovery
                 assert_eq!(op_status(&lab, &op), "running", "{case}");
