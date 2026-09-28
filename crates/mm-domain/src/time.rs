@@ -144,6 +144,9 @@ pub struct TimeItem {
     pub id: u64,
     pub file_name: String,
     pub time: Option<CaptureTime>,
+    /// Files with the same key take one position in a Sequence (a RAW and its JPG: same folder,
+    /// same name; INTERACTION_SPEC §17).
+    pub pair: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -292,10 +295,22 @@ pub fn apply(op: &TimeOp, items: &[TimeItem]) -> Result<Vec<TimeResult>, TimeOpE
                 SequenceOrder::NaturalFileName => sorted
                     .sort_by(|a, b| natural_cmp(&a.file_name, &b.file_name).then(a.id.cmp(&b.id))),
             }
+            let mut positions: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            let mut next = 0usize;
             Ok(sorted
                 .into_iter()
-                .enumerate()
-                .map(|(i, it)| {
+                .map(|it| {
+                    let i = match it.pair.as_deref() {
+                        Some(k) => *positions.entry(k).or_insert_with(|| {
+                            next += 1;
+                            next - 1
+                        }),
+                        None => {
+                            next += 1;
+                            next - 1
+                        }
+                    };
                     let after = i32::try_from(i)
                         .ok()
                         .and_then(|n| step.checked_mul(n))
@@ -424,6 +439,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_raw_and_its_jpg_share_one_sequence_position() {
+        let mut items = vec![
+            item(1, "DSC_0001.JPG", Some("2024:01:01 10:00:00")),
+            item(2, "DSC_0001.NEF", Some("2024:01:01 10:00:00")),
+            item(3, "DSC_0002.JPG", Some("2024:01:01 10:00:05")),
+        ];
+        items[0].pair = Some("d/dsc_0001".into());
+        items[1].pair = Some("d/dsc_0001".into());
+        items[2].pair = Some("d/dsc_0002".into());
+        let op = TimeOp::Sequence {
+            start: ymd_hms(2024, 5, 1, 9, 0, 0),
+            step: TimeDelta::seconds(60),
+            order: SequenceOrder::CaptureTimeThenName,
+        };
+        let r = apply(&op, &items).unwrap();
+        let at = |id: u64| {
+            r.iter()
+                .find(|x| x.id == id)
+                .unwrap()
+                .after
+                .clone()
+                .unwrap()
+                .local
+        };
+        assert_eq!(at(1), ymd_hms(2024, 5, 1, 9, 0, 0));
+        assert_eq!(at(2), ymd_hms(2024, 5, 1, 9, 0, 0));
+        assert_eq!(at(3), ymd_hms(2024, 5, 1, 9, 1, 0));
+    }
+
+    #[test]
     fn shift_and_local_text_round_trip() {
         for t in [
             "+01:00:00",
@@ -444,6 +489,7 @@ mod tests {
             id,
             file_name: name.into(),
             time: exif.map(|e| CaptureTime::from_exif(e, None, Some("+02:00")).unwrap()),
+            pair: None,
         }
     }
 
@@ -522,11 +568,13 @@ mod tests {
                     CaptureTime::from_exif("2023:06:02 18:53:25", Some("67"), Some("+02:00"))
                         .unwrap(),
                 ),
+                pair: None,
             },
             TimeItem {
                 id: 2,
                 file_name: "b".into(),
                 time: None,
+                pair: None,
             },
         ];
         let r = apply(&TimeOp::Absolute(ymd_hms(2026, 9, 4, 12, 27, 0)), &items).unwrap();
@@ -571,6 +619,7 @@ mod tests {
                 id: 1,
                 file_name: "a".into(),
                 time: Some(t),
+                pair: None,
             }],
         )
         .unwrap();
@@ -726,6 +775,7 @@ mod tests {
             id,
             file_name: name.into(),
             time: Some(CaptureTime::from_exif("2026:01:01 10:00:00", ss, None).unwrap()),
+            pair: None,
         };
         let items = vec![
             mk(1, "b", Some("50")),

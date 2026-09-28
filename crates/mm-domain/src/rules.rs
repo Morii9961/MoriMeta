@@ -426,6 +426,7 @@ fn plan_time(t: &Target, op: &TimeOp, keep_subsec: bool, digitized: bool) -> Fie
         id: 0,
         file_name: String::new(),
         time: capture::read_target(t).ok().flatten(),
+        pair: None,
     };
     let after = time::apply(op, &[item])
         .map_err(|e| e.to_string())

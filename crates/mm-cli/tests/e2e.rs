@@ -4022,3 +4022,37 @@ fn preflight_reports_rescans_and_backup_problems() {
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// INTERACTION_SPEC §17: in a Sequence a RAW and its JPG (same folder, same name) share one
+/// timestamp; the next file takes the next step.
+#[test]
+fn sequence_gives_a_raw_and_its_jpg_one_time() {
+    let pkg = require!();
+    let lab = Lab::new("seq-pair", &pkg);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let dir = nef.parent().unwrap().to_path_buf();
+    let jpg = dir.join("DSC_0001.JPG");
+    std::fs::copy(&lab.photos[1], &jpg).unwrap(); // Nikon.jpg has a capture time
+    let other = dir.join("DSC_0002.JPG");
+    std::fs::copy(&lab.photos[2], &other).unwrap();
+    let (_, pj) = lab.plan_on(
+        &[
+            "plan-time",
+            "--sequence",
+            "2024:05:01 09:00:00",
+            "--step",
+            "00:01:00",
+            "--order",
+            "name",
+        ],
+        &[&jpg, &nef, &other],
+        "s.json",
+    );
+    let after = |i: usize| -> String {
+        pj["entries"][i]["changes"][0]["after"][0].as_str().unwrap()[..19].to_owned()
+    };
+    assert_eq!(after(0), "2024:05:01 09:00:00", "{pj}");
+    assert_eq!(after(1), "2024:05:01 09:00:00", "{pj}");
+    assert_eq!(after(2), "2024:05:01 09:01:00", "{pj}");
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

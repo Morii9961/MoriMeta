@@ -376,6 +376,20 @@ fn plan_capture_time_inner(
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default(),
                 time: capture::read_target(t).ok().flatten(),
+                // a RAW and its JPG (same folder, same name) share one Sequence position
+                pair: {
+                    let p = shown(*idx);
+                    let p = Path::new(&p);
+                    Some(format!(
+                        "{}|{}",
+                        p.parent()
+                            .map(|d| d.to_string_lossy().to_lowercase())
+                            .unwrap_or_default(),
+                        p.file_stem()
+                            .map(|s| s.to_string_lossy().to_lowercase())
+                            .unwrap_or_default()
+                    ))
+                },
             })
             .collect();
         let name = |id: u64| shown(id as usize);
