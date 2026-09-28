@@ -93,7 +93,7 @@
 
 白名单在构建时由脚本对照 ExifTool `-listw` 生成并与禁止表求差，结果入库并在 ExifTool 升级时复核。
 
-实现状态（2026-09-28）：写入层兜底检查 `engine::check_writable`（System/File/Composite/MakerNotes 组、上表标签、除 `GPS:all` 外的整组写入一律拒绝），字段注册表之外的第二道防线；`-listw` 生成白名单尚未做。启动后校验 `-ver` 等于 `EXIFTOOL_VERSION`（测试保证与 `research/exiftool.lock.json` 一致）。打包文件完整性（§5）：校验机制已实现（2026-09-28，`mm-core::integrity`），打包步骤本身待 Phase 4。提权检测 `mm_fs::is_elevated`：`OperationGate::for_this_process()` 与 `mm-cli` 的写命令在提权时拒绝写入（无法判断时同样拒绝）；`MM_ALLOW_ELEVATED=1` 只供 CI（runner 以提权运行）。
+实现状态（2026-09-28）：写入层兜底检查 `engine::check_writable`（System/File/Composite/MakerNotes 组、上表标签、除 `GPS:all` 外的整组写入一律拒绝），字段注册表之外的第二道防线。与 ExifTool 标签库的核对（2026-09-28，e2e `every_planned_tag_is_writable_in_the_pinned_exiftool`）：八种 MVP 写入（含清除与删除 GPS）对 JPEG 与 NEF sidecar 生成的 Plan 中，每个写入或删除的标签都按其组在固定版本的 `-listx` 中标为可写；唯一的整组操作是删除 `GPS:all`；ExifTool 升级后若某个标签不再可写或换了组，此测试先失败。启动后校验 `-ver` 等于 `EXIFTOOL_VERSION`（测试保证与 `research/exiftool.lock.json` 一致）。打包文件完整性（§5）：校验机制已实现（2026-09-28，`mm-core::integrity`），打包步骤本身待 Phase 4。提权检测 `mm_fs::is_elevated`：`OperationGate::for_this_process()` 与 `mm-cli` 的写命令在提权时拒绝写入（无法判断时同样拒绝）；`MM_ALLOW_ELEVATED=1` 只供 CI（runner 以提权运行）。
 
 ---
 

@@ -5024,3 +5024,85 @@ fn cloud_placeholders_are_never_read() {
     }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SECURITY_MODEL §4: every tag a Plan writes or deletes (all MVP writes, JPEG and NEF sidecar)
+/// is writable in that group according to the pinned ExifTool's own tag database (`-listx`), so
+/// an ExifTool upgrade that drops or moves one of them is caught here, not by a failed write.
+#[test]
+fn every_planned_tag_is_writable_in_the_pinned_exiftool() {
+    let pkg = require!();
+    let lab = Lab::new("listx", &pkg);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let mut files: Vec<&Path> = lab.photos.iter().map(PathBuf::as_path).collect();
+    files.push(&nef);
+    let mut planned: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for (i, cmd) in [
+        &["plan-creator", "--set", "Morii"][..],
+        &["plan-copyright", "--set", "(c) Morii"][..],
+        &["plan-gps", "--set", "35.6586,139.7454,40"][..],
+        &["plan-gps", "--remove"][..],
+        &["plan-time", "--absolute", "2026:09:28 10:00:00"][..],
+        &["plan-time", "--shift", "+01:00:00"][..],
+        &["plan-creator", "--clear"][..],
+        &["plan-copyright", "--clear"][..],
+    ]
+    .iter()
+    .enumerate()
+    {
+        let (plan, _) = lab.plan_on(cmd, &files, &format!("w{i}.json"));
+        let pj: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
+        for e in pj["entries"].as_array().unwrap() {
+            for op in e["action"]["ops"].as_array().into_iter().flatten() {
+                if let Some(t) = op["tag"].as_str() {
+                    planned.insert(t.to_owned());
+                }
+            }
+        }
+    }
+    assert!(planned.len() >= 20, "too few tags collected: {planned:?}");
+
+    // `-listx` takes one group per run
+    let mut xml = String::new();
+    for group in ["-EXIF:All", "-XMP:All", "-IPTC:All", "-GPS:All"] {
+        let o = Command::new(pkg.join("exiftool.exe"))
+            .args(["-config", "", "-listx", group])
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{group}");
+        xml.push_str(&String::from_utf8_lossy(&o.stdout));
+    }
+
+    let attr = |line: &str, name: &str| -> Option<String> {
+        let at = line.find(&format!(" {name}='"))? + name.len() + 3;
+        Some(line[at..at + line[at..].find('\'')?].to_owned())
+    };
+    let mut writable: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut table_g1 = String::new();
+    for line in xml.lines() {
+        let line = line.trim();
+        if line.starts_with("<table ") {
+            table_g1 = attr(line, "g1").unwrap_or_default();
+        } else if line.starts_with("<tag ") && attr(line, "writable").as_deref() == Some("true") {
+            let g1 = attr(line, "g1").unwrap_or_else(|| table_g1.clone());
+            writable.insert(format!("{g1}:{}", attr(line, "name").unwrap()));
+        }
+    }
+    // the one whole-group operation engine::check_writable allows: deleting all GPS tags
+    let groups: Vec<&String> = planned.iter().filter(|t| t.ends_with(":all")).collect();
+    assert_eq!(groups, ["GPS:all"], "whole-group operations");
+    let missing: Vec<&String> = planned
+        .iter()
+        .filter(|t| !t.ends_with(":all"))
+        .filter(|t| {
+            // a language alternative (`-x-default`) is written through its base tag
+            let base = t.strip_suffix("-x-default").unwrap_or(t);
+            !writable.contains(base)
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "not writable in ExifTool {}: {missing:?}",
+        pkg.display()
+    );
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
