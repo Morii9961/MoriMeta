@@ -1,0 +1,18 @@
+# Dependency updates as pull requests; CI must pass before merging (branch protection).
+# GitHub Actions stay pinned to commit SHAs: Dependabot updates the SHA and its version comment.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -57,6 +57,10 @@ cargo run --release -p mm-cli -- --data <dir> --exiftool <folder> plan-undo <op-
 
 Only work on copies of photos: this is pre-alpha software.
 
+## Contributing and security
+
+Contributions are welcome under the Developer Certificate of Origin (`git commit -s`); see [`CONTRIBUTING.md`](CONTRIBUTING.md). Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md).
+
 ## License
 
 MoriMeta is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) (SPDX: `GPL-3.0-or-later`).
