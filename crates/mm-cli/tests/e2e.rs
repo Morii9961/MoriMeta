@@ -4644,9 +4644,10 @@ fn symbolic_links_are_never_written() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
-/// SAFETY_MODEL §12 corpus regression, the procedure for every ExifTool upgrade: every JPEG and
-/// XMP among ExifTool's own test images goes through the four MVP writes; each write is verified
-/// before its commit and then undone byte for byte. What happened to each file in each write is
+/// SAFETY_MODEL §12 corpus regression, the procedure for every ExifTool upgrade: every one of
+/// ExifTool's own test files goes through the four MVP writes (formats this build does not write
+/// must stay Unsupported and untouched); each write is verified before its commit and then undone
+/// byte for byte. What happened to each file in each write is
 /// compared with `tests/regression/exiftool-<version>.json`. After an upgrade, run with
 /// `MM_UPDATE_REGRESSION=1` to rewrite that file and review its diff: every change needs a
 /// known reason (SAFETY_MODEL §12 "0 verification failures, or each with a known cause").
@@ -4659,12 +4660,7 @@ fn fixture_regression_through_every_write() {
     let mut files: Vec<PathBuf> = std::fs::read_dir(timages())
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.extension().is_some_and(|e| {
-                let e = e.to_string_lossy().to_lowercase();
-                e == "jpg" || e == "xmp"
-            })
-        })
+        .filter(|p| p.is_file())
         .map(|p| {
             let to = dir.join(p.file_name().unwrap());
             std::fs::copy(&p, &to).unwrap();
@@ -4715,8 +4711,9 @@ fn fixture_regression_through_every_write() {
                 (k, Some(r)) => format!("{k}: {}", scrub(r)),
                 (k, None) => k.to_owned(),
             };
-            got.get_mut(&name(e["path"].as_str().unwrap()))
-                .unwrap_or_else(|| panic!("{write}: unexpected entry {e}"))
+            // a new sidecar for a RAW is an entry of its own
+            got.entry(name(e["path"].as_str().unwrap()))
+                .or_default()
                 .insert(write.to_owned(), s);
         }
         let a = lab.cli(&["apply", p.to_str().unwrap()]);
@@ -4729,7 +4726,7 @@ fn fixture_regression_through_every_write() {
                     (k, Some(why)) => format!("{k}: {}", scrub(why)),
                     (k, None) => k.to_owned(),
                 };
-                got.get_mut(&n).unwrap().insert(write.to_owned(), s);
+                got.entry(n).or_default().insert(write.to_owned(), s);
             }
             assert!(lab.cli(&["fsck", op]).status.success(), "{write}");
             lab.undo(op);

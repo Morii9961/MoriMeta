@@ -1,4 +1,11 @@
 {
+  "AAC.aac": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e7c57d758fbb75293c0965b4ae8f51fe5d7f7e3f0a65a798738885dd1e26c3e2"
+  },
   "AFCP.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
@@ -6,12 +13,68 @@
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "6b2bb83559a3d0a47fcd308319c06d75bb9acf9e79a3a8c93e5baf810cf2afcf"
   },
+  "AIFF.aif": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6b773748ae2ec8805c45df5f39aa22af94031e84293dcc1682ab49cd92086f71"
+  },
+  "APE.ape": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3e2e6e044c8882870cf00198b5dcc9f2f0c81a39a3da8d2ffffb6109610f9bca"
+  },
+  "APE.mpc": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2f31675682ef00d7c2d804bd325db6bb7670a341af0ea87522f6f5a3a2f7353f"
+  },
+  "ASF.wmv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "c7653e3ab7d768779a5bc2bf26faaae84b7689f4c6c8424cc0a59bcc0b3ac114"
+  },
   "Apple.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "518c958d25c225234c5a339beaa035ae26d9085340cf9ca05f0551da531ae5b2"
+  },
+  "Audible.aa": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "1825afbf267076d30f4609597632d14ea0cda25e8463f175de89238c5d94a320"
+  },
+  "BMP.bmp": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "9d827a165b100d491bd006cb7f8d153304fa0f5c1b9e59f7cdfa5fb4baddb772"
+  },
+  "BPG.bpg": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "7b0181f5e95814b03ccf438712b98dbac9a02edb24a50e8768876fc4f8188f4b"
+  },
+  "BigTIFF.btf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "b0dafe24aeaddc3aeb03fed044aaf729f13e3312e90069809d662778b13830c7"
   },
   "Canon.jpg": {
     "1 creator": "done",
@@ -26,6 +89,48 @@
     "3 gps": "done",
     "4 time": "done",
     "blake3": "930f7bccd9d08fb4a73200e1a09a66908a1317c958d225b9e3ab231fd6904f52"
+  },
+  "CanonRaw.cr2": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3742b738099e260d580e6e41f67c3810e31b7057dcbf5e2f20ce2be98d239605"
+  },
+  "CanonRaw.cr3": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "93018b1dc624655cf5a5b69916e9078288876fd4d45ae5e0ce7d86a5251c513d"
+  },
+  "CanonRaw.crw": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "90dbc81f4991e65b45c73548d80e290a86cdf542b367ff1c751ed4cf99933db5"
+  },
+  "CanonVRD.dr4": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "d0e69c1b857eb15ffb7ed68e3823d6c05e276b14495ff1ac65fc17c6850238e5"
+  },
+  "CanonVRD.vrd": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "a225b70864da5ca29e8281847296fac27fcbdbc51b0e901058a5d18e5c78834a"
+  },
+  "CaptureOne.eip": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "82ae7da91a19ae455b2b34783e9c83c63970652bcacaf9bc15f95d1c9f1415c2"
   },
   "Casio.jpg": {
     "1 creator": "done",
@@ -48,12 +153,103 @@
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "480119cd1f6f0ce2f98ab0335077c4825abc52d6c68d98a1eadf5caa59688fc4"
   },
+  "DICOM.dcm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "48dc8659acbe7af7083f91972e9a8ff17be8376b8e814fdd262b65e89ada0245"
+  },
+  "DNG.dng": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "73c278256cda465b8908a75adef4d1856bd49229a9c61ade99d52e03ff57e265"
+  },
+  "DPX.dpx": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "a0d8200c35b7e281a731e4351c6a72b37d8dc60f9aa182b32f8961b3efee4c84"
+  },
+  "DV.dv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "950a90e6ea2d5bc5168124ad946d4b3226e019ad2c8c96650067495791e75a35"
+  },
+  "DjVu.djvu": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ba0018cd75bdb3a2e51ffacaf8000c86356cdf58cb37aab501046414fce55d08"
+  },
+  "EXE.a": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e16cc6d2307e46d12bfe7ec70d593625d074bf3783214089d03a000c67b8234f"
+  },
+  "EXE.dylib": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "79aeb6fb390a0ad3f1d8ce92bfbd5a12c623e636c2200eb149dc5890a75f2d9c"
+  },
+  "EXE.elf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "5de0a39f9408f33a918cb276fb81a722181378d1eba2f9ce7906a8ebfd2012bb"
+  },
+  "EXE.exe": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e42234bca0cb0209deceb1e2e85ce1cc80babf81de50d26b82bc41fa332352f8"
+  },
+  "EXE.macho": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "63f61f87f9f5cc82939bbecfa93def326efca02f14ffc24f6dc82e1e258eb1f1"
+  },
+  "EXE.so": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "a67804fa41327781f912880cf99d22a6fcebb9640b9a3ed3ee470581fce9dd3d"
+  },
   "ExifTool.jpg": {
     "1 creator": "blocked: file contains more than one IPTC record; not written",
     "2 copyright": "blocked: file contains more than one IPTC record; not written",
     "3 gps": "done",
     "4 time": "blocked: file contains more than one IPTC record; not written",
     "blake3": "1f7838fab2294172cdd72cd500f98493380900482ab8d5546781846fef201aa0"
+  },
+  "ExifTool.jps": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "02a7c50109fa78f3ffff4707166723dc5e786bac1447529151c6bc8666d0098a"
+  },
+  "ExifTool.tif": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "89ab8b7baa544d06eec0c7fb14396b2eca4c550202ebb48c747b5ae250c02006"
   },
   "ExtendedXMP.jpg": {
     "1 creator": "done",
@@ -62,12 +258,110 @@
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "3883f4d9790d61fc71944988a68cd7a380f5afe93d9eb38ccd1f9b798cdbb4be"
   },
+  "FITS.fits": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "1c3a552330f13188131d8c7d2a3e66b1accd693b26f42332d7c2be54297a751d"
+  },
+  "FLAC.flac": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0ed3ad4f43c8e9a301f68eb5e3e7887efa6f4400ab23f0d4b8ea561cfb9a3339"
+  },
+  "FLAC.ogg": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "5e032e51f8dc5cf3df4b7564eae953d89fc8122d3c549dbbbf70500f6fe49c03"
+  },
+  "FLIF.flif": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "c3239bd0f801a144f8cec1e425988484d58862d4ed85d5a153763a2bd3530f22"
+  },
+  "FLIR.fpf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4d8e8d244b54983a399eaff5d47e01954974bd680fc79eec37c5831286f8a5c4"
+  },
   "FLIR.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "e624cec25767f4eba670bce2980a48d2936ce2e42bc864555dbe539e04afba4e"
+  },
+  "Flash.flv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8890e1f5e8c10b1eb446740f466835237c88d7f1c6b153fcf739308e539da9d1"
+  },
+  "Flash.swf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "9d0bd993a654f3cea53df74aebbddff89736f7185f505f7e5101e8baddd9f187"
+  },
+  "FlashPix.ppt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8011f7f31a479dc6c09afcc7262c0fcc4fae3610ae982dc6ec9e4de010229ce1"
+  },
+  "Font.afm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6067b7f0381a9b73f820503ebdcad7682bbe0960165058bd75e1234873b23db1"
+  },
+  "Font.dfont": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "39504e6ba51f885016b96ded073acda07012b2cccaa1d24e585a990f65ebf51d"
+  },
+  "Font.pfa": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ce04bfe48a7e365836c4b1faffe289f3c00cce1b433a1dd95b0e0d02d00e9d9d"
+  },
+  "Font.pfb": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "5f4a204d68fc361152011377e7b2943cd3dda6e84df01c5a9e824c2dc698f00c"
+  },
+  "Font.pfm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "472a364352ab621007e67eed6e09a8bec8a99b571aa8025aaaca36473ababaa8"
+  },
+  "Font.ttf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "b3ece4b8cb48c45b22a1fa2a62f443d6aaba61400ab9a2391052f23cb6750d1e"
   },
   "FotoStation.jpg": {
     "1 creator": "done",
@@ -83,6 +377,13 @@
     "4 time": "done",
     "blake3": "c9f46d500a96e2f4e11367a020343be5f3cbb666431c44551da3faa15210fc2c"
   },
+  "FujiFilm.raf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ca0bb4391d11954023dbf8036d52571ad1184fab1d6fa79acbcbb3799bb36c2c"
+  },
   "GE.jpg": {
     "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
     "2 copyright": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
@@ -90,12 +391,96 @@
     "4 time": "failed: verification V1: Engine(\"Warning: [minor] Suspicious MakerNotes offset for GE_0x0200\")",
     "blake3": "bb3dc97ecf2ebab375f77dbf38fb6bd4c2d54e1eb8d8bf7725a12a6fec73f0fe"
   },
+  "GIF.gif": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2f1efddaf16b17c2e70a8738389ca6947328b609e19789f09e493fb084777b1a"
+  },
+  "GIMP.xcf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f56639059a55e7814f4ef32277ea911f785665969b78973a401d810dd6d41da2"
+  },
   "GPS.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "eea1397afd8d9160d3adf3a2b4b3c0f271c0d448c81b4b4242719f65f64e86c7"
+  },
+  "Garmin.fit": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ba2f7539d207a5b5b34a17877c47266d4102c9bfda1d5b1258d0a87fe99757a5"
+  },
+  "GeoTiff.tif": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4734d17594f230b8409f5fd29d72813ff50e177f50fda61041c2ea7314ada704"
+  },
+  "Geotag.gpx": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ef0e6b76165e23c0099341054d7b12256bcd67a8728832ac73f2bdacdaede6c7"
+  },
+  "Geotag.igc": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "35645a70961166d93bbabf22e1a81d8b96c10be3b3dbac99e8a64ff5eaf22f69"
+  },
+  "Geotag.kml": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4c1e127a5a420ceecab189bf164f4b08b9cfdabfa74c056ae5ad4958555528c6"
+  },
+  "Geotag.log": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ccfe2eb83c2a419647573a8f04015d9f8e937f8b294e37e946bb65211687eddb"
+  },
+  "Geotag.xml": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "36714313fd4e7e10a56fe5d9667748cf90ea334fac833f5e7c035e54d436a0df"
+  },
+  "Geotag2.log": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ba98b78af1681eb1a825fb2fcff4f05be7c799c3754fc9d758c1ca5f24875e38"
+  },
+  "Geotag3.log": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "cd2450269249703b0c0f010dc9cc9f2c7d1db5446f3e3ce9954b70f9bd5df379"
+  },
+  "Geotag_DJI_2020-12-02_[07-50-31].csv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2096ac51547bfbe85eed628939209aa2f7638a0244a487fe294f0c5d8dd8d5fd"
   },
   "GoPro.jpg": {
     "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Maker notes could not be parsed\")",
@@ -111,6 +496,27 @@
     "4 time": "done",
     "blake3": "649b2e8e0c2e7a41d6f39be359264f54b7b9b5cc1f13342b32c0c78222fcc82d"
   },
+  "HTML.html": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ff9f3a8b04822d645626bd26e4dcec6e7a7e581a655a12c6247dab27ac631840"
+  },
+  "ICC_Profile.icc": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "1cc14d68d32ca040b58d30970cc5bcccbced2b3cdf3d4e89de7b2d3fc3fc1f9a"
+  },
+  "ICO.ico": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4e8b815fff93b337ad4e432f39aba1fc22cd5888b95c723e26902fa3541b5e6d"
+  },
   "IPTC.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
@@ -118,12 +524,40 @@
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "0f41776fa2351f12978e208fc52497385e1614cc7e51e39a4852be39047747c8"
   },
+  "ISO.iso": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "60b69f97e25b44a7bc29e10145300d736cc616fcbbc46992cca12abe2252b972"
+  },
+  "ITC.itc": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ee073b79cea1f1cf0d08c38b5a06b52dadc2260c0b4a9afc4cdd36e461adac22"
+  },
+  "InDesign.indd": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "d39a0ebd59e3ac0ed0ae3003f36bf3598b2a821ee72eec1d2df6f72be513e91f"
+  },
   "InfiRay.jpg": {
     "1 creator": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
     "2 copyright": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
     "3 gps": "failed: verification V1: Engine(\"Warning: [minor] Entries in IFD0 were out of sequence. Fixed.\")",
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "9d064831d9e826665caed767174dd5ec356806c6a1ff2e5d8ea92828cebffa6b"
+  },
+  "JSON.json": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "c7aa2b88a8590bb26b726003eff7298d101200de4c181f9d76db28c61ca55989"
   },
   "JVC.jpg": {
     "1 creator": "done",
@@ -139,12 +573,110 @@
     "4 time": "done",
     "blake3": "30dbd7d086091a05180069713379a9ac731175fc5d0492588e559964ff9be9fa"
   },
+  "JXL.jxl": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ae62e378b60a6411cba98a560779ddc390905388fe8e3f5705fb091349d0c84d"
+  },
+  "JXL2.jxl": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6b35f0f2ae3c5c6737ae8239f23c1f3e4ee887c49523d96acc84426fe0ba5022"
+  },
+  "Jpeg2000.j2c": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "387927258cee12d527b4b6cae7b30a21609dbab7cfab683ed0cf0ed389b08fe3"
+  },
+  "Jpeg2000.jp2": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8a55b8b59aeb1bbd471de73c65d7dfd0f394081c22fffbc7e88b2ac2052a8d85"
+  },
   "Kodak.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "7ef63b0d75a9c17fc018e78b19bee06beb7a785a23310bd671be39627c751266"
+  },
+  "KyoceraRaw.raw": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "de6e5e931934b5782f9aea7d9938b9177c2d96692decc3af66a81708be58a711"
+  },
+  "LNK.lnk": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e971b748bb6a96c93088a4b2178a91a70004c80ed3bb601bd925efaf4cf41b81"
+  },
+  "LNK.url": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "a182837fa29f09e898bdc874f4ed26d9f4274cba91516ae72c5a67fff2a78794"
+  },
+  "Lytro.lfp": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f50d02d86fb24dda48e5b0687a67fbd8f89dc2d5882c3b7f498415015b97bcec"
+  },
+  "M2TS.mts": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "9fad625cd9d9f62b641a83ce787964feb4c4d5f65cabf8fd500a04c3a89fee0a"
+  },
+  "MIE.mie": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "dfe23672584c82b8435e5ac60b461ec4549f79ee872ce500c62a72241cd4e55d"
+  },
+  "MIFF.miff": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "39e488d7cc356a0ef3bc15588d069d236f49fa193f7566d1c18a9326fc5d1898"
+  },
+  "MOI.moi": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "7a15d842ce79e35cb7a48b3136bbef213b581b6c737d4a4c7963a03630281173"
+  },
+  "MP3.mp3": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "c85c46a3a17af5f742aef32bd07963f3bfb49683793d5b7b1918d51f8d62d18c"
+  },
+  "MRC.mrc": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "adef87bbaba6a9ee3775ce4b738dd65d3b88527598ab54359df0457233c172b9"
   },
   "MWG.jpg": {
     "1 creator": "done",
@@ -153,12 +685,40 @@
     "4 time": "done",
     "blake3": "f269e9d60e6aeff50e9168e6deea0d6760f43b26d927e903ff9280dc67a33ca1"
   },
+  "MXF.mxf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8cbfae39014afa4976f43f2869a0a7d75c34012d66f530ced10cad23a28fe011"
+  },
+  "MacOS.macos": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "fb7f5d157374e7e49030a7d689565f59ce95192a7cf570573a1bdc8148d64922"
+  },
+  "Matroska.mkv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "fc97c505d7bc1ed5bff5afb5c70735826bcb3d80d31bde0cd4ee04f03a128cb5"
+  },
   "Minolta.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "36f612c15bb64713eba8149e6716af2fcad9f620a1b78fdaaa6823f2a954d2d5"
+  },
+  "Minolta.mrw": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "d425abdf8c2f2bcbc4f10ea4463bdc1ee3bfd4490c4770abf914635efe08adb6"
   },
   "Motorola.jpg": {
     "1 creator": "done",
@@ -174,6 +734,15 @@
     "4 time": "done",
     "blake3": "0e3dc126263b2f0da7787f98e9447f3d39bda3f6e9bee6307beca53fb331c7f2"
   },
+  "Nikon.nef": {
+    "blake3": "a869af4e74e002c31da32a76f96e67d5bda0a401a684f86850aa71ffc861aca7"
+  },
+  "Nikon.xmp": {
+    "1 creator": "done",
+    "2 copyright": "done",
+    "3 gps": "done",
+    "4 time": "done"
+  },
   "NikonD2Hs.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
@@ -187,6 +756,20 @@
     "3 gps": "done",
     "4 time": "done",
     "blake3": "82dc1d08c4a36467d2bedb3f8a86bacfd076ea7bd6b50829d77d44a4af5657c2"
+  },
+  "OOXML.docx": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f1b28489ca1ea7edc5eb43cf83224ef109112f38e6df7bc5351ceadfc4c9d3a2"
+  },
+  "Olympus.dss": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ef731499280a0536f93bd92b7349c5c0745e9d7b8846223bd50d4e71c469c1be"
   },
   "Olympus.jpg": {
     "1 creator": "done",
@@ -209,12 +792,131 @@
     "4 time": "done",
     "blake3": "a2440d329efa00ccc577de587384838bdd96945d40cba3accc9bf117759a44f0"
   },
+  "OpenDoc.ods": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "63fcd814ea4b09dd05345ee0f9d56f01b48a110da806879e8156325350d00b17"
+  },
+  "OpenEXR.exr": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3f54ddf8f7fee1102c539e3586a8ac2cca245435e94340e8f1ed24bbdaa95ec9"
+  },
+  "Opus.opus": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "82660c2744aa3e0839ac993be7313f2d35b34d742714970b869c4b03e55557a0"
+  },
+  "PCAP.pcapng": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "85aa03ea1591b8f9499cf26bc6d169ed99a4f4c8ccbfb4b465da08226aad9bce"
+  },
+  "PCX.pcx": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "025fd07a15e43647e66a6ccdd2ac684b1c832e724fd80f9e38c15dc2c5e4c544"
+  },
+  "PDF.pdf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "13c07621caaf4f286027f8a355d448bc1d587886325a5a6c32328c21b06a6da4"
+  },
+  "PDF2.pdf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4884397554cc66bca415ec43603ad15ed78bd9af7577f2954dd2e1748d2f659e"
+  },
+  "PFM.pfm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "c47edd9435fec373a94ffdc7029d8fc3356c612a8318d666fde4f708f430942b"
+  },
+  "PGF.pgf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "1e6968f36e6353c1ce1f2808a43f620f3148c77fb177fb291ff4bdcf632bb4a4"
+  },
+  "PICT.pict": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "7060ab9408a6ac342a4c0c4754428b33dbd87c9429d9cd608a9cdc4bae7e2e65"
+  },
+  "PLIST-bin.plist": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2210566b195faa61fb829296eea56e7f9034141683e17c9b1df1d7f2393fc8fb"
+  },
+  "PLIST-xml.plist": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f9bf7bc06317cfa27b6dc5400c8bc66bbc05eff5e9afd5743f0fb4b93ccb1ad3"
+  },
+  "PLIST.aae": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e9a4b30ebe255edf98eac653097d5d4d6aa96be156db14555c06fe7586e44059"
+  },
   "PLUS.xmp": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "753345b550686420b413c51ea503423c0c24b0f54e46126b4bd0855fc959e4df"
+  },
+  "PNG.png": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0ebb91ac51615f10b3971ef69f8e87fe101cc66b005e570fdee07191035fd542"
+  },
+  "PPM.ppm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6876478b17f66aa8b28b68c8e0829f6e5fb03ad6f0e1d18b00277d1ac1206dfc"
+  },
+  "PSP.psp": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8ad4b1b394f67f6c4a5466322e6b4ee157a5874527902b69522c3aab0a082a08"
+  },
+  "Palm.mobi": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3064e19504fff1d9214fc0133c4deb12ebc088708fb27a959816cb9bb1844e0f"
   },
   "Panasonic.jpg": {
     "1 creator": "done",
@@ -223,6 +925,20 @@
     "4 time": "done",
     "blake3": "44ef158b013898afbdfb34d41a777aff9bcb0a8c7bb341939256f63f3317a230"
   },
+  "Panasonic.rw2": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "9abc05ae5bebbfb8875b8f1f834ca764a0dfd7513ce12c9f13cc85f78cc4663b"
+  },
+  "Pentax.avi": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2a2d75f85c0b485efd270967212701c92facd2ef3ab26489e6386dbbc22f9a26"
+  },
   "Pentax.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
@@ -230,12 +946,124 @@
     "4 time": "done",
     "blake3": "c48f9f59953b15e9f7eee76d632bd6f54efc20b0a556f287031fe30408e078b6"
   },
+  "PhaseOne.iiq": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4b4ccdb5e6a57bec8b1b57a7523b86a8752f52dd2513bd08477e9501fcfe8f2e"
+  },
+  "PhotoCD.pcd": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e147489c97322abaf9812806157c99b65a239c27e1fc1383427987ddd6934b6d"
+  },
   "PhotoMechanic.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "2696f2ff37d957712d354d3979f283b2217142b79b81be058709062374e56391"
+  },
+  "Photoshop.psd": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6a9f72a92880555145ec2e188600c0dc2daa02b9b67cbca35fb4641b974b7abe"
+  },
+  "PostScript.eps": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f7cdf84b705016bb232e8c63cb9bcbceff11cc697cc499040ff5eb4faa56a9cf"
+  },
+  "QuickTime.heic": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "9651ada9dee1eb9fe387ca4d1149e6b622eda70c140433872a64d8b45acc2108"
+  },
+  "QuickTime.m4a": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "2f86c6e0252cc1b78d794f58d66979708fbec951f69acd1db6b3995c593d6902"
+  },
+  "QuickTime.mov": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "ea914e6959bc5ea48a2a7de0d7e995de69fc026870f2a0317a7c3ad615ad1069"
+  },
+  "RIFF.avi": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "f899cbfbb1a343cb5be2ce0e8e0aa1994c158872047f1302ffbe0389dc0df91d"
+  },
+  "RIFF.wav": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3ce761b74d4382800db91e8f805bebbc40ea4e7a4c5be3a640370f7358f3581d"
+  },
+  "RIFF.webp": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "415e259d65612b3b07150dcd4ebbeadc0220e43b5ecb5803854bdde7b787fa8c"
+  },
+  "RTF.rtf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "03c99523535b9adb0a1f936e8704f740cb782d706d01d836286133aaef4fd175"
+  },
+  "Radiance.hdr": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "db21e0f146a4b13c4a474b476396814b12b108c325aee5e0157c13855569929d"
+  },
+  "Real.ra": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "3bd43ffdbeffb75bb0845cb488f3849e787cbad401d489a82f604946ffe8c80e"
+  },
+  "Real.ram": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "6d9bd2fa28f9db7f79911865a217b58f64408434fce153bcea3ecebca41fb2e1"
+  },
+  "Real.rm": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "a9515643afe52dca22c84f380eb73bd77884287e0d6981c4152707da458be335"
+  },
+  "Red.r3d": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0bd8f4cfc22cdf03c6f38c4742af05fd1086eb195eb9236b56425f6f4ab3662a"
   },
   "Ricoh.jpg": {
     "1 creator": "done",
@@ -265,12 +1093,89 @@
     "4 time": "done",
     "blake3": "42d7b93a603623ba25be75c4596ccedc1f0836c489bcae5a8ef0200b63dc5d0c"
   },
+  "Sigma.x3f": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "8bac6832ffe38a04ca8bb4d5a1a7051598da2ece257571f051152a4824ecdccc"
+  },
+  "SigmaDP2.x3f": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "23c71ac9140d1e7c7ea85c71bf51618c4e3668b40338eedcf45be71fa6f7cbdf"
+  },
   "Sony.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "85c14a041daa2d5fa5aba2f54fe1d965489fc1ea1cee0ea9929ab501475735d8"
+  },
+  "Sony.pmp": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "26d8a86746a24bdde0d1354a104cbf7627313809c9120dd575aa9c784714166f"
+  },
+  "TNEF.tnef": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "73e49a6c5e6008c00296da1bf002aecd964de429292353921afb1a9ed60086bc"
+  },
+  "Text.csv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0038d1c2348e259dfdeb3090d34b5b15a9eb1b2cdd481d360e58a26df07ee4c8"
+  },
+  "Text1.txt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "1fb1a5fbd32a2a093ac13bd8fe61b0493c2ff91fb2fa89d28d383e832e7ee295"
+  },
+  "Text2.txt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "4c25efd4eac411f51bbbb38b68dfb07907584e968d709022991073f42e422cba"
+  },
+  "Text3.txt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "b30591a76e1c723f29ab5a217775443f0298751cc0ff24d7cbe6e42058c862f4"
+  },
+  "Text4.txt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "d26304d94a24d2a394afc1321d72f88963c037423fb0acc05fb9e054a49994ab"
+  },
+  "Text5.txt": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "fa6ad40716b3ca617a065381a4504f0ad0a13e325d75b18d8a0595847b6f98f4"
+  },
+  "Torrent.torrent": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "7bdeca791b029c7ff61d433c7d5e9d597a1721ed27194515ec7b1825b7fcfd26"
   },
   "Unknown.jpg": {
     "1 creator": "done",
@@ -279,6 +1184,41 @@
     "4 time": "done",
     "blake3": "dfb6d90a1717a5c678020d4b7826002b519376193bb4f3f99cc9f97b422f8a68"
   },
+  "VCard.ics": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "71e01111b249ebeaa8b0e09241dba9c4763841372e47ef97ca5d7f26d2c00f58"
+  },
+  "VCard.vcf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "e5f4660db37185e19eb3190b25894d56dda2dfbaadb41a91d84bcdb06c7733a1"
+  },
+  "Vorbis.ogg": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "10df1d72296c8af25a162bd7fc40741fe3368c52d6dbbf652b91929c6f35fff4"
+  },
+  "WPG.wpg": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "b03855e02efd113c567f5d7be5cea52a5a2dc3af58df8279b5cb6327058d995a"
+  },
+  "WTV.wtv": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "98927001577f9a77414719c6f10e810ef908d35a54caca987ff8d60d0d2e8e9f"
+  },
   "Writer.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
@@ -286,12 +1226,40 @@
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "e1814acf81acf70055b3f31acfb56c1e25c534420943da52fc4e85d84dcc979f"
   },
+  "XISF.xisf": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "7cc97478e7e34dcea619ea29adaf81c9bff11c53c5fd527961245f4442c41acd"
+  },
+  "XMP.inx": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "d6c8ac7b72dc692d49c08b0736f0eb97ea49f48e56605fa241f21ea389a30a0f"
+  },
   "XMP.jpg": {
     "1 creator": "done",
     "2 copyright": "done",
     "3 gps": "done",
     "4 time": "done",
     "blake3": "df0e53915a22893064161b34f0a4bae3f8280575e7cb0647db0469f0d7132d92"
+  },
+  "XMP.svg": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "429af12e3a3b38872a140c5127f405f7fbd626297cc677ecf6d0e71ea057a9d3"
+  },
+  "XMP.xml": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "dccca8ba806d3cb6db9f2fa55d4f422a9d5f706cd09a4c3b4853707465be2bcd"
   },
   "XMP.xmp": {
     "1 creator": "done",
@@ -355,5 +1323,40 @@
     "3 gps": "done",
     "4 time": "blocked: no valid capture time to start from; only Absolute can be applied",
     "blake3": "5e65014f40e9dbe3bdc2a9c598e0c139dc671dbd0bbcfb8005d74ab47614e263"
+  },
+  "ZIP.gz": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0965d0b952570f73e47e55c9c1cf137a547fd84eb2b226aa76882383cbfb2045"
+  },
+  "ZIP.rar": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "0cd107eda1ad3e70301204f916613099e58ea5e67629c65efbffb9a408424188"
+  },
+  "ZIP.zip": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "84f85e9e53546282ab28e4329bc81cd71a57accb118b4700a33513001829d634"
+  },
+  "ZISRAW.czi": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "07b708885485044235404e9ac65b9b0e8a08d639fb76384907f4d3df3687da39"
+  },
+  "iWork.numbers": {
+    "1 creator": "unsupported: format is read-only in this build",
+    "2 copyright": "unsupported: format is read-only in this build",
+    "3 gps": "unsupported: format is read-only in this build",
+    "4 time": "unsupported: format is read-only in this build",
+    "blake3": "430111e65d836b97989c326767fe4c1c0fff2c90b2e45464fadbf491925c6150"
   }
 }
