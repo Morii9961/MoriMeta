@@ -22,6 +22,7 @@
 | B-3 | 备份位置可设置；不可用时一切写入被阻止 | 已补：设置 `backup.root`；执行与继续前检查，不可用 → `BackupUnavailable` |
 | B-4 | 只读格式（HEIC、DNG、CR3…）留在选择集中并显示为 Unsupported | 已补：只读资产进入会话，Plan 中为 Unsupported |
 | B-5 | 导出日志默认匿名化路径；调试日志有提示 | 已补：导出默认脱敏；调试日志 24 小时自动关闭 |
+| B-6 | Library 会话摘要"需要注意"（只读、冲突、导入后被改动、云占位符、darktable sidecar、C2PA） | 已补：`inspect::attention`（`mm-cli attention`）与 `Session::changed_since_import` |
 
 ## 3. 设计需要、后端待补（按优先级）
 

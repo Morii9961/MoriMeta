@@ -91,6 +91,8 @@ pub struct Asset {
     pub path: PathBuf,
     /// False for photo formats this build does not write: shown and inspected, never planned.
     pub writable: bool,
+    /// Size, modification time and identity when it was imported ("changed since import").
+    pub fingerprint: Option<mm_domain::plan::Fingerprint>,
 }
 
 impl Session {
@@ -122,11 +124,13 @@ impl Session {
                     self.next += 1;
                     let a = AssetId(self.next);
                     let writable = kind == crate::planner::ImportKind::Writable;
+                    let fingerprint = crate::fingerprint(&abs).ok();
                     self.assets.insert(
                         a,
                         Asset {
                             path: abs,
                             writable,
+                            fingerprint,
                         },
                     );
                     self.by_identity.insert(identity, a);
@@ -174,6 +178,21 @@ impl Session {
     pub fn paths(&self, ids: &[AssetId]) -> Result<Vec<PathBuf>, ServiceError> {
         ids.iter()
             .map(|&i| self.path(i).map(Path::to_path_buf))
+            .collect()
+    }
+
+    /// Assets whose file changed (or vanished) since it was imported: they need a rescan.
+    pub fn changed_since_import(&self) -> Vec<AssetId> {
+        self.assets
+            .iter()
+            .filter(|(_, a)| {
+                let now = crate::fingerprint(&a.path).ok();
+                match (&a.fingerprint, now) {
+                    (Some(then), Some(now)) => !crate::planner::same_file(&now, then),
+                    _ => true,
+                }
+            })
+            .map(|(&id, _)| id)
             .collect()
     }
 
@@ -738,6 +757,23 @@ mod tests {
         assert_eq!(picked.added.len(), 1);
         assert!(s.asset(picked.added[0]).unwrap().writable);
         assert_eq!(picked.failed.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn changed_since_import() {
+        let dir = std::env::temp_dir().join(format!("mm-changed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in ["a.jpg", "b.jpg", "c.jpg"] {
+            std::fs::write(dir.join(n), n).unwrap();
+        }
+        let mut s = Session::default();
+        let r = s.import_folder(&dir);
+        assert!(s.changed_since_import().is_empty());
+        std::fs::write(dir.join("b.jpg"), "b, changed").unwrap();
+        std::fs::remove_file(dir.join("c.jpg")).unwrap();
+        assert_eq!(s.changed_since_import(), [r.added[1], r.added[2]]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

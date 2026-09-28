@@ -4129,3 +4129,41 @@ fn read_only_attribute_is_cleared_only_on_request() {
     assert_eq!(o["cleared"], false);
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SCREEN_SPEC Library "Needs attention": read-only files, links, a RAW with a darktable sidecar
+/// and a file with C2PA Content Credentials are found by one call; nothing is written.
+#[test]
+fn needs_attention_summary() {
+    let pkg = require!();
+    let lab = Lab::new("attention-summary", &pkg);
+    let dir = lab.photos[0].parent().unwrap().to_path_buf();
+    let mut perm = std::fs::metadata(&lab.photos[0]).unwrap().permissions();
+    perm.set_readonly(true);
+    std::fs::set_permissions(&lab.photos[0], perm).unwrap();
+    std::fs::hard_link(&lab.photos[2], lab.dir.join("second-link.jpg")).unwrap();
+    let nef = lab.add_nef("dt.NEF");
+    std::fs::write(
+        dir.join("dt.NEF.xmp"),
+        b"<x:xmpmeta xmlns:x='adobe:ns:meta/'/>",
+    )
+    .unwrap();
+    let cred = dir.join("credentials.jpg");
+    let src = std::fs::read(&lab.photos[1]).unwrap();
+    let mut bytes = src[..2].to_vec();
+    bytes.extend(jumbf_app11());
+    bytes.extend(&src[2..]);
+    std::fs::write(&cred, &bytes).unwrap();
+    let files = [&lab.photos[0], &lab.photos[1], &lab.photos[2], &nef, &cred];
+    let mut args = vec!["attention"];
+    args.extend(files.iter().map(|p| p.to_str().unwrap()));
+    let a = Lab::json(&lab.cli(&args));
+    assert_eq!(a["read_only"], serde_json::json!([0]), "{a}");
+    assert_eq!(a["links"], serde_json::json!([2]), "{a}");
+    assert_eq!(a["darktable_sidecars"], serde_json::json!([3]), "{a}");
+    assert_eq!(a["c2pa"], serde_json::json!([4]), "{a}");
+    let mut perm = std::fs::metadata(&lab.photos[0]).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perm.set_readonly(false);
+    std::fs::set_permissions(&lab.photos[0], perm).unwrap();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

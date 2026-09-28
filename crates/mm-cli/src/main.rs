@@ -11,6 +11,8 @@
 //! Commands:
 //!   scan [--files-from UTF8_FILE] FILE...
 //!   inspect FILE              Inspector data: fields with sources, every tag (and the sidecar's)
+//!   attention [--files-from UTF8_FILE] FILE...   "Needs attention": read-only, conflicts, cloud
+//!                             placeholders, darktable sidecars, C2PA, links, unreadable (indexes)
 //!   aggregate [--files-from UTF8_FILE] FILE...   per field, which values how many files hold
 //!   plan-creator (--set NAME)... [--set-from UTF8_FILE] | --clear  --out PLAN.json [--title T] [--files-from UTF8_FILE] FILE...
 //!   plan-time (--absolute "YYYY:MM:DD HH:MM:SS" | --shift [+|-][Nd]HH:MM:SS
@@ -487,6 +489,14 @@ fn main() -> ExitCode {
                 let mut eng = with_engine(&g)?;
                 let d = inspect::asset_detail(&mut eng, Path::new(f)).map_err(|e| e.to_string())?;
                 println!("{}", serde_json::to_value(&d).unwrap_or_default());
+                Ok(ExitCode::SUCCESS)
+            }
+            "attention" => {
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let a = inspect::attention(&mut eng, &paths, &plan_ctl(&g))
+                    .map_err(|e| e.to_string())?;
+                println!("{}", serde_json::to_value(&a).unwrap_or_default());
                 Ok(ExitCode::SUCCESS)
             }
             "aggregate" => {

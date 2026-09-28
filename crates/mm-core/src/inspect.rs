@@ -138,6 +138,80 @@ pub fn asset_detail(engine: &mut Engine, path: &Path) -> Result<AssetDetail, Cor
     })
 }
 
+/// What the Session summary lists under "Needs attention" (SCREEN_SPEC Library): indexes into
+/// the paths asked about.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Attention {
+    pub read_only: Vec<usize>,
+    /// Creator or copyright locations that disagree.
+    pub conflicts: Vec<usize>,
+    pub cloud_placeholders: Vec<usize>,
+    /// RAWs with a darktable `<name>.<ext>.xmp` sidecar (read-only for MoriMeta).
+    pub darktable_sidecars: Vec<usize>,
+    pub c2pa: Vec<usize>,
+    /// Links (hard links, symbolic links): never written.
+    pub links: Vec<usize>,
+    pub unreadable: Vec<usize>,
+}
+
+/// One metadata read of the paths plus their file attributes.
+pub fn attention(
+    engine: &mut Engine,
+    paths: &[PathBuf],
+    ctl: &PlanCtl,
+) -> Result<Attention, CoreError> {
+    let mut a = Attention::default();
+    let mut to_read = Vec::new();
+    let mut idx = Vec::new();
+    for (i, p) in paths.iter().enumerate() {
+        match mm_fs::probe(p) {
+            Ok(pr) => {
+                if pr.read_only {
+                    a.read_only.push(i);
+                }
+                if pr.links > 1 || pr.reparse_point {
+                    a.links.push(i);
+                }
+                if pr.cloud_placeholder {
+                    a.cloud_placeholders.push(i);
+                    continue; // not read, so not downloaded
+                }
+            }
+            Err(_) => {
+                a.unreadable.push(i);
+                continue;
+            }
+        }
+        if matches!(policy(p), Policy::RawSidecar) {
+            let mut dt = p.as_os_str().to_owned();
+            dt.push(".xmp");
+            if Path::new(&dt).exists() {
+                a.darktable_sidecars.push(i);
+            }
+        }
+        to_read.push(p.clone());
+        idx.push(i);
+    }
+    let snaps = engine.read_snapshots_parallel(&to_read, ctl.readers, &mut |done, total| {
+        ctl.report(crate::planner::PlanStage::Metadata, done, total)
+    })?;
+    for (i, s) in idx.into_iter().zip(snaps) {
+        let Ok(s) = s else {
+            a.unreadable.push(i);
+            continue;
+        };
+        let t = Target::Embedded(&s);
+        if creator::read_target(&t).conflicting || copyright::read_target(&t).conflicting {
+            a.conflicts.push(i);
+        }
+        if mm_domain::risk::has_c2pa(&s) {
+            a.c2pa.push(i);
+        }
+    }
+    a.unreadable.sort_unstable();
+    Ok(a)
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct FieldAggregate {
     pub field: &'static str,
