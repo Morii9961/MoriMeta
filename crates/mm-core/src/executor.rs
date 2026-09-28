@@ -64,6 +64,116 @@ pub struct ExecOptions {
     /// Keep each written file's modification time (setting `metadata.preserve_mtime`, D-6; off
     /// by default: incremental backup tools rely on it to see the change).
     pub preserve_mtime: bool,
+    /// Spoil this file's temporary output before it is verified (tests only).
+    pub tamper: Option<(u32, Tamper)>,
+}
+
+/// A deliberate defect in a temporary output, made after ExifTool wrote it and before it is
+/// verified: verification must refuse every one (SAFETY_MODEL §12 "verification effectiveness").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tamper {
+    /// ExifTool's report carries a warning that is not on the benign list (V1).
+    Warning,
+    /// The output is cut to half its length.
+    Truncate,
+    /// One byte in the middle of the compressed image data is changed (V4).
+    ImageByte,
+    /// A tag the Plan does not touch is removed (V3).
+    DropTag(String),
+    /// A tag the Plan does not touch is added (V3).
+    ExtraTag,
+    /// A planned tag gets another value (V2).
+    WrongValue,
+    /// A planned list gets one more item (V2; the IPTC list-append error seen in S3).
+    ListAppend,
+}
+
+impl Tamper {
+    pub fn parse(s: &str) -> Option<Tamper> {
+        Some(match s {
+            "warning" => Tamper::Warning,
+            "truncate" => Tamper::Truncate,
+            "image-byte" => Tamper::ImageByte,
+            "extra-tag" => Tamper::ExtraTag,
+            "wrong-value" => Tamper::WrongValue,
+            "list-append" => Tamper::ListAppend,
+            _ => Tamper::DropTag(s.strip_prefix("drop:")?.to_owned()),
+        })
+    }
+}
+
+fn tamper_of(opts: &ExecOptions, seq: u32) -> Option<&Tamper> {
+    opts.tamper
+        .as_ref()
+        .filter(|(s, _)| *s == seq)
+        .map(|(_, t)| t)
+}
+
+/// Apply `t` to the written temporary file (the report-level `Warning` is applied by the caller).
+fn spoil(
+    engine: &mut Engine,
+    t: &Tamper,
+    ops: &[mm_domain::plan::TagOp],
+    temp: &Path,
+) -> Result<(), CoreError> {
+    use mm_domain::plan::TagOp;
+    let planned = || {
+        ops.iter()
+            .filter_map(|o| match o {
+                TagOp::Set { tag, values } => Some((tag.clone(), values.clone())),
+                _ => None,
+            })
+            .max_by_key(|(tag, _)| tag.starts_with("XMP"))
+            .ok_or_else(|| CoreError::Internal("tamper: the Plan sets no tag".into()))
+    };
+    let edit = match t {
+        Tamper::Warning => return Ok(()),
+        Tamper::Truncate => {
+            let f = std::fs::OpenOptions::new().write(true).open(temp)?;
+            let len = f.metadata()?.len();
+            f.set_len(len / 2)?;
+            return Ok(());
+        }
+        Tamper::ImageByte => {
+            let mut b = std::fs::read(temp)?;
+            let sos = b
+                .windows(2)
+                .position(|w| w == [0xFF, 0xDA])
+                .ok_or_else(|| CoreError::Internal("tamper: no JPEG image data".into()))?;
+            let at = sos + (b.len() - sos) / 2;
+            b[at] = if b[at] == 0x00 { 0x01 } else { 0x00 };
+            std::fs::write(temp, b)?;
+            return Ok(());
+        }
+        Tamper::DropTag(tag) => TagOp::Delete { tag: tag.clone() },
+        Tamper::ExtraTag => TagOp::Set {
+            tag: "XMP-dc:Title".into(),
+            values: vec!["tampered".into()],
+        },
+        Tamper::WrongValue => TagOp::Set {
+            tag: planned()?.0,
+            values: vec!["tampered".into()],
+        },
+        Tamper::ListAppend => {
+            let (tag, mut values) = planned()?;
+            values.push("tampered".into());
+            TagOp::Set { tag, values }
+        }
+    };
+    let mut spoiled = temp.as_os_str().to_owned();
+    spoiled.push("-t");
+    let spoiled = PathBuf::from(spoiled);
+    let out = engine.write(&[edit], temp, &spoiled)?;
+    if out.status != 0 || !spoiled.exists() {
+        remove_if_exists(&spoiled);
+        return Err(CoreError::Internal(format!(
+            "tamper failed: {}",
+            out.stderr_text().trim()
+        )));
+    }
+    std::fs::remove_file(temp)?;
+    std::fs::rename(&spoiled, temp)?;
+    Ok(())
 }
 
 impl ExecOptions {
@@ -915,10 +1025,14 @@ fn one_file(
                     Outcome::Failed(why)
                 }
             };
-            let out = match out {
+            let mut out = match out {
                 Ok(o) => o,
                 Err(e) => return Ok(engine_failed(format!("ExifTool: {e}"))),
             };
+            if tamper_of(opts, seq) == Some(&Tamper::Warning) {
+                out.stderr
+                    .extend_from_slice(b"Warning: [tampered] unexpected warning\n");
+            }
             if let Err(e) = verify::check_write_output(&out) {
                 return Ok(engine_failed(format!("verification V1: {e}")));
             }
@@ -926,6 +1040,9 @@ fn one_file(
                 return Ok(engine_failed("ExifTool produced no output".into()));
             }
             fault(opts, seq, 5)?;
+            if let Some(t) = tamper_of(opts, seq) {
+                spoil(engine, t, ops, &f.temp)?;
+            }
             // 4 verify against the verified backup (the actual source)
             let reads = engine.read_full(&[f.backup.as_path(), f.temp.as_path()])?;
             let (Some(src), Some(tmp)) = (reads[0].as_ref(), reads[1].as_ref()) else {
@@ -1247,13 +1364,17 @@ fn create_file(
             "a file exists at this path now; not created".into(),
         ));
     }
-    let out = match engine.write_new(ops, &f.temp) {
+    let mut out = match engine.write_new(ops, &f.temp) {
         Ok(o) => o,
         Err(e) => {
             remove_if_exists(&f.temp);
             return Ok(Outcome::Failed(format!("ExifTool: {e}")));
         }
     };
+    if tamper_of(opts, seq) == Some(&Tamper::Warning) {
+        out.stderr
+            .extend_from_slice(b"Warning: [tampered] unexpected warning\n");
+    }
     if let Err(e) = verify::check_write_output(&out) {
         remove_if_exists(&f.temp);
         return Ok(Outcome::Failed(format!("verification V1: {e}")));
@@ -1262,6 +1383,9 @@ fn create_file(
         return Ok(Outcome::Failed("ExifTool produced no output".into()));
     }
     fault(opts, seq, 5)?;
+    if let Some(t) = tamper_of(opts, seq) {
+        spoil(engine, t, ops, &f.temp)?;
+    }
     let reads = engine.read_full(&[f.temp.as_path()])?;
     let Some(tmp) = reads[0].as_ref() else {
         remove_if_exists(&f.temp);

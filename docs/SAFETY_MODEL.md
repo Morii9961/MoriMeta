@@ -352,7 +352,7 @@ op_field_changes(op_id, seq, field_id, before_json, after_json, kind);
 | 故障注入矩阵 | 在 §4 每个状态转换前后注入进程终止；随机时刻终止 | 恢复后不变量检查器 0 违例 | S2 原型：NTFS 固定点 60 例 + 随机 300 次；SMB 30 + 150 次，0 违例。产品实现（8 个小文件/例，本地 NTFS）：Apply/Undo 固定点终止、IO 错误、模拟磁盘满、SQLite 真实写失败，以及 64 MB 测试卷上的真实磁盘满（照片卷、备份/Journal 卷），0 违例（PHASE1B_FAULT_MATRIX）；5,000 文件规模待做 |
 | 断电模拟 | 虚拟机内执行中强制断电（≥ 50 次） | 同上 | **未执行**（需要虚拟机，D-13） |
 | 往返测试 | Apply → Undo 后逐字节比较 | 100% 一致 | S2 原型 50/50 |
-| 验证有效性 | 故意注入错误输出（损坏文件、丢失标签、改变图像数据、列表追加） | V1–V6 全部拦截 | S3/S7 中已观察到 V2、V3、V6 拦截真实问题；系统化注入测试待 Phase 1 |
-| Conflict | Plan 后由外部程序修改文件；Undo 前修改文件 | 不覆盖，正确提示 | 合成状态 S5 通过；产品实现待测 |
+| 验证有效性 | 故意注入错误输出（损坏文件、丢失标签、改变图像数据、列表追加） | V1–V6 全部拦截 | S3/S7 中已观察到 V2、V3、V6 拦截真实问题。产品实现（2026-09-28，e2e `verification_refuses_every_spoiled_output`、`verification_refuses_a_spoiled_new_sidecar`）：在临时输出写出后、验证前注入 7 类缺陷——意外警告（V1）、截断（V5）、改动一个图像数据字节（V4）、删除一个未规划的标签（V3）、增加一个标签（V3）、目标值改错（V2）、列表多追加一项（V2），JPEG 与新建 sidecar 上全部拦截，原文件不变、无残留。V6 随 Clean Export（D-15）实现 |
+| Conflict | Plan 后由外部程序修改文件；Undo 前修改文件 | 不覆盖，正确提示 | 合成状态 S5 通过。产品实现：Preview 后被改动的文件记为 Conflict、不写入（e2e `changed_locked_readonly_and_hardlinked_files_are_not_written`）；Operation 后被改动的文件默认不撤销，强制恢复先备份当前内容（e2e `forced_restore_of_a_file_changed_later`）。外部程序在执行中途修改文件：锁定后由指纹与执行前值复核拦截，未用真实第三方程序测试 |
 | 环境 | 只读、占用、符号链接、硬链接、长路径、Unicode 文件名、云占位符、SD 卡、SMB | 行为符合 §8 | 只读/占用/硬链接/长路径/Unicode/SMB 回环：已测；符号链接、云占位符、SD 卡：未测 |
 | 语料回归 | 每次升级 ExifTool：完整语料写入 + 验证 + 兼容性抽查 | 0 验证失败或每个失败都有已知原因 | 流程待建立 |

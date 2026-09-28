@@ -65,6 +65,9 @@
 //! FAULTS (tests only; all require MM_FAULT_INJECTION=1):
 //!   --crash-at SEQ:STEP       terminate the process at a fault point
 //!   --fail-at SEQ:STEP        return an IO error there
+//!   --tamper-at SEQ:KIND      spoil that file's temporary output before verification
+//!                             (warning | truncate | image-byte | extra-tag | wrong-value |
+//!                             list-append | drop:TAG)
 //!   --disk-full-at SEQ:STEP   return a simulated disk-full error (Win32 112) there
 //!   --fill-at SEQ:STEP --fill-dir DIR   really fill the (small test) volume of DIR there
 //!   --journal-fail-at begin | finish | manifest[:N] | log[:N] | SEQ:STATE [--journal-fail-persist]
@@ -271,6 +274,18 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         )),
         None => None,
     };
+    let tamper = match take_opt(args, "--tamper-at") {
+        Some(v) => {
+            require_fault_injection("--tamper-at")?;
+            let bad = || "--tamper-at SEQ:warning|truncate|image-byte|extra-tag|wrong-value|list-append|drop:TAG";
+            let (s, k) = v.split_once(':').ok_or_else(bad)?;
+            Some((
+                s.parse().map_err(|_| bad())?,
+                mm_core::executor::Tamper::parse(k).ok_or_else(bad)?,
+            ))
+        }
+        None => None,
+    };
     let space_reserve = match take_opt(args, "--space-reserve") {
         Some(v) => {
             require_fault_injection("--space-reserve")?;
@@ -317,6 +332,7 @@ fn exec_options(args: &mut Vec<String>, store: &mut Store) -> Result<ExecOptions
         disk_full,
         fill,
         space_reserve,
+        tamper,
         preserve_mtime: store
             .setting("metadata.preserve_mtime")
             .map_err(|e| e.to_string())?

@@ -4453,3 +4453,98 @@ fn nef_sidecar_update_crashes_and_io_errors_recover() {
         let _ = std::fs::remove_dir_all(&lab.dir);
     }
 }
+
+/// SAFETY_MODEL 搂12 "verification effectiveness": file 2's temporary output is spoiled after
+/// ExifTool wrote it and before it is verified. Every defect is refused by the check named (the
+/// file fails, its original is unchanged, nothing is left behind); the other files are written,
+/// and undo restores every file byte for byte.
+#[test]
+fn verification_refuses_every_spoiled_output() {
+    let pkg = require!();
+    for (kind, caught) in [
+        ("warning", &["verification V1"][..]),
+        ("truncate", &["ImageData(", "Unreadable(", "V5"][..]),
+        ("image-byte", &["ImageData("][..]),
+        ("drop:IFD0:Make", &["unexpected changes"][..]),
+        ("extra-tag", &["unexpected changes"][..]),
+        ("wrong-value", &["Value("][..]),
+        ("list-append", &["Value("][..]),
+    ] {
+        let case = format!("tamper {kind}");
+        let lab = Lab::new(&format!("tamper-{}", kind.replace(':', "-")), &pkg);
+        let plan = lab.plan("Morii", "p.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                plan.to_str().unwrap(),
+                "--tamper-at",
+                &format!("2:{kind}"),
+            ],
+            true,
+        );
+        let r = Lab::json(&o);
+        let op = r["op_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{case}: {r}"))
+            .to_owned();
+        assert_eq!(r["status"], "completed_with_errors", "{case}: {r}");
+        for f in r["files"].as_array().unwrap() {
+            if f["seq"] == 2 {
+                assert_eq!(f["state"], "failed", "{case}: {f}");
+                let why = f["reason"].as_str().unwrap_or_default();
+                assert!(
+                    caught.iter().any(|c| why.contains(c)),
+                    "{case}: caught by the wrong check: {why}"
+                );
+            } else {
+                assert_eq!(f["state"], "done", "{case}: {f}");
+            }
+        }
+        let p2 = &lab.photos[2];
+        assert_eq!(blake(p2).as_deref(), Some(lab.truth[p2].as_str()), "{case}");
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert!(lab.cli(&["fsck", &op]).status.success(), "{case}");
+        lab.undo(&op);
+        lab.assert_all_original();
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// The same for a new XMP sidecar (verified against an empty source, V1鈥揤3 and V5): a spoiled
+/// sidecar is never created and the NEF is never touched.
+#[test]
+fn verification_refuses_a_spoiled_new_sidecar() {
+    let pkg = require!();
+    for (kind, caught) in [
+        ("warning", "verification V1"),
+        ("extra-tag", "unexpected changes"),
+        ("wrong-value", "Value("),
+        ("list-append", "Value("),
+    ] {
+        let case = format!("new sidecar tamper {kind}");
+        let lab = Lab::new(&format!("tamper-xmp-{kind}"), &pkg);
+        let nef = lab.add_nef("DSC_0001.NEF");
+        let xmp = nef.with_file_name("DSC_0001.xmp");
+        let (p, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&nef], "c.json");
+        let o = lab.cli_env(
+            &[
+                "apply",
+                p.to_str().unwrap(),
+                "--tamper-at",
+                &format!("0:{kind}"),
+            ],
+            true,
+        );
+        let r = Lab::json(&o);
+        assert_eq!(state_of(&r, 0), "failed", "{case}: {r}");
+        let why = r["files"][0]["reason"].as_str().unwrap_or_default();
+        assert!(
+            why.contains(caught),
+            "{case}: caught by the wrong check: {why}"
+        );
+        assert!(!xmp.exists(), "{case}");
+        assert!(lab.leftovers().is_empty(), "{case}: {:?}", lab.leftovers());
+        assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3), "{case}");
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
