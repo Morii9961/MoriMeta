@@ -266,6 +266,9 @@ pub struct Store {
     manifest_blocker: Option<PathBuf>,
     /// A persistent `Log` fault fired: every later append fails.
     log_blocked: bool,
+    /// Where new Operations keep their backups (SAFETY_MODEL §6: configurable; existing
+    /// Operations keep the folder recorded with them).
+    backup_root: PathBuf,
     /// Open `manifest.jsonl` of each Operation written by this process.
     logs: HashMap<String, std::fs::File>,
 }
@@ -346,6 +349,7 @@ impl Store {
             blocker: None,
             manifest_blocker: None,
             log_blocked: false,
+            backup_root: data_dir.join("backups"),
             logs: HashMap::new(),
         })
     }
@@ -379,7 +383,7 @@ impl Store {
             let f = std::fs::OpenOptions::new()
                 .append(true)
                 .create(true)
-                .open(self.backup_dir(op_id).join(MANIFEST_LOG))?;
+                .open(self.recorded_backup_dir(op_id)?.join(MANIFEST_LOG))?;
             self.logs.insert(op_id.to_owned(), f);
         }
         let f = self
@@ -429,8 +433,58 @@ impl Store {
         f(&mut self.conn)
     }
 
+    /// The folder a new Operation `op_id` gets under the current backup location.
     pub fn backup_dir(&self, op_id: &str) -> PathBuf {
-        self.data_dir.join("backups").join(op_id)
+        self.backup_root.join(op_id)
+    }
+
+    /// The folder recorded with an existing Operation (or, before it is registered, the one it
+    /// will get).
+    pub fn recorded_backup_dir(&self, op_id: &str) -> Result<PathBuf> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT backup_dir FROM operations WHERE id = ?1",
+                params![op_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .map_or_else(|| self.backup_dir(op_id), PathBuf::from))
+    }
+
+    /// Where new Operations keep their backups (the setting `backup.root`; default
+    /// `<data>/backups`). Changing it affects only later Operations.
+    pub fn set_backup_root(&mut self, root: PathBuf) {
+        self.backup_root = root;
+    }
+
+    pub fn backup_root(&self) -> &Path {
+        &self.backup_root
+    }
+
+    /// The backup location must exist (it is created if its parent does) and accept a new file;
+    /// otherwise nothing may be written (INTERACTION_SPEC: backup unavailable → no writes).
+    pub fn check_backup_root(&self) -> Result<()> {
+        std::fs::create_dir_all(&self.backup_root)?;
+        let probe = self
+            .backup_root
+            .join(format!(".mm-probe-{}", std::process::id()));
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)?;
+        std::fs::remove_file(&probe)?;
+        Ok(())
+    }
+
+    /// The backup locations to look in: the current one and the default.
+    pub fn backup_roots(&self) -> Vec<PathBuf> {
+        let default = self.data_dir.join("backups");
+        if self.backup_root == default {
+            vec![default]
+        } else {
+            vec![self.backup_root.clone(), default]
+        }
     }
 
     /// Step 0: register the Operation, its executable plan and every file, in one transaction.

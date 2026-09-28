@@ -3894,3 +3894,57 @@ fn now_vs_after_operation() {
     );
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
+
+/// SAFETY_MODEL §6 and INTERACTION_SPEC: the backup location is a setting that applies to later
+/// Operations (earlier ones keep theirs); when it is unavailable nothing is written, and once it
+/// is back the work continues; retention removes a backup folder wherever it is.
+#[test]
+fn backup_location_setting_and_unavailable_location() {
+    let pkg = require!();
+    let lab = Lab::new("backup-root", &pkg);
+    let first = lab.apply_ok(&lab.plan("Morii", "a.json"));
+    let default_dir = lab.data.join("backups").join(&first);
+    assert!(default_dir.exists());
+
+    let elsewhere = lab.dir.join("elsewhere-backups");
+    assert!(
+        lab.cli(&["setting", "backup.root", elsewhere.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let second = lab.apply_ok(&lab.plan("Mori", "b.json"));
+    assert!(elsewhere.join(&second).join("manifest.jsonl").exists());
+    let b = Lab::json(&lab.cli(&["backups"]));
+    assert!(b["total_bytes"].as_u64().unwrap() > 0);
+
+    // unavailable: the location's parent is a file
+    let blocker = lab.dir.join("not-a-folder");
+    std::fs::write(&blocker, b"x").unwrap();
+    let gone = blocker.join("backups");
+    assert!(
+        lab.cli(&["setting", "backup.root", gone.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let before: Vec<String> = lab.photos.iter().map(|p| blake(p).unwrap()).collect();
+    let p3 = lab.plan("Someone Else", "c.json");
+    let o = lab.cli(&["apply", p3.to_str().unwrap()]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stdout).contains("BackupUnavailable"));
+    let after: Vec<String> = lab.photos.iter().map(|p| blake(p).unwrap()).collect();
+    assert_eq!(before, after, "nothing may be written without backups");
+
+    // back: undo both (each from its own recorded folder), prune the second
+    assert!(
+        lab.cli(&["setting", "backup.root", elsewhere.to_str().unwrap()])
+            .status
+            .success()
+    );
+    lab.undo(&second);
+    lab.undo(&first);
+    lab.assert_all_original();
+    assert!(lab.cli(&["prune", "--requested", &second]).status.success());
+    assert!(!elsewhere.join(&second).exists());
+    assert!(default_dir.exists());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}

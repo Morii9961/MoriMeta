@@ -185,7 +185,7 @@ fn check_space<'a>(
     if largest.is_empty() {
         return Ok(()); // nothing will be written
     }
-    let backups = store.data_dir().join("backups");
+    let backups = store.backup_root().to_path_buf();
     let need = total.saturating_add(total / 20).saturating_add(reserve);
     let free = mm_fs::volume_space(&backups)?.free;
     if free < need {
@@ -257,6 +257,10 @@ pub fn start(
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
+    // INTERACTION_SPEC: with the backup location unavailable nothing is written
+    store.check_backup_root().map_err(|e| {
+        CoreError::BackupUnavailable(format!("{}: {e}", store.backup_root().display()))
+    })?;
     let version = engine_version(engines)?;
     if plan.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
@@ -319,6 +323,10 @@ pub fn resume(
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
+    // INTERACTION_SPEC: with the backup location unavailable nothing is written
+    store.check_backup_root().map_err(|e| {
+        CoreError::BackupUnavailable(format!("{}: {e}", store.backup_root().display()))
+    })?;
     let version = engine_version(engines)?;
     let op = store
         .operation(op_id)?

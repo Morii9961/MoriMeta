@@ -145,7 +145,9 @@ pub fn usage(store: &Store, policy: &Policy) -> Result<Usage, CoreError> {
             protection,
         });
     }
-    let volume_bytes = mm_fs::volume_space(&store.data_dir().join("backups"))?.total;
+    let volume_bytes = mm_fs::volume_space(store.backup_root())
+        .or_else(|_| mm_fs::volume_space(store.data_dir()))?
+        .total;
     Ok(Usage {
         total_bytes: out.iter().map(|o| o.bytes).sum(),
         ops: out,
@@ -205,7 +207,7 @@ pub fn prune(
             }
             _ => {}
         }
-        let dir = store.backup_dir(id);
+        let dir = owned_backup_dir(store, id)?;
         // the database first: an interrupted prune is finished next time, never taken for an
         // undoable Operation
         store.mark_pruned(id)?;
@@ -213,6 +215,21 @@ pub fn prune(
         done.push(id.clone());
     }
     Ok(done)
+}
+
+/// The folder recorded for an Operation, accepted for deletion only if it is named after the
+/// Operation (every backup folder is `<backup location>\<operation id>`): nothing else is ever
+/// removed, even from a damaged database.
+fn owned_backup_dir(store: &Store, op_id: &str) -> Result<std::path::PathBuf, CoreError> {
+    let dir = store.recorded_backup_dir(op_id)?;
+    if dir.file_name().map(|n| n.to_string_lossy()) != Some(op_id.into())
+        || !op_id.starts_with("op-")
+    {
+        return Err(CoreError::Internal(format!(
+            "backup folder of {op_id} is not named after it; not deleted"
+        )));
+    }
+    Ok(dir)
 }
 
 /// Delete a backup folder: the append-only record first, so that a partly deleted folder is never
@@ -244,7 +261,7 @@ fn remove_backup_dir(dir: &Path) -> Result<(), CoreError> {
 pub fn finish_interrupted(store: &Store) -> Result<Vec<String>, CoreError> {
     let mut out = Vec::new();
     for o in store.operations()? {
-        let dir = store.backup_dir(&o.id);
+        let dir = owned_backup_dir(store, &o.id)?;
         if o.pruned_ms.is_some() && dir.exists() {
             remove_backup_dir(&dir)?;
             out.push(o.id);

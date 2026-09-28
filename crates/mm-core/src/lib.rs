@@ -37,6 +37,8 @@ pub enum CoreError {
     InsufficientSpace(String),
     /// Cancelled by the user before anything was written (Plan creation).
     Cancelled,
+    /// The backup location is missing or not writable: nothing is written until it is back.
+    BackupUnavailable(String),
     Internal(String),
 }
 

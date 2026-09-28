@@ -141,11 +141,12 @@ impl Store {
     /// Afterwards, run crash recovery as usual: it decides every unfinished file from the disk.
     pub fn import_from_backups(&mut self) -> Result<ImportReport> {
         let mut report = ImportReport::default();
-        let root = self.data_dir.join("backups");
-        let mut dirs: Vec<_> = std::fs::read_dir(&root)?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .collect();
+        let mut dirs: Vec<_> = Vec::new();
+        for root in self.backup_roots() {
+            if let Ok(rd) = std::fs::read_dir(&root) {
+                dirs.extend(rd.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()));
+            }
+        }
         dirs.sort_by_key(|e| e.file_name());
         for d in dirs {
             let id = d.file_name().to_string_lossy().into_owned();

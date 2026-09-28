@@ -23,7 +23,8 @@
 //!   preset-import FILE.json | preset-export ID | preset-duplicate ID | preset-delete ID
 //!   debug-log on | off         ExifTool commands (values cut) and timings in the log, for 24 hours
 //!   setting KEY [VALUE | --clear]   e.g. backup.max_age_days, backup.max_share_of_volume,
-//!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3)
+//!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3),
+//!                             backup.root (where new Operations keep their backups)
 //!                             metadata.preserve_mtime = true keeps each written file's
 //!                             modification time (off by default, SAFETY_MODEL §8.9, D-6)
 //!   apply PLAN.json [FAULTS]
@@ -428,6 +429,10 @@ fn main() -> ExitCode {
         return fail(
             "running with administrator rights: MoriMeta does not write files then; start it as a normal user",
         );
+    }
+    // SAFETY_MODEL §6: where new Operations keep their backups (setting backup.root)
+    if let Ok(Some(root)) = store.setting("backup.root") {
+        store.set_backup_root(PathBuf::from(root));
     }
     // the program's log (ARCHITECTURE §12); best effort. The debug log is on for 24 hours after
     // the user turned it on (setting log.debug_since_ms).
@@ -898,7 +903,7 @@ fn main() -> ExitCode {
                 let u = retention::usage(&store, &policy).map_err(|e| e.to_string())?;
                 let plan = retention::prune_plan(&u, &policy, now);
                 // SAFETY_MODEL §6.2: backups inside a synced folder are uploaded as well
-                let sync = mm_fs::sync_provider(&store.data_dir().join("backups"), &mm_fs::sync_roots())
+                let sync = mm_fs::sync_provider(store.backup_root(), &mm_fs::sync_roots())
                     .map(|p| format!("the backups are in a {p} folder: every backup is uploaded too; choose a local folder"));
                 println!(
                     "{}",
