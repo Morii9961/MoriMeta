@@ -3618,6 +3618,27 @@ fn synced_folders_are_noted() {
     );
     let b = Lab::json(&run(&["backups"], &lab.dir));
     assert!(b["warning"].as_str().unwrap().contains("OneDrive"), "{b}");
+    // a RAW's new sidecar in the synced folder (an ordinary new file) is noted the same way
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let o = run(
+        &[
+            "plan-creator",
+            "--set",
+            "Morii",
+            "--out",
+            lab.dir.join("n.json").to_str().unwrap(),
+            nef.to_str().unwrap(),
+        ],
+        &lab.dir,
+    );
+    let pj = Lab::json(&o);
+    assert_eq!(pj["entries"][0]["status"]["status"], "ready", "{pj}");
+    assert!(
+        pj["entries"][0]["notes"]
+            .to_string()
+            .contains("OneDrive folder"),
+        "{pj}"
+    );
     // elsewhere: no note, no warning
     let elsewhere = lab.dir.join("not-synced");
     let o = run(
@@ -4884,6 +4905,122 @@ fn exiftool_package_integrity() {
             r["error"].as_str().unwrap().contains("writing is disabled"),
             "{cmd:?}: {r}"
         );
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+/// Mark a lab file as a cloud placeholder that is not on this computer (FILE_ATTRIBUTE_OFFLINE,
+/// which MoriMeta treats like RECALL_ON_DATA_ACCESS; no sync client is involved).
+fn mark_offline(p: &Path, on: bool) {
+    let ok = Command::new("attrib")
+        .arg(if on { "+O" } else { "-O" })
+        .arg(p)
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "attrib failed for {}", p.display());
+}
+
+/// SAFETY_MODEL §8.3: a placeholder is never read — reading would make the sync client download
+/// it. Inspector, selection aggregate, "Needs attention", planning and the pre-write check all
+/// leave it alone (the debug log, which records every ExifTool command, never names it), and a
+/// RAW whose sidecar is a placeholder is not read either.
+#[test]
+fn cloud_placeholders_are_never_read() {
+    let pkg = require!();
+    let lab = Lab::new("placeholder", &pkg);
+    let ph = lab.photos[0].clone();
+    let local = lab.photos[1].clone();
+    // planned while downloaded; becomes a placeholder before Apply (the client freed space)
+    let later = lab.photos[2].clone();
+    let (early, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&later], "early.json");
+    // from here on every ExifTool command is in the log
+    assert!(lab.cli(&["debug-log", "on"]).status.success());
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+    std::fs::write(&xmp, b"<x:xmpmeta xmlns:x='adobe:ns:meta/'/>").unwrap();
+    for f in [&ph, &later, &xmp] {
+        mark_offline(f, true);
+    }
+
+    let i = Lab::json(&lab.cli(&["inspect", ph.to_str().unwrap()]));
+    assert!(
+        i["error"].as_str().unwrap().contains("NotDownloaded"),
+        "{i}"
+    );
+    let i = Lab::json(&lab.cli(&["inspect", nef.to_str().unwrap()]));
+    assert!(
+        i["error"].as_str().unwrap().contains("NotDownloaded"),
+        "sidecar: {i}"
+    );
+
+    let args = |cmd: &'static str| -> Vec<String> {
+        [cmd.to_owned()]
+            .into_iter()
+            .chain(
+                [&ph, &local, &nef]
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            )
+            .collect()
+    };
+    let run = |a: Vec<String>| {
+        let r: Vec<&str> = a.iter().map(String::as_str).collect();
+        Lab::json(&lab.cli(&r))
+    };
+    let agg = run(args("aggregate"));
+    let creator = &agg.as_array().unwrap()[0];
+    assert_eq!(
+        (
+            creator["files"].as_u64(),
+            creator["not_downloaded"].as_u64()
+        ),
+        (Some(3), Some(2)),
+        "{agg}"
+    );
+    let att = run(args("attention"));
+    assert_eq!(att["cloud_placeholders"], serde_json::json!([0]), "{att}");
+
+    let (_, pj) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[&ph, &local, &nef],
+        "p.json",
+    );
+    let st = |i: usize| pj["entries"][i]["status"].to_string();
+    assert!(
+        st(0).contains("cloud placeholder that is not downloaded"),
+        "{pj}"
+    );
+    assert!(st(1).contains("ready"), "{pj}");
+    assert!(st(2).contains("sidecar: cloud placeholder"), "{pj}");
+
+    let r = Lab::json(&lab.cli(&["apply", early.to_str().unwrap()]));
+    assert_eq!(state_of(&r, 0), "skipped", "{r}");
+    assert!(
+        r["files"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("cloud placeholder"),
+        "{r}"
+    );
+    assert_eq!(blake(&later).as_deref(), Some(lab.truth[&later].as_str()));
+
+    let logs = lab.data.join("logs");
+    let log: String = std::fs::read_dir(&logs)
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap_or_default())
+        .collect();
+    let name = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(log.contains(&name(&local)), "the debug log records reads");
+    for f in [&ph, &later, &xmp] {
+        assert!(
+            !log.contains(&name(f)),
+            "{} was handed to ExifTool",
+            name(f)
+        );
+    }
+    for f in [&ph, &later, &xmp] {
+        mark_offline(f, false);
     }
     let _ = std::fs::remove_dir_all(&lab.dir);
 }

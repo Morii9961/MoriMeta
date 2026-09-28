@@ -739,13 +739,25 @@ fn plan_with(
                 ),
                 _ => {}
             }
-            if job.is_some()
-                && let Some(provider) = mm_fs::sync_provider(Path::new(&entry.path), &sync_roots)
-            {
-                entry.notes.push(format!(
+            if job.is_some() {
+                // a RAW that is itself a cloud file shows the folder is synced even when the
+                // client is not one the environment names (the new sidecar is an ordinary file)
+                let provider = mm_fs::sync_provider(Path::new(&entry.path), &sync_roots)
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        entry
+                            .raw
+                            .as_deref()
+                            .and_then(|r| mm_fs::probe(Path::new(r)).ok())
+                            .filter(|pr| pr.reparse == mm_fs::Reparse::Cloud)
+                            .map(|_| "cloud sync".to_owned())
+                    });
+                if let Some(provider) = provider {
+                    entry.notes.push(format!(
                         "in a {provider} folder: the change will be uploaded, and if the file is \
                          edited elsewhere at the same time the sync client may keep a conflicted copy"
                     ));
+                }
             }
         }
         entry.seq = entries.len() as u32;

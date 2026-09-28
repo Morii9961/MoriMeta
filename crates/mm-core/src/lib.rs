@@ -42,6 +42,9 @@ pub enum CoreError {
     Cancelled,
     /// The backup location is missing or not writable: nothing is written until it is back.
     BackupUnavailable(String),
+    /// A cloud placeholder that is not on this computer: not read, because reading it would make
+    /// the sync client download it (SAFETY_MODEL §8.3). Names the file.
+    NotDownloaded(String),
     Internal(String),
 }
 
@@ -126,6 +129,12 @@ pub fn file_id_hex(id: &mm_fs::FileId) -> String {
         id.volume,
         id.id.iter().map(|b| format!("{b:02x}")).collect::<String>()
     )
+}
+
+/// A cloud file that is not on this computer (reading it would download it, SAFETY_MODEL §8.3).
+/// Only the attributes are looked at.
+pub fn is_placeholder(p: &Path) -> bool {
+    mm_fs::probe(p).is_ok_and(|pr| pr.cloud_placeholder)
 }
 
 /// Size, File ID and last-write time of the file at `p` (never follows reparse points).

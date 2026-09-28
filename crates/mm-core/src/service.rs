@@ -967,6 +967,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// SAFETY_MODEL §8.3 at import: a folder import lists placeholders apart and does not take
+    /// them in; a placeholder the user picks is taken in from its attributes alone (reading it
+    /// would download it; the Inspector and planning then refuse to read it).
+    #[test]
+    fn placeholders_at_import() {
+        let dir = std::env::temp_dir().join(format!("mm-import-ph-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in ["here.jpg", "cloud.jpg"] {
+            std::fs::write(dir.join(n), n).unwrap();
+        }
+        let offline = |on: bool| {
+            assert!(
+                std::process::Command::new("attrib")
+                    .arg(if on { "+O" } else { "-O" })
+                    .arg(dir.join("cloud.jpg"))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+        offline(true);
+        assert!(crate::is_placeholder(&dir.join("cloud.jpg")));
+        let mut s = Session::default();
+        let r = s.import_folder(&dir);
+        assert_eq!(r.added.len(), 1, "{r:?}");
+        assert_eq!(r.placeholders.len(), 1, "{r:?}");
+        assert!(r.placeholders[0].ends_with("cloud.jpg"));
+        let picked = s.import(&[dir.join("cloud.jpg")]);
+        assert_eq!(picked.added.len(), 1, "{picked:?}");
+        assert!(
+            crate::is_placeholder(&dir.join("cloud.jpg")),
+            "still not downloaded"
+        );
+        offline(false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn orphan_sidecars_and_system_folders() {
         let dir = std::env::temp_dir().join(format!("mm-orphan-{}", std::process::id()));

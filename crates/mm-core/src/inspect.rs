@@ -106,6 +106,9 @@ fn read_views(engine: &mut Engine, path: &Path) -> Result<Views, CoreError> {
     if let Some((sc, true)) = &sidecar {
         paths.push(sc);
     }
+    if let Some(p) = paths.iter().find(|p| crate::is_placeholder(p)) {
+        return Err(CoreError::NotDownloaded(p.display().to_string()));
+    }
     let mut snaps = engine.read_all_tags(&paths)?.into_iter();
     let main = snaps
         .next()
@@ -249,6 +252,9 @@ pub struct FieldAggregate {
     pub conflicting: usize,
     /// Present but not valid, or the file could not be read.
     pub unreadable: usize,
+    /// Cloud placeholders (the file or its sidecar) that are not on this computer: counted in
+    /// `files`, not read (SAFETY_MODEL §8.3).
+    pub not_downloaded: usize,
 }
 
 const TOP_VALUES: usize = 20;
@@ -271,13 +277,28 @@ pub fn selection_aggregate(
     // image files and RAWs in one batched read, sidecars after them
     let mut main: Vec<PathBuf> = Vec::new();
     let mut sidecars: Vec<Option<(PathBuf, bool)>> = Vec::new();
+    let mut not_downloaded = 0;
     for p in paths {
         let p = normalize(p)?;
-        sidecars.push(match policy(&p) {
+        let sc = match policy(&p) {
             Policy::RawSidecar => pair_sidecar(&p).ok().map(|(sc, exists, _)| (sc, exists)),
             _ => None,
-        });
+        };
+        // SAFETY_MODEL §8.3: reading a placeholder downloads it; its values are not known here
+        if crate::is_placeholder(&p)
+            || sc
+                .as_ref()
+                .is_some_and(|(s, exists)| *exists && crate::is_placeholder(s))
+        {
+            not_downloaded += 1;
+            continue;
+        }
+        sidecars.push(sc);
         main.push(p);
+    }
+    for a in aggs.iter_mut() {
+        a.files += not_downloaded;
+        a.not_downloaded = not_downloaded;
     }
     let existing: Vec<PathBuf> = sidecars
         .iter()
