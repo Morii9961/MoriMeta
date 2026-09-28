@@ -3994,6 +3994,8 @@ fn restore_backups_to_a_folder() {
     let out = lab.dir.join("restored");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(out.join("Writer.jpg"), b"already here").unwrap();
+    // what an interrupted earlier restore leaves: an incomplete copy under its own name
+    std::fs::write(out.join("Nikon.jpg.mmrestore-0"), b"partial").unwrap();
     let r = Lab::json(&lab.cli(&["restore-to", &op, "--dir", out.to_str().unwrap()]));
     let rows = r.as_array().unwrap();
     assert_eq!(rows.len(), lab.photos.len(), "{r}");
@@ -4008,6 +4010,21 @@ fn restore_backups_to_a_folder() {
     assert_eq!(
         std::fs::read(out.join("Writer.jpg")).unwrap(),
         b"already here"
+    );
+    assert!(
+        rows[1]["to"].as_str().unwrap().ends_with("Nikon.jpg"),
+        "{r}"
+    );
+    // a copy only ever takes a photo's name when it is complete: no other incomplete copies
+    let incomplete: Vec<String> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".mmrestore-"))
+        .collect();
+    assert_eq!(
+        incomplete,
+        ["Nikon.jpg.mmrestore-0"],
+        "the earlier one is left alone"
     );
     let now: Vec<String> = lab.photos.iter().map(|p| blake(p).unwrap()).collect();
     assert_eq!(now, after, "the written files are not touched");

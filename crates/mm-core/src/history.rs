@@ -490,27 +490,25 @@ pub fn restore_backups_to(
             .extension()
             .map(|e| format!(".{}", e.to_string_lossy()))
             .unwrap_or_default();
+        // the copy is made under a name that says it is incomplete and only takes the photo's name
+        // once it is whole and verified: an interruption never leaves a partial file that looks
+        // like a restored photo
         let mut src = std::fs::File::open(backup)?;
-        let mut copied = None;
-        for n in 1..10_000 {
-            let candidate = if n == 1 {
-                dir.join(format!("{stem}{ext}"))
-            } else {
-                dir.join(format!("{stem} ({n}){ext}"))
-            };
-            // never replaces: a taken name is skipped
+        let mut partial = None;
+        for n in 0..10_000 {
+            let candidate = dir.join(format!("{stem}{ext}.mmrestore-{n}"));
             match mm_fs::copy_new_hashing(&mut src, &candidate) {
                 Ok(h) => {
-                    copied = Some((candidate, mm_fs::hex(&h)));
+                    partial = Some((candidate, mm_fs::hex(&h)));
                     break;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e.into()),
             }
         }
-        let (to, h) = copied.ok_or_else(|| CoreError::Input("no free file name".into()))?;
+        let (partial, h) = partial.ok_or_else(|| CoreError::Input("no free file name".into()))?;
         if h != h0 {
-            let _ = std::fs::remove_file(&to);
+            let _ = std::fs::remove_file(&partial);
             out.push(Restored {
                 seq: f.seq,
                 to: None,
@@ -518,6 +516,32 @@ pub fn restore_backups_to(
             });
             continue;
         }
+        let mut placed = None;
+        for n in 1..10_000 {
+            let candidate = if n == 1 {
+                dir.join(format!("{stem}{ext}"))
+            } else {
+                dir.join(format!("{stem} ({n}){ext}"))
+            };
+            // never replaces: a taken name is skipped (ERROR_FILE_EXISTS, ERROR_ALREADY_EXISTS)
+            match mm_fs::move_no_replace(&partial, &candidate) {
+                Ok(()) => {
+                    placed = Some(candidate);
+                    break;
+                }
+                Err(mm_fs::Win32Error(80 | 183)) => continue,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&partial);
+                    return Err(CoreError::Io(std::io::Error::other(format!(
+                        "cannot name the restored copy: {e}"
+                    ))));
+                }
+            }
+        }
+        let Some(to) = placed else {
+            let _ = std::fs::remove_file(&partial);
+            return Err(CoreError::Input("no free file name".into()));
+        };
         out.push(Restored {
             seq: f.seq,
             to: Some(to.to_string_lossy().into_owned()),
