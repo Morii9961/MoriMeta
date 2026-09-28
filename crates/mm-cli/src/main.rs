@@ -408,6 +408,25 @@ fn main() -> ExitCode {
     let with_engine = |g: &Global| -> Result<Engine, String> {
         Engine::start(engine_config(g)?).map_err(|e| e.to_string())
     };
+    // SECURITY_MODEL §4.1: never write with administrator rights. MM_ALLOW_ELEVATED=1 is for
+    // CI runners only, which run elevated.
+    const WRITES: &[&str] = &[
+        "apply",
+        "resume",
+        "recover",
+        "resolve",
+        "dismiss",
+        "prune",
+        "rebuild-journal",
+    ];
+    if WRITES.contains(&cmd.as_str())
+        && std::env::var("MM_ALLOW_ELEVATED").as_deref() != Ok("1")
+        && mm_fs::is_elevated().unwrap_or(true)
+    {
+        return fail(
+            "running with administrator rights: MoriMeta does not write files then; start it as a normal user",
+        );
+    }
     // the program's log (ARCHITECTURE §12); best effort. The debug log is on for 24 hours after
     // the user turned it on (setting log.debug_since_ms).
     let _ = mm_core::log::init(&g.data);

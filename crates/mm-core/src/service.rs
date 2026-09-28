@@ -27,6 +27,8 @@ pub enum ServiceError {
     NotConfirmed,
     /// The OperationGate refused: a write or an update installation is in progress.
     Busy(String),
+    /// Running with administrator rights: writes are disabled (SECURITY_MODEL §4.1).
+    Elevated,
     Core(CoreError),
 }
 
@@ -382,6 +384,8 @@ struct GateState {
 #[derive(Debug, Default)]
 pub struct OperationGate {
     state: Mutex<GateState>,
+    /// The process has administrator rights: every write is refused.
+    elevated: bool,
 }
 
 pub struct WritePermit<'a>(&'a OperationGate);
@@ -392,7 +396,19 @@ impl OperationGate {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// The gate of this process: writes are refused if it runs with administrator rights (or
+    /// if that cannot be determined).
+    pub fn for_this_process() -> OperationGate {
+        OperationGate {
+            elevated: mm_fs::is_elevated().unwrap_or(true),
+            ..Default::default()
+        }
+    }
+
     pub fn write(&self) -> Result<WritePermit<'_>, ServiceError> {
+        if self.elevated {
+            return Err(ServiceError::Elevated);
+        }
         let mut s = self.lock();
         if s.exclusive {
             return Err(ServiceError::Busy("an update is being installed".into()));
@@ -566,6 +582,11 @@ mod tests {
         assert!(matches!(g.exclusive(&store), Err(ServiceError::Busy(_))));
         drop(x);
         drop(g.write().unwrap());
+        let elevated = OperationGate {
+            elevated: true,
+            ..Default::default()
+        };
+        assert!(matches!(elevated.write(), Err(ServiceError::Elevated)));
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }

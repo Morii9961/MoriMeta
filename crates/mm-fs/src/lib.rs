@@ -574,6 +574,37 @@ pub fn sync_provider(p: &Path, roots: &[(PathBuf, &'static str)]) -> Option<&'st
     })
 }
 
+/// Whether this process runs with administrator rights (an elevated token). MoriMeta never
+/// writes then (SECURITY_MODEL §4.1): a compromised ExifTool would run with the same rights.
+pub fn is_elevated() -> io::Result<bool> {
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    // SAFETY: plain Win32 calls; the token handle is closed here, `e` is sized for the call.
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut e = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut len = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut e as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        ) != 0;
+        let err = io::Error::last_os_error();
+        windows_sys::Win32::Foundation::CloseHandle(token);
+        if !ok {
+            return Err(err);
+        }
+        Ok(e.TokenIsElevated != 0)
+    }
+}
+
 /// Keeps the system from sleeping while an Operation runs (SAFETY_MODEL §8.14); the display may
 /// still turn off. The request belongs to the calling thread and ends when the guard is dropped.
 pub struct KeepAwake(());
@@ -703,6 +734,12 @@ mod tests {
             ]
         );
         assert!(dropbox_paths("not json").is_empty());
+    }
+
+    #[test]
+    fn elevation_can_be_determined() {
+        // the answer depends on how the tests run (CI runners are elevated); it must not fail
+        assert!(is_elevated().is_ok());
     }
 
     #[test]

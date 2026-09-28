@@ -65,6 +65,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests
+        # the runner is elevated; MoriMeta refuses to write then (SECURITY_MODEL §4.1)
+        env:
+          MM_ALLOW_ELEVATED: "1"
         run: cargo test --workspace --locked
 
   msrv:

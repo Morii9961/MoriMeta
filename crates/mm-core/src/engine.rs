@@ -45,8 +45,70 @@ pub fn write_timeout(bytes: u64) -> Duration {
     Duration::from_millis(30_000 + bytes / 2_000)
 }
 
+/// The ExifTool version this build is made and verified with (research/exiftool.lock.json; a
+/// test keeps the two equal). A session reporting another version is refused (SECURITY_MODEL
+/// §4.1).
+pub const EXIFTOOL_VERSION: &str = "13.59";
+
+/// A tag MoriMeta writes or deletes, checked against the tags that are never written, not even
+/// by a future Advanced mode (SECURITY_MODEL §4.3): a second line of defence behind the field
+/// registry, which only names allowed tags.
 fn tag(name: &str) -> Result<TagName, CoreError> {
+    check_writable(name)?;
     TagName::new(name).map_err(|e| CoreError::Internal(format!("tag {name}: {e}")))
+}
+
+/// Groups whose tags are never written: file-system pseudo-tags, computed tags, MakerNotes.
+const FORBIDDEN_GROUPS: &[&str] = &["system", "file", "composite", "makernotes", "extra"];
+
+/// Tags never written, in any group.
+const FORBIDDEN_TAGS: &[&str] = &[
+    "filename",
+    "directory",
+    "testname",
+    "hardlink",
+    "symlink",
+    "filepermissions",
+    "fileattributes",
+    "filemodifydate",
+    "filecreatedate",
+    "fileaccessdate",
+    "fileinodechangedate",
+    "fileuserid",
+    "filegroupid",
+    "geotag",
+    "geosync",
+    "geotime",
+    "makernotes",
+    "icc_profile",
+    "orientation",
+    "thumbnailimage",
+    "previewimage",
+    "jpgfromraw",
+    "jumbf",
+];
+
+/// Whole-group deletes allowed: only the GPS directory (Remove GPS, METADATA_MODEL).
+const GROUP_DELETES: &[&str] = &["gps:all"];
+
+pub fn check_writable(name: &str) -> Result<(), CoreError> {
+    let lower = name.to_ascii_lowercase();
+    let (group, tag) = lower.rsplit_once(':').unwrap_or(("", lower.as_str()));
+    let refuse = |why: &str| {
+        Err(CoreError::Internal(format!(
+            "refused to write {name}: {why} (SECURITY_MODEL §4.3)"
+        )))
+    };
+    if group.split(':').any(|g| FORBIDDEN_GROUPS.contains(&g)) {
+        return refuse("a file-system, computed or maker-notes tag");
+    }
+    if FORBIDDEN_TAGS.contains(&tag) {
+        return refuse("a tag that is never written");
+    }
+    if (tag == "all" || tag == "*") && !GROUP_DELETES.contains(&lower.as_str()) {
+        return refuse("a whole-group write");
+    }
+    Ok(())
 }
 
 fn path_line(p: &Path) -> Result<Line, CoreError> {
@@ -84,6 +146,12 @@ impl Engine {
             return Err(CoreError::Engine(
                 "ExifTool did not report a version".into(),
             ));
+        }
+        if e.version != EXIFTOOL_VERSION {
+            return Err(CoreError::Engine(format!(
+                "ExifTool {} found; this build is verified with {EXIFTOOL_VERSION} only",
+                e.version
+            )));
         }
         Ok(e)
     }
@@ -363,5 +431,55 @@ impl Engine {
         if let Some(s) = self.session.take() {
             s.close(Duration::from_secs(2));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn never_written_tags_are_refused() {
+        for bad in [
+            "System:FileName",
+            "FileName",
+            "Directory",
+            "File:FileModifyDate",
+            "FileCreateDate",
+            "Composite:GPSPosition",
+            "MakerNotes:SerialNumber",
+            "Nikon:MakerNotes",
+            "ICC_Profile",
+            "IFD0:Orientation",
+            "IFD1:ThumbnailImage",
+            "Geotag",
+            "all",
+            "EXIF:all",
+            "XMP:*",
+        ] {
+            assert!(check_writable(bad).is_err(), "{bad} was allowed");
+        }
+        for ok in [
+            "IFD0:Artist",
+            "XMP-dc:Creator",
+            "XMP-dc:Rights-x-default",
+            "IPTC:By-line",
+            "Photoshop:IPTCDigest",
+            "ExifIFD:DateTimeOriginal",
+            "GPS:all",
+            "GPS:GPSLatitude",
+            "XMP-exif:GPSLatitude",
+        ] {
+            assert!(check_writable(ok).is_ok(), "{ok} was refused");
+        }
+    }
+
+    #[test]
+    fn pinned_version_matches_the_lock_file() {
+        let lock = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../research/exiftool.lock.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(lock).unwrap()).unwrap();
+        assert_eq!(v["version"], EXIFTOOL_VERSION);
     }
 }

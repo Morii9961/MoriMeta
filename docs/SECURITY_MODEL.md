@@ -93,6 +93,8 @@
 
 白名单在构建时由脚本对照 ExifTool `-listw` 生成并与禁止表求差，结果入库并在 ExifTool 升级时复核。
 
+实现状态（2026-09-28）：写入层兜底检查 `engine::check_writable`（System/File/Composite/MakerNotes 组、上表标签、除 `GPS:all` 外的整组写入一律拒绝），字段注册表之外的第二道防线；`-listw` 生成白名单尚未做。启动后校验 `-ver` 等于 `EXIFTOOL_VERSION`（测试保证与 `research/exiftool.lock.json` 一致），打包文件完整性校验待打包（§5）。提权检测 `mm_fs::is_elevated`：`OperationGate::for_this_process()` 与 `mm-cli` 的写命令在提权时拒绝写入（无法判断时同样拒绝）；`MM_ALLOW_ELEVATED=1` 只供 CI（runner 以提权运行）。
+
 ---
 
 ## 5. ExifTool 打包与供应链
