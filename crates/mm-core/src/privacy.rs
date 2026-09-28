@@ -14,14 +14,15 @@ pub fn alias(n: u32, path: &str) -> String {
 }
 
 /// `text` with every known path replaced by its alias (letter case ignored, the longest path
-/// first so that a file's path wins over its folder's), then the user's profile folder and name
-/// replaced.
+/// first so that a file's path wins over its folder's; also in the `C:/…` form ExifTool writes
+/// paths in), then the user's profile folder and name replaced.
 pub fn scrub(text: &str, known: &[(String, String)]) -> String {
     let mut known: Vec<&(String, String)> = known.iter().collect();
     known.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
     let mut out = text.to_owned();
     for (path, alias) in known {
         out = replace_ignore_case(&out, path, alias);
+        out = replace_ignore_case(&out, &path.replace('\\', "/"), alias);
     }
     if let Some(profile) = std::env::var_os("USERPROFILE") {
         out = scrub_profile(&out, &profile.to_string_lossy());
@@ -84,6 +85,12 @@ mod tests {
         assert_eq!(
             scrub(t, &known),
             "cannot open asset#0.jpg: access denied (in <folder>)"
+        );
+        // ExifTool names files with forward slashes
+        let t = "Error: Not a valid JPG - D:/Shoot/2026/IMG_0001.JPG (D:/shoot/2026/other.jpg)";
+        assert_eq!(
+            scrub(t, &known),
+            "Error: Not a valid JPG - asset#0.jpg (<folder>/other.jpg)"
         );
         // built at run time so that the repository check does not take it for a real profile
         let profile = ["C:", "Users", "mori"].join("\\");
