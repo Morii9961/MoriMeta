@@ -64,6 +64,24 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: exFAT test volume (64 MB VHD for files_on_an_exfat_drive_are_not_written)
+        # best effort: without it that test is skipped
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $vhd = Join-Path $env:RUNNER_TEMP 'mm-exfat.vhdx'
+          $script = Join-Path $env:RUNNER_TEMP 'mm-exfat.txt'
+          @"
+          create vdisk file="$vhd" maximum=64 type=expandable
+          select vdisk file="$vhd"
+          attach vdisk
+          create partition primary
+          format fs=exfat quick label=MMEXFAT
+          assign letter=X
+          "@ | Set-Content -Encoding ascii $script
+          diskpart /s $script
+          if (Test-Path 'X:\') { 'MM_E2E_EXFAT_VOLUME=X:\' | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+
       - name: Tests
         # the runner is elevated; MoriMeta refuses to write then (SECURITY_MODEL §4.1)
         env:

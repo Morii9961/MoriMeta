@@ -17,7 +17,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_ID_INFO, FILE_SHARE_DELETE,
     FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo, FlushFileBuffers,
     GetDiskFreeSpaceExW, GetDriveTypeW, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    GetShortPathNameW, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
+    GetShortPathNameW, GetVolumeInformationW, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH,
+    MoveFileExW, ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -420,6 +421,33 @@ pub fn volume_root(p: &Path) -> io::Result<PathBuf> {
         s
     };
     Ok(PathBuf::from(s))
+}
+
+/// File system of the volume whose mount point is `root` (from [`volume_root`]): `NTFS`, `exFAT`,
+/// `FAT32`, `ReFS`, …; `None` when Windows does not say.
+pub fn file_system(root: &Path) -> Option<String> {
+    let mut w: Vec<u16> = root.as_os_str().encode_wide().collect();
+    if w.last() != Some(&(b'\\' as u16)) {
+        w.push(b'\\' as u16);
+    }
+    w.push(0);
+    let mut name = [0u16; 64];
+    // SAFETY: `w` is NUL-terminated; `name` is writable for the length passed; the other
+    // outputs are optional and null.
+    let ok = unsafe {
+        GetVolumeInformationW(
+            w.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            name.as_mut_ptr(),
+            name.len() as u32,
+        )
+    };
+    let n = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+    (ok != 0 && n > 0).then(|| String::from_utf16_lossy(&name[..n]))
 }
 
 /// Storage class of a volume, for per-volume IO concurrency (ARCHITECTURE §8.2).
@@ -939,6 +967,20 @@ mod tests {
         assert_eq!(std::fs::read(&orig).unwrap(), b"original");
         assert!(temp.exists());
         assert!(!bak.exists());
+    }
+
+    #[test]
+    fn file_system_of_the_temp_volume() {
+        let root = volume_root(&std::env::temp_dir()).unwrap();
+        // the development machine and the CI runner keep TEMP on NTFS
+        assert_eq!(
+            file_system(&root).as_deref(),
+            Some("NTFS"),
+            "{}",
+            root.display()
+        );
+        let not_a_root = std::env::temp_dir().join("mm-no-such-folder");
+        assert_eq!(file_system(&not_a_root), None);
     }
 
     #[test]

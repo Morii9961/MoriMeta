@@ -79,6 +79,12 @@ impl PlanCtl {
 /// Files between two progress reports while inspecting them.
 const PROGRESS_EVERY: usize = 100;
 
+/// The file systems writing in place is verified on (SAFETY_MODEL A-1). Network shares are judged
+/// by their drive type instead (§8.5): the name a server reports says little.
+pub fn is_verified_fs(name: &str) -> bool {
+    name.eq_ignore_ascii_case("NTFS")
+}
+
 /// Environment checks at planning time (SAFETY_MODEL §8). Repeated at execution.
 fn precheck(p: &std::path::Path) -> Result<(), String> {
     let pr = mm_fs::probe(p).map_err(|e| format!("cannot inspect file: {e}"))?;
@@ -630,6 +636,7 @@ fn plan_with(
     let mut seen = HashSet::new();
     let mut pending: Vec<Pending> = Vec::new();
     let mut volumes: HashMap<PathBuf, VolumeKind> = HashMap::new();
+    let mut file_systems: HashMap<PathBuf, Option<String>> = HashMap::new();
     let sync_roots = mm_fs::sync_roots();
     for (i, input) in inputs.iter().enumerate() {
         if i % PROGRESS_EVERY == 0 {
@@ -742,7 +749,19 @@ fn plan_with(
                 VolumeKind::Network => entry.notes.push(
                     "on a network drive: allowed, but not verified on real NAS devices".into(),
                 ),
-                _ => {}
+                _ => {
+                    // SAFETY_MODEL A-1 / §8.4: a USB drive that Windows reports as a fixed disk
+                    // may still be exFAT; only NTFS is verified for writing in place
+                    let fs = file_systems
+                        .entry(root.clone())
+                        .or_insert_with(|| mm_fs::file_system(&root));
+                    if let Some(fs) = fs.as_deref().filter(|f| !is_verified_fs(f)) {
+                        entry.status = EntryStatus::Blocked(format!(
+                            "on a drive formatted {fs}: writing in place is verified on NTFS only (exFAT and FAT keep no journal); copy the files to an NTFS drive first"
+                        ));
+                        job = None;
+                    }
+                }
             }
             if job.is_some() {
                 // a RAW that is itself a cloud file shows the folder is synced even when the

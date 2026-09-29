@@ -163,6 +163,9 @@ pub struct Attention {
     pub removable: Vec<usize>,
     /// On a network drive (§8.5).
     pub network: Vec<usize>,
+    /// On a local drive whose file system is not NTFS (exFAT, FAT32, …; blocked like removable
+    /// media, §8.4).
+    pub other_file_system: Vec<usize>,
 }
 
 /// One metadata read of the paths plus their file attributes.
@@ -174,19 +177,25 @@ pub fn attention(
     let mut a = Attention::default();
     let mut to_read = Vec::new();
     let mut idx = Vec::new();
-    let mut volumes: std::collections::HashMap<PathBuf, mm_fs::VolumeKind> =
+    let mut volumes: std::collections::HashMap<PathBuf, (mm_fs::VolumeKind, Option<String>)> =
         std::collections::HashMap::new();
     for (i, p) in paths.iter().enumerate() {
         if p.as_os_str().len() > 260 {
             a.long_paths.push(i);
         }
         let root = mm_fs::volume_root(p).unwrap_or_default();
-        let kind = *volumes
+        let (kind, fs) = volumes
             .entry(root.clone())
-            .or_insert_with(|| mm_fs::volume_kind(&root));
+            .or_insert_with(|| (mm_fs::volume_kind(&root), mm_fs::file_system(&root)));
         match kind {
             mm_fs::VolumeKind::Removable => a.removable.push(i),
             mm_fs::VolumeKind::Network => a.network.push(i),
+            _ if fs
+                .as_deref()
+                .is_some_and(|f| !crate::planner::is_verified_fs(f)) =>
+            {
+                a.other_file_system.push(i)
+            }
             _ => {}
         }
         match mm_fs::probe(p) {

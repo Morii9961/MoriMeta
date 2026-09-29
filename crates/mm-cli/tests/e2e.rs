@@ -5450,6 +5450,40 @@ fn long_unicode_paths_through_write_crash_and_undo() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// SAFETY_MODEL A-1 / §8.4: a USB drive Windows reports as a fixed disk may be exFAT, which keeps
+/// no journal and is not verified for writing in place. JPEG and NEF (new sidecar) there are
+/// Blocked with the file system named, and "Needs attention" lists them. Needs an exFAT test
+/// volume (`MM_E2E_EXFAT_VOLUME`; CI mounts one).
+#[test]
+fn files_on_an_exfat_drive_are_not_written() {
+    let pkg = require!();
+    let Some(vol) = std::env::var_os("MM_E2E_EXFAT_VOLUME").map(PathBuf::from) else {
+        eprintln!("SKIP: MM_E2E_EXFAT_VOLUME not set (needs an exFAT test volume)");
+        return;
+    };
+    let lab = Lab::new("exfat", &pkg);
+    let dir = vol.join(format!("mm-e2e-exfat-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let jpg = dir.join("Canon.jpg");
+    std::fs::copy(&lab.photos[2], &jpg).unwrap();
+    let nef = dir.join("DSC_0001.NEF");
+    std::fs::copy(timages().join("Nikon.nef"), &nef).unwrap();
+    let before = blake(&jpg);
+
+    let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&jpg, &nef], "x.json");
+    for e in pj["entries"].as_array().unwrap() {
+        assert_eq!(e["status"]["status"], "blocked", "{pj}");
+        assert!(e.to_string().contains("on a drive formatted exFAT"), "{pj}");
+    }
+    let att = Lab::json(&lab.cli(&["attention", jpg.to_str().unwrap(), nef.to_str().unwrap()]));
+    assert_eq!(att["other_file_system"], serde_json::json!([0, 1]), "{att}");
+    assert_eq!(blake(&jpg), before);
+    assert!(!nef.with_extension("xmp").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
