@@ -32,6 +32,8 @@ KINDS = [
     ("error.domain", "Error / validation text", r"\bErr\((format!\(|\")"),
 ]
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
+CONST = re.compile(r"\bconst [A-Z_0-9]+: &str =")
+SHARED = "Where the constant is used (status, note, result or error)"
 
 
 def rust_files():
@@ -62,6 +64,13 @@ def scan():
                 if lit and re.search(r"[A-Za-z]{2}", lit.group(1)):
                     rows.append((cat, shown, rel, i + 1, lit.group(1)))
                 break
+            # a text kept in a constant and used where statuses, results and errors are built
+            m = CONST.search(line)
+            if m:
+                chunk = " ".join([line[m.end() :]] + [l.strip() for l in lines[i + 1 : i + 3]])
+                lit = LITERAL.search(chunk)
+                if lit and re.search(r"[A-Za-z]{2,} [A-Za-z]{2,}", lit.group(1)):
+                    rows.append(("shared", SHARED, rel, i + 1, lit.group(1)))
     # the reasons Probe::refusal gives (mm-fs), shown as Blocked / Skipped
     fs = (ROOT / "crates/mm-fs/src/lib.rs").read_text(encoding="utf-8")
     start = fs.find("pub fn refusal(")
@@ -111,7 +120,8 @@ def render():
           "\"Embeds system/engine text\" marks messages that carry an OS or ExifTool error verbatim: "
           "those need a code plus the raw text as a detail, not a translation. "
           "The scan finds texts at the places they are built (status, result and error "
-          "constructors, notes); a text kept in a variable first and passed on later is not listed.")
+          "constructors, notes) and in string constants used there (`shared`); a text kept in a "
+          "variable first and passed on later is not listed.")
     print()
     print(f"{len(rows)} texts. By category:")
     print()
@@ -119,6 +129,7 @@ def render():
     print("|---|---|---:|")
     shown = {k[0]: k[1] for k in KINDS}
     shown["file.refusal"] = "Preview and result: not written"
+    shown["shared"] = SHARED
     for cat, n in sorted(by.items()):
         print(f"| `{cat}` | {shown.get(cat, '')} | {n} |")
     print()
