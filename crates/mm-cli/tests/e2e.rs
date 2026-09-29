@@ -5985,6 +5985,61 @@ fn recovery_waits_for_a_backup_location_that_is_not_connected() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// A folder that does not let MoriMeta create files (its permissions, or Windows Controlled
+/// folder access, which guards Pictures): every write there fails before anything is changed,
+/// with that reason rather than a "verification" failure; nothing is left behind, and once the
+/// folder allows it a retry writes the files.
+#[test]
+fn a_folder_that_refuses_new_files_fails_with_the_reason() {
+    let pkg = require!();
+    let lab = Lab::new("no-create", &pkg);
+    let folder = lab.photos[0].parent().unwrap().to_path_buf();
+    let user = std::env::var("USERNAME").unwrap();
+    let icacls = |args: &[&str]| {
+        let o = Command::new("icacls")
+            .arg(&folder)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{o:?}");
+    };
+    icacls(&["/deny", &format!("{user}:(AD,WD)")]);
+    // two files: fewer than the circuit breaker needs to pause
+    let (plan, _) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[&lab.photos[1], &lab.photos[2]],
+        "p.json",
+    );
+    let a = lab.cli(&["apply", plan.to_str().unwrap()]);
+    let rep = Lab::json(&a);
+    icacls(&["/remove:d", &user]);
+    let files = rep["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2, "{rep}");
+    for f in files {
+        assert_eq!(f["state"], "failed", "{rep}");
+        assert!(
+            f["reason"]
+                .as_str()
+                .unwrap()
+                .contains("cannot create a file in this folder"),
+            "{rep}"
+        );
+    }
+    lab.assert_all_original();
+    assert!(lab.leftovers().is_empty(), "{:?}", lab.leftovers());
+    let op = rep["op_id"].as_str().unwrap().to_owned();
+    let (retry, _) = {
+        let out = lab.dir.join("retry.json");
+        let o = lab.cli(&["plan-retry", &op, "--out", out.to_str().unwrap()]);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, ())
+    };
+    let done = lab.apply_ok(&retry);
+    lab.undo(&done);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {

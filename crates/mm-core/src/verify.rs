@@ -94,6 +94,18 @@ pub fn without_file(line: &str) -> &str {
     }
 }
 
+/// Why a write failed before anything was verified, when ExifTool could not create the temporary
+/// file next to the original: the folder does not let MoriMeta create files.
+pub const CANNOT_CREATE: &str = "cannot create a file in this folder (its permissions, or Windows \
+     Controlled folder access blocking MoriMeta): the file is unchanged";
+
+impl VerifyError {
+    /// ExifTool could not create the temporary output file (not a verification finding).
+    pub fn is_cannot_create(&self) -> bool {
+        matches!(self, VerifyError::Engine(e) if e.contains("Error creating file"))
+    }
+}
+
 /// V1: exit status and stderr of the write command.
 pub fn check_write_output(out: &Output) -> Result<(), VerifyError> {
     let err = out.stderr_text();

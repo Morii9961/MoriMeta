@@ -1046,6 +1046,9 @@ fn one_file(
                     .extend_from_slice(b"Warning: [tampered] unexpected warning\n");
             }
             if let Err(e) = verify::check_write_output(&out) {
+                if e.is_cannot_create() {
+                    return Ok(engine_failed(verify::CANNOT_CREATE.into()));
+                }
                 return Ok(engine_failed(format!("verification V1: {e}")));
             }
             if !f.temp.exists() {
@@ -1402,6 +1405,9 @@ fn create_file(
     }
     if let Err(e) = verify::check_write_output(&out) {
         remove_if_exists(&f.temp);
+        if e.is_cannot_create() {
+            return Ok(Outcome::Failed(verify::CANNOT_CREATE.into()));
+        }
         return Ok(Outcome::Failed(format!("verification V1: {e}")));
     }
     if !f.temp.exists() {
