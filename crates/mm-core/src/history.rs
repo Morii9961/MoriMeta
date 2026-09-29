@@ -417,6 +417,17 @@ pub fn replan(
         }
     };
     plan.source = Some(source);
+    // INTERACTION_SPEC §9 / §12: what the user left out of a file stays out when it is planned
+    // again (the new plan has the file's original changes only)
+    for before in old.entries.iter().filter(|e| seqs.contains(&e.seq)) {
+        let Some(now) = plan.entries.iter_mut().find(|n| n.path == before.path) else {
+            continue;
+        };
+        for c in &before.excluded_changes {
+            now.set_field_excluded(&c.field, true)
+                .map_err(CoreError::Internal)?;
+        }
+    }
     Ok(plan)
 }
 

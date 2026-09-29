@@ -5618,8 +5618,36 @@ fn a_change_or_a_whole_edit_is_left_out_in_preview() {
     }
 
     let copyrights = lab.copyrights();
-    let op = lab.apply_ok(&p3);
-    assert!(lab.cli(&["fsck", &op]).status.success());
+    // GPS.jpg is read-only at Apply: skipped; planned again once cleared, it still has only
+    // what the user kept (§12 "the failed files' original changes")
+    let set_ro = |on: bool| {
+        let mut perm = std::fs::metadata(&lab.photos[gps]).unwrap().permissions();
+        perm.set_readonly(on);
+        std::fs::set_permissions(&lab.photos[gps], perm).unwrap();
+    };
+    set_ro(true);
+    let rep = Lab::json(&lab.cli(&["apply", p3.to_str().unwrap()]));
+    set_ro(false);
+    let op = rep["op_id"].as_str().unwrap().to_owned();
+    let skipped: Vec<&Value> = rep["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["state"] == "skipped")
+        .collect();
+    assert_eq!(skipped.len(), 1, "{rep}");
+    assert!(
+        skipped[0]["path"].as_str().unwrap().ends_with("GPS.jpg"),
+        "{rep}"
+    );
+    let again = lab.dir.join("again.json");
+    let o = lab.cli(&["plan-again", &op, "--out", again.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pa = Lab::json(&o);
+    assert_eq!(fields(&pa, 0, "changes"), ["capture_time"], "{pa}");
+    assert_eq!(fields(&pa, 0, "excluded_changes"), ["gps"], "{pa}");
+    let op2 = lab.apply_ok(&again);
+    assert!(lab.cli(&["fsck", &op2]).status.success());
     let insp = Lab::json(&lab.cli(&["inspect", lab.photos[gps].to_str().unwrap()]));
     let value = |f: &str| {
         insp["fields"]
@@ -5633,6 +5661,7 @@ fn a_change_or_a_whole_edit_is_left_out_in_preview() {
     assert_eq!(value("gps"), "54.9896667, -1.9141667", "{insp}");
     assert_eq!(value("capture_time"), "2002:07:13 16:58:28", "{insp}");
     assert_eq!(lab.copyrights(), copyrights);
+    lab.undo(&op2);
     lab.undo(&op);
     lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
