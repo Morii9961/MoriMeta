@@ -499,6 +499,24 @@ pub(crate) enum Policy {
     Unsupported,
 }
 
+/// ExifTool names a file's format from its content. A file whose content is another format than
+/// its extension says (a text file named `.jpg`) is not planned: the Preview would show a write
+/// that verification refuses anyway (V1).
+pub(crate) fn content_mismatch(p: &Path, s: &Snapshot) -> Option<String> {
+    let found = s.text("File:FileType")?;
+    let ext = ext_of(p);
+    let expected: &[&str] = match policy(p) {
+        Policy::Embedded => &["JPEG", "MPO"],
+        Policy::OwnSidecar => &["XMP"],
+        // one format: ExifTool calls some NEFs NRW by their content (Nikon Z 8 High Efficiency)
+        Policy::RawSidecar => &["NEF", "NRW"],
+        Policy::Unsupported => return None,
+    };
+    (!expected.iter().any(|e| found.eq_ignore_ascii_case(e))).then(|| {
+        format!("the file's content is {found}, not what its .{ext} name says: it is not written")
+    })
+}
+
 pub(crate) fn policy(p: &Path) -> Policy {
     let ext = ext_of(p);
     match ext.as_str() {
@@ -836,14 +854,26 @@ fn plan_with(
             entries[p.idx].status = EntryStatus::Blocked(format!("metadata unreadable: {why}"));
             continue;
         }
-        reads.push((
-            p.idx,
-            Reads {
-                sidecar_mode: p.sidecar_mode,
-                raw: raw.and_then(Result::ok).unwrap_or_default(),
-                own: own.and_then(Result::ok),
-            },
-        ));
+        let r = Reads {
+            sidecar_mode: p.sidecar_mode,
+            raw: raw.and_then(Result::ok).unwrap_or_default(),
+            own: own.and_then(Result::ok),
+        };
+        let mismatch = p
+            .raw
+            .as_ref()
+            .and_then(|path| content_mismatch(path, &r.raw))
+            .or_else(|| {
+                p.own
+                    .as_ref()
+                    .zip(r.own.as_ref())
+                    .and_then(|(path, s)| content_mismatch(path, s))
+            });
+        if let Some(why) = mismatch {
+            entries[p.idx].status = EntryStatus::Blocked(why);
+            continue;
+        }
+        reads.push((p.idx, r));
     }
     let targets: Vec<(usize, Target)> = reads
         .iter()

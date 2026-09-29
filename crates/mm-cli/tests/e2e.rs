@@ -5616,6 +5616,108 @@ fn a_change_or_a_whole_edit_is_left_out_in_preview() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// ARCHITECTURE §6.1 / SCREEN_SPEC Library: the rows of the table come from the core in
+/// streamed batches: each file's fields as the Inspector shows them, camera and lens, where an
+/// edit goes (in the file, the existing or a new sidecar, read-only format); a cloud placeholder
+/// is listed without being read; a file that cannot be read gets its reason.
+#[test]
+fn library_rows_are_read_in_streamed_batches() {
+    let pkg = require!();
+    let lab = Lab::new("rows", &pkg);
+    let gps = lab
+        .photos
+        .iter()
+        .find(|p| p.ends_with("GPS.jpg"))
+        .unwrap()
+        .clone();
+    let bare = lab.add_nef("DSC_0001.NEF");
+    let paired = lab.add_nef("DSC_0002.NEF");
+    let (pp, _) = lab.plan_on(&["plan-creator", "--set", "Mori"], &[&paired], "c.json");
+    lab.apply_ok(&pp);
+    let png = lab.dir.join("photos").join("PNG.png");
+    std::fs::copy(timages().join("PNG.png"), &png).unwrap();
+    let cloud = lab.dir.join("photos").join("cloud.jpg");
+    std::fs::copy(&lab.photos[1], &cloud).unwrap();
+    let broken = lab.dir.join("photos").join("broken.jpg");
+    std::fs::write(&broken, b"not a JPEG").unwrap();
+    mark_offline(&cloud, true);
+    let files = [&gps, &bare, &paired, &png, &cloud, &broken];
+    let mut args = vec!["rows".to_string()];
+    args.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
+    let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = Lab::json(&lab.cli(&a));
+    let rows = out["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), files.len(), "{out}");
+    let field = |r: &Value, f: &str| {
+        r["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["field"] == f)
+            .map(|x| x["value"].clone())
+            .unwrap_or(Value::Null)
+    };
+    let writes: Vec<&str> = rows
+        .iter()
+        .map(|r| r["writes_to"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        writes,
+        [
+            "in_file",
+            "new_sidecar",
+            "sidecar",
+            "read_only",
+            "in_file",
+            "in_file"
+        ],
+        "{out}"
+    );
+    assert_eq!(field(&rows[0], "gps"), "54.9896667, -1.9141667", "{out}");
+    assert!(rows[0]["make"].is_string(), "{out}");
+    assert!(
+        rows[1]["model"].as_str().unwrap().contains("NIKON"),
+        "{out}"
+    );
+    assert_eq!(field(&rows[2], "creator"), "Mori", "{out}");
+    assert!(rows[3]["error"].is_null() && rows[3]["fields"].as_array().unwrap().len() == 4);
+    assert_eq!(rows[4]["not_downloaded"], true, "{out}");
+    assert!(rows[4]["fields"].as_array().unwrap().is_empty());
+    assert!(crate_is_offline(&cloud), "still not downloaded");
+    assert!(
+        rows[5]["error"]
+            .as_str()
+            .unwrap()
+            .contains("content is TXT"),
+        "{out}"
+    );
+    mark_offline(&cloud, false);
+    // the same file is not planned: its write would only fail at verification
+    let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&broken], "b.json");
+    assert_eq!(pj["entries"][0]["status"]["status"], "blocked", "{pj}");
+    assert!(pj.to_string().contains("content is TXT"), "{pj}");
+
+    // more than one batch: rows arrive in order, each once
+    let many: Vec<String> = std::iter::repeat_n(gps.to_string_lossy().into_owned(), 401).collect();
+    let mut args = vec!["rows"];
+    args.extend(many.iter().map(String::as_str));
+    let out = Lab::json(&lab.cli(&args));
+    assert_eq!(out["batches"], 2, "{}", out["batches"]);
+    let idx: Vec<u64> = out["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["index"].as_u64().unwrap())
+        .collect();
+    assert_eq!(idx, (0..401).collect::<Vec<u64>>());
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
+fn crate_is_offline(p: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    std::fs::symlink_metadata(p).unwrap().file_attributes() & 0x1000 != 0
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {

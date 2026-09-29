@@ -39,6 +39,8 @@
 //!                             Preview exclusion (INTERACTION_SPEC §8–9): the files N; or with
 //!                             --field, that field's change in the files N, or everywhere (the
 //!                             whole edit); --include takes them in again
+//!   rows FILE...              the Library rows (fields, camera, lens, where edits go), read in
+//!                             streamed batches; placeholders are not read
 //!   preflight PLAN.json       before Apply: files changed since the Preview, backup location,
 //!                             space, ExifTool version (exit 3 when something is in the way)
 //!   apply PLAN.json [--ack KEY]... [FAULTS]   KEY from the Plan's required_acks (recorded with
@@ -481,6 +483,19 @@ fn main() -> ExitCode {
     }
     let res: Result<ExitCode, String> = (|| {
         match cmd.as_str() {
+            "rows" => {
+                let mut eng = with_engine(&g)?;
+                let paths = file_paths(&mut args)?;
+                let mut all = Vec::new();
+                let mut batches = 0;
+                inspect::scan_rows(&mut eng, &paths, &plan_ctl(&g), &mut |rows| {
+                    batches += 1;
+                    all.extend(rows);
+                })
+                .map_err(|e| e.to_string())?;
+                println!("{}", json!({"batches": batches, "rows": all}));
+                Ok(ExitCode::SUCCESS)
+            }
             "scan" => {
                 let mut eng = with_engine(&g)?;
                 let paths = file_paths(&mut args)?;

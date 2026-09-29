@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Read-only views for the UI (ARCHITECTURE §5.2): `asset_detail` for the Inspector (each field's
 //! effective value, where it comes from, conflicts, and every raw tag) and `selection_aggregate`
-//! for the batch editor (how many files hold which value, so mixed values are visible).
+//! for the batch editor (how many files hold which value, so mixed values are visible), and
+//! `scan_rows` for the Library table.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -366,4 +367,139 @@ pub fn selection_aggregate(
         a.values = v;
     }
     Ok(aggs)
+}
+
+/// One Library row (ARCHITECTURE §6.1 "Emit rows … Stream row updates"; SCREEN_SPEC Library):
+/// what the table, its facets, filters and sorting show for a file, from a batched read.
+#[derive(Debug, Clone, Serialize)]
+pub struct Row {
+    /// Index into the paths asked about.
+    pub index: usize,
+    /// Where an edit of this file goes: `in_file`, `sidecar`, `new_sidecar`, or `read_only` (a
+    /// format this build does not write).
+    pub writes_to: &'static str,
+    /// Creator, copyright, capture time, GPS: effective values as the Inspector shows them.
+    pub fields: Vec<FieldView>,
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub lens: Option<String>,
+    /// A cloud placeholder (the file or its sidecar) that is not on this computer: not read
+    /// (SAFETY_MODEL §8.3); its values are unknown.
+    pub not_downloaded: bool,
+    /// The file or its sidecar could not be read.
+    pub error: Option<String>,
+}
+
+/// Files per streamed batch of rows.
+const ROW_CHUNK: usize = 400;
+
+/// Library scan (ARCHITECTURE §6.1, SCREEN_SPEC 1#large): reads every file (and a RAW's sidecar)
+/// in batches, hands each batch of rows to `emit` as soon as it is read, reports progress and
+/// stops on cancel through `ctl`. Read-only: placeholders are never read.
+pub fn scan_rows(
+    engine: &mut Engine,
+    paths: &[PathBuf],
+    ctl: &PlanCtl,
+    emit: &mut dyn FnMut(Vec<Row>),
+) -> Result<(), CoreError> {
+    let total = paths.len();
+    for (c, chunk) in paths.chunks(ROW_CHUNK).enumerate() {
+        let offset = c * ROW_CHUNK;
+        ctl.report(crate::planner::PlanStage::Metadata, offset, total)?;
+        let mut rows: Vec<Row> = Vec::with_capacity(chunk.len());
+        let mut to_read: Vec<PathBuf> = Vec::new();
+        // (row, main read index, sidecar read index)
+        let mut plan: Vec<(usize, Option<usize>, Option<usize>)> = Vec::new();
+        for (k, p) in chunk.iter().enumerate() {
+            let mut row = Row {
+                index: offset + k,
+                writes_to: "in_file",
+                fields: vec![],
+                make: None,
+                model: None,
+                lens: None,
+                not_downloaded: false,
+                error: None,
+            };
+            let p = match normalize(p) {
+                Ok(p) => p,
+                Err(e) => {
+                    row.error = Some(e.to_string());
+                    rows.push(row);
+                    plan.push((rows.len() - 1, None, None));
+                    continue;
+                }
+            };
+            let sc = match policy(&p) {
+                Policy::RawSidecar => pair_sidecar(&p).ok().map(|(sc, exists, _)| (sc, exists)),
+                _ => None,
+            };
+            row.writes_to = match (policy(&p), &sc) {
+                (Policy::Unsupported, _) => "read_only",
+                (Policy::RawSidecar, Some((_, true))) => "sidecar",
+                (Policy::RawSidecar, _) => "new_sidecar",
+                _ => "in_file",
+            };
+            let sc_exists = sc.filter(|(_, e)| *e).map(|(s, _)| s);
+            if crate::is_placeholder(&p) || sc_exists.as_deref().is_some_and(crate::is_placeholder)
+            {
+                row.not_downloaded = true;
+                rows.push(row);
+                plan.push((rows.len() - 1, None, None));
+                continue;
+            }
+            to_read.push(p);
+            let main = to_read.len() - 1;
+            let side = sc_exists.map(|s| {
+                to_read.push(s);
+                to_read.len() - 1
+            });
+            rows.push(row);
+            plan.push((rows.len() - 1, Some(main), side));
+        }
+        let snaps = engine.read_snapshots_parallel(&to_read, ctl.readers, &mut |done, _| {
+            ctl.report(
+                crate::planner::PlanStage::Metadata,
+                offset + done.min(chunk.len()),
+                total,
+            )
+        })?;
+        for (r, main, side) in plan {
+            let Some(main) = main else { continue };
+            let row = &mut rows[r];
+            let snap = match &snaps[main] {
+                Ok(s) => s,
+                Err(e) => {
+                    row.error = Some(e.clone());
+                    continue;
+                }
+            };
+            row.error = crate::planner::content_mismatch(&to_read[main], snap).or_else(|| {
+                side.and_then(|i| match &snaps[i] {
+                    Ok(s) => crate::planner::content_mismatch(&to_read[i], s),
+                    Err(_) => None,
+                })
+            });
+            let sidecar = match side.map(|i| &snaps[i]) {
+                Some(Err(e)) => {
+                    row.error = Some(format!("sidecar: {e}"));
+                    continue;
+                }
+                Some(Ok(s)) => Some(s),
+                None => None,
+            };
+            let t = if row.writes_to == "sidecar" || row.writes_to == "new_sidecar" {
+                Target::Sidecar { raw: snap, sidecar }
+            } else {
+                Target::Embedded(snap)
+            };
+            row.fields = fields_of(&t);
+            let first = |keys: &[&str]| keys.iter().find_map(|k| snap.text(k));
+            row.make = first(&["IFD0:Make"]);
+            row.model = first(&["IFD0:Model"]);
+            row.lens = first(&["ExifIFD:LensModel", "Composite:LensID", "XMP-aux:Lens"]);
+        }
+        emit(rows);
+    }
+    ctl.report(crate::planner::PlanStage::Metadata, total, total)
 }
