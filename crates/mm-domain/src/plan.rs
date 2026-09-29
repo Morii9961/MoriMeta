@@ -71,6 +71,32 @@ impl FieldPlan {
     }
 }
 
+/// One field's share of the write of an entry that changes several fields (a Preset). Kept so
+/// that the user can leave that field out in Preview (INTERACTION_SPEC §9) and the write and its
+/// verification are made again from the other fields alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldPart {
+    pub field: String,
+    pub ops: Vec<TagOp>,
+    pub expect: Vec<Expect>,
+}
+
+/// The shares of the ready fields, when there are several (one field has nothing to split).
+pub fn field_parts(fields: &[(&str, FieldPlan)]) -> Vec<FieldPart> {
+    let ready: Vec<FieldPart> = fields
+        .iter()
+        .filter(|(_, f)| f.status == EntryStatus::Ready)
+        .filter_map(|(_, f)| {
+            f.change.as_ref().map(|c| FieldPart {
+                field: c.field.clone(),
+                ops: f.ops.clone(),
+                expect: f.expect.clone(),
+            })
+        })
+        .collect();
+    if ready.len() > 1 { ready } else { vec![] }
+}
+
 /// Several fields planned for one file (a Preset), combined into what the file's entry gets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergedPlan {
@@ -266,6 +292,13 @@ pub struct PlanEntry {
     /// Left out by the user in Preview (a new Plan version); keeps the status it would have had.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub excluded: bool,
+    /// Each field's share of `action` when several fields change ([`FieldPart`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<FieldPart>,
+    /// Changes the user left out in Preview (INTERACTION_SPEC §9), shown struck through; not
+    /// written, not verified, not counted. `changes` holds only what is written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_changes: Vec<FieldChange>,
 }
 
 /// What a Plan was made from (METADATA_MODEL §9 `created_from`), so that the same edit can be
@@ -366,6 +399,68 @@ pub struct PlanSummary {
 }
 
 impl PlanEntry {
+    /// Left out: the whole file, or every one of its changes.
+    pub fn left_out(&self) -> bool {
+        self.excluded || (self.changes.is_empty() && !self.excluded_changes.is_empty())
+    }
+
+    /// Leave the change of `field` out (or take it in again). The write and what verification
+    /// expects are made again from the fields that stay, so every tag of the field goes with it
+    /// ("excluding Capture time drops all three date tags"). Returns false when the entry has no
+    /// change of that field; an error when it cannot be split.
+    pub fn set_field_excluded(&mut self, field: &str, excluded: bool) -> Result<bool, String> {
+        let from = if excluded {
+            &self.changes
+        } else {
+            &self.excluded_changes
+        };
+        let Some(i) = from.iter().position(|c| c.field == field) else {
+            return Ok(false);
+        };
+        // one field: leaving it out leaves the entry nothing to write (left_out)
+        if self.parts.is_empty() && self.changes.len() + self.excluded_changes.len() > 1 {
+            return Err(format!("entry {} cannot leave out {field} alone", self.seq));
+        }
+        if excluded {
+            let c = self.changes.remove(i);
+            self.excluded_changes.push(c);
+        } else {
+            let c = self.excluded_changes.remove(i);
+            self.changes.push(c);
+        }
+        if !self.parts.is_empty() && !self.changes.is_empty() {
+            let mut ops: Vec<TagOp> = vec![];
+            let mut expect: Vec<Expect> = vec![];
+            for p in &self.parts {
+                if !self.changes.iter().any(|c| c.field == p.field) {
+                    continue;
+                }
+                for o in &p.ops {
+                    if !ops.contains(o) {
+                        ops.push(o.clone()); // the IPTC digest update is shared
+                    }
+                }
+                for e in &p.expect {
+                    if !expect.contains(e) {
+                        expect.push(e.clone());
+                    }
+                }
+            }
+            match &mut self.action {
+                Some(EntryAction::Write { ops: o, expect: x })
+                | Some(EntryAction::CreateFile { ops: o, expect: x }) => {
+                    *o = ops;
+                    *x = expect;
+                }
+                _ => return Err(format!("entry {} has no write to split", self.seq)),
+            }
+        }
+        // keep the order the Preview showed
+        let order = |f: &str| self.parts.iter().position(|p| p.field == f);
+        self.changes.sort_by_key(|c| order(&c.field));
+        Ok(true)
+    }
+
     /// The warnings among the notes, without the marker.
     pub fn warnings(&self) -> impl Iterator<Item = &str> {
         self.notes.iter().filter_map(|n| n.strip_prefix(WARNING))
@@ -387,7 +482,7 @@ impl Plan {
             ..Default::default()
         };
         for e in &self.entries {
-            if e.excluded {
+            if e.left_out() {
                 s.excluded += 1;
                 continue;
             }
@@ -440,10 +535,169 @@ impl Plan {
         out.into_iter().collect()
     }
 
+    /// Leave the change of `field` out (or take it in again) in the entries `seqs`, or in every
+    /// entry that has it ("the whole edit", INTERACTION_SPEC §9). Returns how many entries
+    /// changed; an unknown sequence number is an error.
+    pub fn set_field_excluded(
+        &mut self,
+        seqs: Option<&[u32]>,
+        field: &str,
+        excluded: bool,
+    ) -> Result<usize, String> {
+        if let Some(seqs) = seqs
+            && let Some(q) = seqs
+                .iter()
+                .find(|q| !self.entries.iter().any(|e| e.seq == **q))
+        {
+            return Err(format!("plan has no entry {q}"));
+        }
+        let mut n = 0;
+        for e in &mut self.entries {
+            if seqs.is_none_or(|s| s.contains(&e.seq)) && e.set_field_excluded(field, excluded)? {
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     /// Entries that an Operation will execute.
     pub fn executable(&self) -> impl Iterator<Item = &PlanEntry> {
         self.entries
             .iter()
-            .filter(|e| e.status == EntryStatus::Ready && e.action.is_some() && !e.excluded)
+            .filter(|e| e.status == EntryStatus::Ready && e.action.is_some() && !e.left_out())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field(name: &str, tag: &str, value: &str) -> (String, FieldPlan) {
+        (
+            name.to_owned(),
+            FieldPlan {
+                status: EntryStatus::Ready,
+                change: Some(FieldChange {
+                    field: name.into(),
+                    before: None,
+                    after: Some(vec![value.into()]),
+                    kind: ChangeKind::Add,
+                }),
+                ops: vec![
+                    TagOp::Set {
+                        tag: tag.into(),
+                        values: vec![value.into()],
+                    },
+                    TagOp::UpdateIptcDigest,
+                ],
+                expect: vec![
+                    Expect::Equals {
+                        tag: tag.into(),
+                        values: vec![value.into()],
+                    },
+                    Expect::IptcDigestCurrent,
+                ],
+                notes: vec![],
+            },
+        )
+    }
+
+    /// INTERACTION_SPEC §9: one field of a multi-field entry is left out and taken in again; the
+    /// write and what verification expects follow, the shared IPTC digest update stays once.
+    #[test]
+    fn a_field_is_left_out_and_taken_in_again() {
+        let owned = [
+            field("creator", "IPTC:By-line", "Morii"),
+            field("copyright", "IPTC:CopyrightNotice", "(c) Morii"),
+        ];
+        let fields: Vec<(&str, FieldPlan)> =
+            owned.iter().map(|(n, f)| (n.as_str(), f.clone())).collect();
+        let parts = field_parts(&fields);
+        let m = merge(fields);
+        let mut e = PlanEntry {
+            seq: 0,
+            path: "x.jpg".into(),
+            raw: None,
+            fingerprint: Fingerprint {
+                size: 1,
+                file_id: "f".into(),
+                mtime: 0,
+            },
+            status: EntryStatus::Ready,
+            changes: m.changes,
+            action: Some(EntryAction::Write {
+                ops: m.ops,
+                expect: m.expect,
+            }),
+            notes: vec![],
+            excluded: false,
+            parts,
+            excluded_changes: vec![],
+        };
+        let whole = e.clone();
+        assert_eq!(e.set_field_excluded("copyright", true), Ok(true));
+        assert_eq!(e.changes.len(), 1);
+        assert_eq!(e.excluded_changes[0].field, "copyright");
+        let Some(EntryAction::Write { ops, expect }) = &e.action else {
+            panic!()
+        };
+        assert_eq!(ops.len(), 2, "{ops:?}"); // By-line + the digest
+        assert!(!ops.iter().any(|o| o.tag() == "IPTC:CopyrightNotice"));
+        assert!(expect.contains(&Expect::IptcDigestCurrent));
+        assert!(!e.left_out());
+        assert_eq!(e.set_field_excluded("gps", true), Ok(false));
+        // both out: nothing is written; both in again: exactly the previewed write
+        e.set_field_excluded("creator", true).unwrap();
+        assert!(e.left_out());
+        e.set_field_excluded("copyright", false).unwrap();
+        e.set_field_excluded("creator", false).unwrap();
+        assert_eq!(e, whole);
+    }
+
+    #[test]
+    fn a_single_field_entry_is_left_out_whole() {
+        let (n, f) = field("creator", "XMP-dc:Creator", "Morii");
+        let m = merge(vec![(n.as_str(), f)]);
+        let mut plan = Plan {
+            id: "p".into(),
+            version: 1,
+            kind: PlanKind::Apply,
+            title: String::new(),
+            registry_version: 1,
+            exiftool_version: String::new(),
+            entries: vec![PlanEntry {
+                seq: 0,
+                path: "x.jpg".into(),
+                raw: None,
+                fingerprint: Fingerprint {
+                    size: 1,
+                    file_id: "f".into(),
+                    mtime: 0,
+                },
+                status: EntryStatus::Ready,
+                changes: m.changes,
+                action: Some(EntryAction::Write {
+                    ops: m.ops,
+                    expect: m.expect,
+                }),
+                notes: vec![],
+                excluded: false,
+                parts: vec![],
+                excluded_changes: vec![],
+            }],
+            source: None,
+        };
+        assert_eq!(plan.executable().count(), 1);
+        assert_eq!(plan.set_field_excluded(None, "creator", true), Ok(1));
+        assert_eq!(plan.executable().count(), 0);
+        let s = plan.summary();
+        assert_eq!((s.excluded, s.ready, s.changes), (1, 0, 0));
+        assert!(plan.required_acks().is_empty());
+        assert!(
+            plan.set_field_excluded(Some(&[7]), "creator", false)
+                .is_err()
+        );
+        assert_eq!(plan.set_field_excluded(Some(&[0]), "creator", false), Ok(1));
+        assert_eq!(plan.executable().count(), 1);
     }
 }

@@ -331,6 +331,8 @@ mod tests {
             action: None,
             notes: p.notes,
             excluded: false,
+            parts: vec![],
+            excluded_changes: vec![],
         };
         assert_eq!(e.warnings().count(), 1, "{:?}", e.notes);
         let plan = crate::plan::Plan {

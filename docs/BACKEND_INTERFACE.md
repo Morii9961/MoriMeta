@@ -28,7 +28,8 @@
 | `plan_create(preset_id)` | `planner::plan_preset`（`presets::mark_untrusted`、`presets::used`） | `plan-preset` | 条件基于原始快照；多字段合并为一个条目 |
 | 保存 Plan | `service::PlanBook::insert` | — | Plan 不可变，带来源（`PlanSource`） |
 | `plan_page` | `PlanBook::page` | — | 按状态筛选，每页 200 行；摘要含警告数 |
-| `plan_exclude` | `PlanBook::exclude` | — | 生成新版本；旧版本只读 |
+| `plan_exclude` | `PlanBook::exclude` | `plan-exclude --seq` | 生成新版本；旧版本只读 |
+| `plan_exclude_change` / `plan_exclude_edit` | `PlanBook::exclude_field`（`Plan::set_field_excluded`） | `plan-exclude --field F [--seq N]` | INTERACTION §9：某文件的某字段改动，或整项编辑（所有文件的该字段）；被排除的改动移到 `excluded_changes`（显示为划掉），写入与校验期望由其余字段重新合并（`PlanEntry::parts`）；全部改动被排除的文件计为排除；`--include` 恢复 |
 | `plan_preflight` | `PlanBook::preflight`（`preflight::preflight`） | `preflight` | 需重扫的条目、备份位置、空间、ExifTool 版本；备份位置在同步目录中时 `backup_warning`（只提示，不阻止） |
 | 确认对话框 | `Plan::required_acks`、`PlanBook::confirm_with` | —（`apply --ack`） | 高风险 Plan 缺少必需确认时拒绝；确认项随 Operation 记录 |
 

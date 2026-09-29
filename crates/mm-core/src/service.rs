@@ -419,6 +419,32 @@ impl PlanBook {
         Ok(v)
     }
 
+    /// Leave the change of `field` out (or take it in again) in the entries `seqs`, or in every
+    /// entry that has it (the whole edit); returns the new version (INTERACTION_SPEC §9). The
+    /// write and its verification of each touched entry are made again from its other fields.
+    pub fn exclude_field(
+        &mut self,
+        id: &str,
+        version: u32,
+        seqs: Option<&[u32]>,
+        field: &str,
+        excluded: bool,
+    ) -> Result<u32, ServiceError> {
+        let s = self.current_mut(id, version)?;
+        let mut next = s
+            .versions
+            .last()
+            .cloned()
+            .expect("a stored plan has a version");
+        next.set_field_excluded(seqs, field, excluded)
+            .map_err(CoreError::Input)?;
+        next.version += 1;
+        let v = next.version;
+        s.versions.push(next);
+        s.token = None;
+        Ok(v)
+    }
+
     /// Pre-flight of a version (`plan_preflight`): files changed since the Preview, backup
     /// location, space, ExifTool. Apply stays blocked while it is not ok (INTERACTION_SPEC §4).
     pub fn preflight(
@@ -830,6 +856,8 @@ mod tests {
             action: None,
             notes: vec![],
             excluded: false,
+            parts: vec![],
+            excluded_changes: vec![],
         };
         Plan {
             id: "plan-t".into(),
@@ -866,6 +894,40 @@ mod tests {
             b.page("nope", 1, EntryFilter::All, 0, 1),
             Err(ServiceError::UnknownPlan(_))
         ));
+    }
+
+    /// INTERACTION_SPEC §9 through the book: a field left out makes a new version; an unknown
+    /// entry is refused and makes none.
+    #[test]
+    fn field_exclusion_makes_a_new_version() {
+        let mut p = plan(3);
+        p.entries[0].changes.push(mm_domain::plan::FieldChange {
+            field: "creator".into(),
+            before: None,
+            after: Some(vec!["Morii".into()]),
+            kind: mm_domain::plan::ChangeKind::Add,
+        });
+        p.entries[0].action = Some(mm_domain::plan::EntryAction::Write {
+            ops: vec![],
+            expect: vec![],
+        });
+        let mut b = PlanBook::default();
+        let (id, v) = b.insert(p);
+        assert!(
+            b.exclude_field(&id, v, Some(&[9]), "creator", true)
+                .is_err()
+        );
+        let v2 = b.exclude_field(&id, v, None, "creator", true).unwrap();
+        assert_eq!(v2, v + 1);
+        let now = b.current(&id).unwrap();
+        assert!(now.entries[0].left_out());
+        assert_eq!(now.executable().count(), 0);
+        let v3 = b
+            .exclude_field(&id, v2, Some(&[0]), "creator", false)
+            .unwrap();
+        assert_eq!(b.current(&id).unwrap().executable().count(), 1);
+        assert!(b.exclude_field(&id, v2, None, "creator", true).is_err()); // stale version
+        assert_eq!(v3, v2 + 1);
     }
 
     #[test]

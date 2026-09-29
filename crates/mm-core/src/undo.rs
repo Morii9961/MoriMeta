@@ -58,6 +58,8 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
                 status,
                 changes: vec![],
                 excluded: notes.iter().any(|n| n == FORCED_NOTE),
+                parts: vec![],
+                excluded_changes: vec![],
                 action,
                 notes,
             });

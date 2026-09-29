@@ -35,6 +35,10 @@
 //!                             backup.root (where new Operations keep their backups)
 //!                             metadata.preserve_mtime = true keeps each written file's
 //!                             modification time (off by default, SAFETY_MODEL §8.9, D-6)
+//!   plan-exclude PLAN.json --out NEW.json [--field FIELD] [--seq N]... [--include]
+//!                             Preview exclusion (INTERACTION_SPEC §8–9): the files N; or with
+//!                             --field, that field's change in the files N, or everywhere (the
+//!                             whole edit); --include takes them in again
 //!   preflight PLAN.json       before Apply: files changed since the Preview, backup location,
 //!                             space, ExifTool version (exit 3 when something is in the way)
 //!   apply PLAN.json [--ack KEY]... [FAULTS]   KEY from the Plan's required_acks (recorded with
@@ -391,7 +395,8 @@ fn plan_json(p: &Plan) -> Value {
         "entries": p.entries.iter().map(|e| json!({
             "seq": e.seq, "path": e.path, "status": serde_json::to_value(&e.status).unwrap_or_default(),
             "changes": serde_json::to_value(&e.changes).unwrap_or_default(), "notes": e.notes,
-            "excluded": e.excluded})).collect::<Vec<_>>(),
+            "excluded": e.excluded,
+            "excluded_changes": serde_json::to_value(&e.excluded_changes).unwrap_or_default()})).collect::<Vec<_>>(),
     })
 }
 
@@ -893,6 +898,42 @@ fn main() -> ExitCode {
                 let op = args.first().ok_or("dismiss OP_ID")?;
                 recovery::dismiss(&mut store, op).map_err(|e| e.to_string())?;
                 println!("{}", json!({"id": op, "status": "cancelled"}));
+                Ok(ExitCode::SUCCESS)
+            }
+            "plan-exclude" => {
+                let out = take_opt(&mut args, "--out").ok_or("--out NEW.json is required")?;
+                let field = take_opt(&mut args, "--field");
+                let include = take_flag(&mut args, "--include");
+                let mut seqs = Vec::new();
+                while let Some(q) = take_opt(&mut args, "--seq") {
+                    seqs.push(q.parse::<u32>().map_err(|_| "--seq N")?);
+                }
+                let file = args
+                    .first()
+                    .ok_or("plan-exclude PLAN.json --out NEW.json")?;
+                let mut plan: Plan =
+                    serde_json::from_slice(&std::fs::read(file).map_err(|e| e.to_string())?)
+                        .map_err(|e| format!("plan file: {e}"))?;
+                match field {
+                    Some(f) => {
+                        let only = (!seqs.is_empty()).then_some(seqs.as_slice());
+                        plan.set_field_excluded(only, &f, !include)?;
+                    }
+                    None if seqs.is_empty() => return Err("--seq N or --field FIELD".into()),
+                    None => {
+                        for q in &seqs {
+                            let e = plan
+                                .entries
+                                .iter_mut()
+                                .find(|e| e.seq == *q)
+                                .ok_or_else(|| format!("plan has no entry {q}"))?;
+                            e.excluded = !include;
+                        }
+                    }
+                }
+                plan.version += 1;
+                write_plan(&plan, &out)?;
+                println!("{}", plan_json(&plan));
                 Ok(ExitCode::SUCCESS)
             }
             "plan-undo" => {

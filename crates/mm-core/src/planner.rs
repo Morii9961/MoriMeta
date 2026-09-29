@@ -654,6 +654,8 @@ fn plan_with(
             action: None,
             notes: vec![],
             excluded: false,
+            parts: vec![],
+            excluded_changes: vec![],
         };
         let mut job = None;
         match policy(&path) {
@@ -836,6 +838,7 @@ fn plan_with(
         .collect();
     let plans = field_all(&targets, &entries)?;
     for ((idx, t), fields) in targets.iter().zip(plans) {
+        let parts = mm_domain::plan::field_parts(&fields);
         let cp = mm_domain::plan::merge(fields);
         let e = &mut entries[*idx];
         e.status = cp.status;
@@ -854,6 +857,7 @@ fn plan_with(
         }
         e.changes.extend(cp.changes);
         if e.status == EntryStatus::Ready {
+            e.parts = parts;
             let (ops, expect) = (cp.ops, cp.expect);
             e.action = Some(if e.fingerprint.file_id.is_empty() {
                 EntryAction::CreateFile { ops, expect }

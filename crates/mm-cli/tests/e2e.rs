@@ -5484,6 +5484,125 @@ fn files_on_an_exfat_drive_are_not_written() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// INTERACTION_SPEC §9: in Preview the user leaves out one change of one file and a whole edit.
+/// With a three-rule Preset, GPS.jpg keeps its position (only its GPS removal left out) and no
+/// file gets a copyright (the whole edit left out). What is written, verified and counted is the
+/// rest; taking an edit in again restores the previewed changes; undo is byte for byte.
+#[test]
+fn a_change_or_a_whole_edit_is_left_out_in_preview() {
+    let pkg = require!();
+    let lab = Lab::new("exclude-field", &pkg);
+    let preset = lab.dir.join("preset.json");
+    std::fs::write(
+        &preset,
+        r#"{"schema_version": 1, "name": "Studio", "rules": [
+            {"name": "copyright where none",
+             "when": [{"if": "empty", "field": "copyright"}],
+             "then": [{"do": "set_copyright", "value": "© {creator|Studio} {year|2026}"}]},
+            {"name": "no position in JPEGs",
+             "when": [{"if": "not_empty", "field": "gps"}, {"if": "extension", "any": ["jpg"]}],
+             "then": [{"do": "remove_gps"}]},
+            {"name": "clock was an hour behind",
+             "when": [{"if": "not_empty", "field": "capture_time"}],
+             "then": [{"do": "shift_time", "by": "+01:00:00"}]}
+        ]}"#,
+    )
+    .unwrap();
+    let files: Vec<&Path> = lab.photos.iter().map(PathBuf::as_path).collect();
+    let (p1, pj1) = lab.plan_on(
+        &["plan-preset", "--preset", preset.to_str().unwrap()],
+        &files,
+        "p1.json",
+    );
+    let gps = lab
+        .photos
+        .iter()
+        .position(|p| p.ends_with("GPS.jpg"))
+        .unwrap();
+    let fields = |pj: &Value, i: usize, key: &str| -> Vec<String> {
+        pj["entries"][i][key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["field"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        fields(&pj1, gps, "changes"),
+        ["gps", "capture_time"],
+        "{pj1}"
+    );
+    let with_copyright = (0..lab.photos.len())
+        .filter(|&i| fields(&pj1, i, "changes").contains(&"copyright".to_string()))
+        .count();
+    assert!(with_copyright >= 2, "{pj1}");
+    let seq = pj1["entries"][gps]["seq"].as_u64().unwrap().to_string();
+
+    let exclude = |from: &Path, to: &str, extra: &[&str]| -> (PathBuf, Value) {
+        let out = lab.dir.join(to);
+        let mut args = vec![
+            "plan-exclude",
+            from.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ];
+        args.extend(extra);
+        let o = lab.cli(&args);
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+        (out, Lab::json(&o))
+    };
+    let (p2, _) = exclude(&p1, "p2.json", &["--field", "gps", "--seq", &seq]);
+    let (p3, pj3) = exclude(&p2, "p3.json", &["--field", "copyright"]);
+    assert_eq!(fields(&pj3, gps, "changes"), ["capture_time"], "{pj3}");
+    assert_eq!(fields(&pj3, gps, "excluded_changes"), ["gps"], "{pj3}");
+    for i in 0..lab.photos.len() {
+        assert!(
+            !fields(&pj3, i, "changes").contains(&"copyright".to_string()),
+            "{pj3}"
+        );
+    }
+    let changes = |pj: &Value| pj["summary"]["changes"].as_u64().unwrap();
+    assert_eq!(
+        changes(&pj3),
+        changes(&pj1) - 1 - with_copyright as u64,
+        "{pj3}"
+    );
+    assert!(
+        !pj3["required_acks"].to_string().contains("remove:gps"),
+        "{pj3}"
+    );
+    // taking the whole edit in again gives back what the Preview first showed
+    let (_, pj4) = exclude(&p3, "p4.json", &["--field", "copyright", "--include"]);
+    for i in 0..lab.photos.len() {
+        if i != gps {
+            assert_eq!(
+                pj4["entries"][i]["changes"], pj1["entries"][i]["changes"],
+                "{i}"
+            );
+        }
+    }
+
+    let copyrights = lab.copyrights();
+    let op = lab.apply_ok(&p3);
+    assert!(lab.cli(&["fsck", &op]).status.success());
+    let insp = Lab::json(&lab.cli(&["inspect", lab.photos[gps].to_str().unwrap()]));
+    let value = |f: &str| {
+        insp["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["field"] == f)
+            .unwrap()["value"]
+            .clone()
+    };
+    assert_eq!(value("gps"), "54.9896667, -1.9141667", "{insp}");
+    assert_eq!(value("capture_time"), "2002:07:13 16:58:28", "{insp}");
+    assert_eq!(lab.copyrights(), copyrights);
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
