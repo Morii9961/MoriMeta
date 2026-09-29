@@ -1008,9 +1008,9 @@ mod tests {
             seq,
             path: format!("C:/p/{seq}.jpg"),
             role: "embedded".into(),
-            temp_path: "t".into(),
-            bak_path: "b".into(),
-            backup_path: "k".into(),
+            temp_path: format!("C:/p/{seq}.mmtmp-00000000000000aa.jpg"),
+            bak_path: format!("C:/p/{seq}.mmbak-00000000000000aa.jpg"),
+            backup_path: String::new(),
         }
     }
 
@@ -1147,7 +1147,15 @@ mod tests {
                 .unwrap();
             s.set_state("op1", 1, FileState::Cancelled, &FileUpdate::default())
                 .unwrap();
-            s.set_paths("op1", 1, "t2", "b2", "k2").unwrap();
+            let backup = d.join("backups").join("op1").join("00000001-0123abcd.jpg");
+            s.set_paths(
+                "op1",
+                1,
+                "C:/p/1.mmtmp-00000000000000bb.jpg",
+                "C:/p/1.mmbak-00000000000000bb.jpg",
+                &backup.to_string_lossy(),
+            )
+            .unwrap();
             s.set_state("op1", 1, FileState::BackedUp, &up(Some("c0"), None))
                 .unwrap();
             (
@@ -1202,6 +1210,42 @@ mod tests {
             .import_from_backups_in(std::slice::from_ref(&elsewhere))
             .unwrap();
         assert_eq!(r.imported, ["op2", "op3"]);
+
+        // SECURITY_MODEL §7: a record whose names recovery would act on are not MoriMeta's is
+        // not imported (recovery removes a registered temporary name when its hash matches)
+        for (id, temp, backup) in [
+            ("op-evil1", "D:/Photos/elsewhere/important.jpg", ""),
+            ("op-evil2", "C:/p/0.mmtmp-zz.jpg", ""),
+            ("op-evil3", "", "D:/Photos/elsewhere/important.jpg"),
+        ] {
+            let evil = d.join("backups").join(id);
+            std::fs::create_dir_all(&evil).unwrap();
+            std::fs::write(
+                evil.join(MANIFEST_LOG),
+                format!(
+                    "{}\n{}\n",
+                    json!({"t": "op", "manifest_version": 1, "id": id, "kind": "apply", "title": "x"}),
+                    json!({"t": "file", "seq": 0, "path": "C:/p/0.jpg", "role": "embedded",
+                           "temp": temp, "bak": "", "backup": backup})
+                ),
+            )
+            .unwrap();
+        }
+        let r = s.import_from_backups().unwrap();
+        assert!(r.imported.is_empty(), "{:?}", r.imported);
+        let why: Vec<_> = r
+            .skipped
+            .iter()
+            .filter(|(id, _)| id.starts_with("op-evil"))
+            .map(|(_, w)| w.as_str())
+            .collect();
+        assert_eq!(why.len(), 3, "{:?}", r.skipped);
+        assert!(why[0].contains("not a temporary name"), "{why:?}");
+        assert!(why[1].contains("not a temporary name"), "{why:?}");
+        assert!(why[2].contains("not a backup MoriMeta makes"), "{why:?}");
+        for id in ["op-evil1", "op-evil2", "op-evil3"] {
+            std::fs::remove_dir_all(d.join("backups").join(id)).unwrap();
+        }
         // a damaged line before the end makes the record unusable instead of guessed
         drop(s);
         std::fs::remove_dir_all(d.join("db")).unwrap();

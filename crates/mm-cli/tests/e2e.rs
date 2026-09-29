@@ -5981,11 +5981,14 @@ fn unicode_data_folder_and_backup_location() {
     let r = lab.rebuild();
     assert_eq!(r["imported"].as_array().unwrap().len(), 2, "{r}");
     assert!(lab.cli(&["recover"]).status.success());
-    // that list lost as well: the user names the folder
+    // that list lost as well, and the backup folder moved elsewhere since: the user names the
+    // folder where it is now, and the undo below restores from there
     lab.lose_database();
     std::fs::remove_file(data.join("backup-locations.txt")).unwrap();
     assert_eq!(lab.rebuild()["imported"].as_array().unwrap().len(), 1);
-    let o = lab.cli(&["rebuild-journal", "--from", second.to_str().unwrap()]);
+    let moved = dir.join("移动后 🚚");
+    std::fs::rename(&second, &moved).unwrap();
+    let o = lab.cli(&["rebuild-journal", "--from", moved.to_str().unwrap()]);
     assert_eq!(
         Lab::json(&o)["imported"],
         serde_json::json!([shift]),

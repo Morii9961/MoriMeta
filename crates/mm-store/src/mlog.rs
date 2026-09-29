@@ -53,6 +53,72 @@ struct OpRec {
     acks: Option<String>,
 }
 
+/// SECURITY_MODEL §7: a record read from a backup folder is data someone else could have written.
+/// Recovery removes and restores files by the temporary, bak and backup names a record registers,
+/// so each must be a name MoriMeta makes: `<stem>.mmtmp-<hex><.ext>` and `.mmbak-` next to the
+/// file, and a backup `<seq:08>-<hex>.<ext>` in a folder named after the Operation. Returns the
+/// reason when one is not.
+fn foreign_name(f: &FileRec, op_id: &str) -> Option<String> {
+    let path = Path::new(&f.path);
+    if !path.is_absolute() {
+        return Some(format!("{}: not an absolute path", f.path));
+    }
+    let key = |p: &Path| p.to_string_lossy().replace('/', "\\").to_lowercase();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let sibling = |name: &str, infix: &str| {
+        if name.is_empty() {
+            return true;
+        }
+        let p = Path::new(name);
+        let file = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let token = file
+            .strip_prefix(&format!("{stem}{infix}"))
+            .and_then(|r| r.strip_suffix(&ext));
+        p.parent().map(key) == path.parent().map(key)
+            && token.is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_hexdigit()))
+    };
+    if !sibling(&f.temp, ".mmtmp-") {
+        return Some(format!("{}: not a temporary name MoriMeta makes", f.temp));
+    }
+    if !sibling(&f.bak, ".mmbak-") {
+        return Some(format!("{}: not a bak name MoriMeta makes", f.bak));
+    }
+    if !f.backup.is_empty() {
+        let b = Path::new(&f.backup);
+        let name = b
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let bytes = name.as_bytes();
+        let pattern = bytes.len() > 18
+            && bytes[..8].iter().all(u8::is_ascii_digit)
+            && bytes[8] == b'-'
+            && bytes[9..17].iter().all(u8::is_ascii_hexdigit)
+            && bytes[17] == b'.';
+        let folder = b
+            .parent()
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy());
+        if !pattern || folder.as_deref() != Some(op_id) {
+            return Some(format!(
+                "{}: not a backup MoriMeta makes for {op_id}",
+                f.backup
+            ));
+        }
+    }
+    None
+}
+
 fn text(v: &Value, k: &str) -> Option<String> {
     v.get(k).and_then(Value::as_str).map(str::to_owned)
 }
@@ -190,6 +256,10 @@ impl Store {
                     .push((id, "record belongs to another operation".into()));
                 continue;
             }
+            if let Some(why) = op.files.values().find_map(|f| foreign_name(f, &id)) {
+                report.skipped.push((id, format!("not imported: {why}")));
+                continue;
+            }
             let plan_json = std::fs::read_to_string(dir.join(PLAN_FILE)).unwrap_or_default();
             let h = &op.header;
             let tx = self.conn.transaction()?;
@@ -213,10 +283,19 @@ impl Store {
                 ],
             )?;
             for (seq, f) in &op.files {
+                // the backups are where this folder is now (it may have been moved since)
+                let backup = if f.backup.is_empty() {
+                    String::new()
+                } else {
+                    Path::new(&f.backup)
+                        .file_name()
+                        .map(|n| dir.join(n).to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                };
                 tx.execute(
                     "INSERT INTO op_files(op_id, seq, path, role, temp_path, bak_path, backup_path, state, h0, h1, new_file_id, error, updated_ms)
                      VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-                    params![id, seq, f.path, f.role, f.temp, f.bak, f.backup, f.state, f.h0, f.h1, f.new_file_id, f.error, now_ms()],
+                    params![id, seq, f.path, f.role, f.temp, f.bak, backup, f.state, f.h0, f.h1, f.new_file_id, f.error, now_ms()],
                 )?;
             }
             tx.commit()?;
