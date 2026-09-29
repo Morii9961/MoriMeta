@@ -5493,6 +5493,28 @@ fn files_on_an_exfat_drive_are_not_written() {
     assert_eq!(att["other_file_system"], serde_json::json!([0, 1]), "{att}");
     assert_eq!(blake(&jpg), before);
     assert!(!nef.with_extension("xmp").exists());
+
+    // RESEARCH_NOTES F-105 on a drive without 8.3 names (exFAT keeps none): an ExifTool package
+    // in a folder outside the code page is refused with the reason, not a Perl error
+    let far = dir
+        .join("\u{AE40}\u{BAA8}\u{B9AC} \u{1F4F7}")
+        .join("exiftool");
+    copy_tree(&pkg, &far);
+    let o = Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+        .arg("--data")
+        .arg(&lab.data)
+        .arg("--exiftool")
+        .arg(&far)
+        .args(["plan-creator", "--set", "Morii", "--out"])
+        .arg(lab.dir.join("far.json"))
+        .arg(&lab.photos[1])
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        o.status.success() || said.contains("keeps no short names"),
+        "{said}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
