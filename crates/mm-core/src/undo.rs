@@ -112,6 +112,9 @@ fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
             )));
         }
         let fp = fingerprint(path)?;
+        if crate::is_placeholder(path) {
+            return Ok(Some(blocked(NOT_DOWNLOADED, fp)));
+        }
         return Ok(Some(if hash_opt(path).as_deref() == Some(h1.as_str()) {
             (
                 EntryStatus::Ready,
@@ -133,6 +136,9 @@ fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
         return recreate(f, path, h0).map(Some);
     }
     let fp = fingerprint(path)?;
+    if crate::is_placeholder(path) {
+        return Ok(Some(blocked(NOT_DOWNLOADED, fp)));
+    }
     let cur = hash_opt(path);
     if f.role == ROLE_REMOVE {
         // the file was moved into the backup store; something is at its path again
@@ -192,6 +198,10 @@ fn undo_one(f: &FileRow) -> Result<Option<Decision>, CoreError> {
     }))
 }
 
+/// SAFETY_MODEL §8.3: a file the sync client has turned back into a placeholder is not hashed,
+/// because reading it would download it.
+const NOT_DOWNLOADED: &str = "cloud placeholder that is not downloaded: download it to undo (reading it now would download it)";
+
 /// Note of an undo entry whose file changed after the Operation (SAFETY_MODEL §7.2).
 pub const FORCED_NOTE: &str = "changed after the operation (conflict): excluded unless included; \
      forcing it backs up the current content first, so it can be undone";
@@ -216,6 +226,9 @@ fn undo_kept(f: &FileRow) -> Result<Option<Decision>, CoreError> {
         return recreate(f, path, h0).map(Some);
     }
     let fp = fingerprint(path)?;
+    if crate::is_placeholder(path) {
+        return Ok(Some(blocked(NOT_DOWNLOADED, fp)));
+    }
     let cur = hash_opt(path);
     Ok(Some(if cur.as_deref() == Some(h0.as_str()) {
         (

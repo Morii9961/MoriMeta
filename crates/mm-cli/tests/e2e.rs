@@ -5111,6 +5111,24 @@ fn cloud_placeholders_are_never_read() {
     );
     assert_eq!(blake(&later).as_deref(), Some(lab.truth[&later].as_str()));
 
+    // written while downloaded, then the client frees the space: undo planning and "now vs.
+    // after" report it as not downloaded instead of hashing (reading) it
+    let freed = lab.photos[3].clone();
+    let (fp, _) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&freed], "freed.json");
+    let written = lab.apply_ok(&fp);
+    mark_offline(&freed, true);
+    let u = lab.dir.join("undo-freed.json");
+    let uo = lab.cli(&["plan-undo", &written, "--out", u.to_str().unwrap()]);
+    assert!(
+        String::from_utf8_lossy(&uo.stdout).contains("download it to undo"),
+        "{}",
+        String::from_utf8_lossy(&uo.stdout)
+    );
+    let now = Lab::json(&lab.cli(&["now", &written]));
+    assert_eq!(now[0]["now"], "not_downloaded", "{now}");
+    mark_offline(&freed, false);
+    lab.undo(&written);
+
     let logs = lab.data.join("logs");
     let log: String = std::fs::read_dir(&logs)
         .unwrap()

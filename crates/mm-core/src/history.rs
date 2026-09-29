@@ -425,6 +425,8 @@ pub enum NowState {
     /// Something else: changed by another program or a later Operation.
     Changed,
     Missing,
+    /// A cloud placeholder that is not on this computer: not read (SAFETY_MODEL §8.3).
+    NotDownloaded,
 }
 
 /// Compare the current files of an Operation with what it wrote, for the given files (the rows
@@ -441,6 +443,10 @@ pub fn now_vs_after(
             .iter()
             .find(|f| f.seq == seq)
             .ok_or_else(|| CoreError::Input(format!("{op_id} has no file {seq}")))?;
+        if crate::is_placeholder(std::path::Path::new(&f.path)) {
+            out.push((seq, NowState::NotDownloaded));
+            continue;
+        }
         let now = crate::hash_opt(std::path::Path::new(&f.path));
         let written = f.state == FileState::Done;
         let state = match (now, written) {
