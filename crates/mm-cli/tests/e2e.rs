@@ -5450,6 +5450,86 @@ fn long_unicode_paths_through_write_crash_and_undo() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        if e.file_type().unwrap().is_dir() {
+            copy_tree(&e.path(), &to.join(e.file_name()));
+        } else {
+            std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+        }
+    }
+}
+
+/// RESEARCH_NOTES F-105: the ExifTool launcher and Perl find their own files through the ANSI
+/// API, so a package in a folder whose name has characters outside the system code page (a
+/// per-user install under an account named in Korean, Polish, … on another code page) did not
+/// start in either mode. The engine now starts it through the folder's 8.3 short name; a write
+/// and its undo go through in both modes. Where the drive keeps no short names, the start is
+/// refused with the reason.
+#[test]
+fn exiftool_package_in_a_folder_outside_the_code_page() {
+    let pkg = require!();
+    let lab = Lab::new("pkgpath", &pkg);
+    let far = lab
+        .dir
+        .join("\u{AE40}\u{BAA8}\u{B9AC} \u{1F4F7} \u{141}ukasz")
+        .join("exiftool");
+    copy_tree(&pkg, &far);
+    let photo = &lab.photos[1];
+    for mode in ["launcher", "perl"] {
+        let run = |args: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+                .arg("--data")
+                .arg(&lab.data)
+                .arg("--exiftool")
+                .arg(&far)
+                .args(["--engine", mode])
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let plan = lab.dir.join(format!("{mode}.json"));
+        let o = run(&[
+            "plan-creator",
+            "--set",
+            "Morii",
+            "--out",
+            plan.to_str().unwrap(),
+            photo.to_str().unwrap(),
+        ]);
+        let said = String::from_utf8_lossy(&o.stdout).into_owned();
+        if !o.status.success() && said.contains("keeps no short names") {
+            assert!(std::env::var_os("CI").is_some(), "{said}");
+            eprintln!("SKIP: this drive keeps no 8.3 names: {said}");
+            return;
+        }
+        assert!(o.status.success(), "{mode}: {said}");
+        let a = run(&["apply", plan.to_str().unwrap()]);
+        assert!(
+            a.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&a.stdout)
+        );
+        assert_ne!(blake(photo).as_deref(), Some(lab.truth[photo].as_str()));
+        let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+        let u = lab.dir.join(format!("{mode}-undo.json"));
+        assert!(
+            run(&["plan-undo", &op, "--out", u.to_str().unwrap()])
+                .status
+                .success()
+        );
+        assert!(run(&["apply", u.to_str().unwrap()]).status.success());
+        assert_eq!(
+            blake(photo).as_deref(),
+            Some(lab.truth[photo].as_str()),
+            "{mode}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 /// A Windows account named in Chinese puts MoriMeta's data (Journal, backups, logs, lock) under a
 /// Chinese path, and ExifTool reads every backup as its write source (§4.1 step 4). The whole
 /// chain with the data folder and a second backup location under Chinese / emoji names: write

@@ -17,7 +17,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_ID_INFO, FILE_SHARE_DELETE,
     FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo, FlushFileBuffers,
     GetDiskFreeSpaceExW, GetDriveTypeW, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
+    GetShortPathNameW, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW,
 };
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
@@ -58,6 +58,52 @@ pub fn wide(p: &Path) -> Vec<u16> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
+}
+
+/// Whether every character of `p` has an exact form in the system ANSI code page. A program that
+/// learns its own location through the ANSI API (the ExifTool launcher, Perl) sees `?` in place of
+/// the others and cannot find its files (RESEARCH_NOTES F-105). No best-fit mapping: `Ł` → `L`
+/// would name another folder.
+pub fn ansi_exact(p: &Path) -> bool {
+    use windows_sys::Win32::Globalization::WideCharToMultiByte;
+    const CP_ACP: u32 = 0;
+    const WC_NO_BEST_FIT_CHARS: u32 = 0x400;
+    let w: Vec<u16> = p.as_os_str().encode_wide().collect();
+    if w.is_empty() {
+        return true;
+    }
+    let mut used_default = 0;
+    // SAFETY: `w` is valid for its length; a null output buffer of size 0 only measures.
+    let n = unsafe {
+        WideCharToMultiByte(
+            CP_ACP,
+            WC_NO_BEST_FIT_CHARS,
+            w.as_ptr(),
+            w.len() as i32,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            &mut used_default,
+        )
+    };
+    n > 0 && used_default == 0
+}
+
+/// The 8.3 short form of an existing path, without the verbatim prefix. Components the volume
+/// keeps no short name for stay long.
+pub fn short_path(p: &Path) -> io::Result<PathBuf> {
+    let w = wide(p);
+    let mut buf = vec![0u16; 32_768];
+    // SAFETY: `w` is NUL-terminated; `buf` is writable for the length passed.
+    let n = unsafe { GetShortPathNameW(w.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
+    if n == 0 || n as usize > buf.len() {
+        return Err(io::Error::last_os_error());
+    }
+    let s = String::from_utf16_lossy(&buf[..n as usize]);
+    Ok(PathBuf::from(match s.strip_prefix(r"\\?\UNC\") {
+        Some(r) => format!(r"\\{r}"),
+        None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_owned(),
+    }))
 }
 
 /// Volume serial number + 128-bit file ID (stable identity across renames on the same volume).
@@ -893,6 +939,28 @@ mod tests {
         assert_eq!(std::fs::read(&orig).unwrap(), b"original");
         assert!(temp.exists());
         assert!(!bak.exists());
+    }
+
+    #[test]
+    fn ansi_exact_and_short_path() {
+        use windows_sys::Win32::Globalization::GetACP;
+        assert!(ansi_exact(Path::new(r"D:\Photos\Mori Morii\Programs")));
+        // SAFETY: no preconditions.
+        let utf8_acp = unsafe { GetACP() } == 65001;
+        if !utf8_acp {
+            // no ANSI code page but UTF-8 has an emoji
+            assert!(!ansi_exact(Path::new("D:\\Photos\\Morii \u{1F4F7}")));
+        }
+        let d = std::env::temp_dir().join(format!("mm-short-{}", std::process::id()));
+        let far = d.join("Morii \u{1F4F7} \u{AE40}");
+        std::fs::create_dir_all(&far).unwrap();
+        let s = short_path(&far).unwrap();
+        assert!(!s.to_string_lossy().starts_with(r"\\?\"), "{}", s.display());
+        assert_eq!(file_id_of_path(&s).unwrap(), file_id_of_path(&far).unwrap());
+        if s != far {
+            assert!(ansi_exact(&s), "{}", s.display()); // this volume keeps short names
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

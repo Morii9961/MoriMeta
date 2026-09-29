@@ -261,6 +261,7 @@ program: A: <install>\resources\exiftool\exiftool.exe
 args:    -config "" -charset filename=utf8 -stay_open True -@ -
 env:     清空后仅设置 SystemRoot、TEMP/TMP(指向应用私有临时目录)
 cwd:     %LOCALAPPDATA%\MoriMeta\run\exiftool-cwd （空目录，无 .ExifTool_config）
+path:    program 与 script 的路径不能按系统 ANSI 代码页精确表示时改用 8.3 短名；没有短名则拒绝启动并说明（F-105）
 stdio:   stdin=pipe（UTF-8 argfile，由专用线程写入）, stdout/stderr=pipe（各由专用线程读取）
 window:  CREATE_NO_WINDOW
 job:     Job Object，JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE（MoriMeta 退出或崩溃时 ExifTool 随之终止，S1 R8）

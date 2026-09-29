@@ -125,6 +125,7 @@ v0.2 中这些是作者本机实验。v0.3 已用 `research/s0/repro.py` 在锁�
 | F-102 | CC0 未获 OSI 批准（委员会未达成共识，Creative Commons 撤回申请）；OSI 不建议用 CC0 发布软件。 | opensource.org/faq（2026-09-26） |
 | F-103 | CVE-2026-43893（GHSA-cw26-7653-2rp5）：npm `exiftool-vendored` ≤ 35.18.0 在把标签名、文件名/路径、`imageHashType`、`retain`/`numericTags` 条目等输入写成 stdin 参数行时未拒绝换行等行分隔符，可导致读写任意路径；传给 `ExifTool#write` 的**值**不受影响，因为其已把空白编码（`\n` → `&#10;`）；35.19.0 修复（逐输入校验 + 渲染层过滤 `\r \n \0`）；不是 ExifTool 本体漏洞。 | github.com/advisories/GHSA-cw26-7653-2rp5（2026-09-26） |
 | F-104 | ExifTool 13.59 解码未知 protobuf 字段（如 Google HDR+ MakerNote，`-u`）时，把 `IsProtobuf` 标志记在**全局**标签表的动态标签上，且会由 1 改为 0（`Protobuf.pm` 164–180 行）；同一进程内第二次读取同一数据时递归更少、字段更少，`-stay_open` 的 `-execute` 之间同样保留。读过一次后状态不再变化（标志单调，第二次访问的记录是第一次的子集）。影响：写入前后两次读取的 V3 比较出现假差异（`t/images/Google.jpg` 每次写入都被拒绝）。处理：V3 报出差异时在同一进程内重读备份与临时文件再比较；真实差异仍会出现（e2e 在 Google.jpg 上注入多余标签验证）。可向上游报告 | 本机复现（2026-09-28，scratch 副本） |
+| F-105 | ExifTool 13.59 Windows 包**本身**所在的文件夹名含系统 ANSI 代码页以外的字符时，两种调用方式都无法启动：官方 launcher 报 "Could not find …\exiftool_files\perl5*.dll"，`perl.exe exiftool.pl` 报 "Can't open perl script"，路径中的这些字符变成 `?`（二者都经 ANSI API 得到自身位置）。本机代码页 936 实测（2026-09-29，均为临时副本）：ASCII、空格、中文、日文假名正常；韩文、`Łukasz Żółć`、emoji 失败。照片与数据文件夹路径不受影响（经 UTF-8 参数文件传给 ExifTool；数据文件夹含 emoji 时全链路正常）。影响：按用户安装在 `%LOCALAPPDATA%\Programs` 下，用户名超出系统代码页时（如英文 Windows 上的中文用户名）ExifTool 无法启动。对策：路径不能按代码页精确表示时改用 8.3 短名（两种方式实测均正常）；卷不保留短名时拒绝启动并说明。D-17 不受影响（两种方式表现相同） | 本机 | `mm-core::engine::ansi_path`；e2e `exiftool_package_in_a_folder_outside_the_code_page` |
 
 ## 2. 从事实推出的设计约束（摘要）
 

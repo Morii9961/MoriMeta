@@ -129,8 +129,30 @@ pub fn source_key(p: &Path) -> Option<String> {
     Line::path(p).ok().map(|l| l.as_str().to_owned())
 }
 
+/// The ExifTool launcher and Perl find their own files through the ANSI API, so neither starts
+/// from a folder whose name has characters outside the system code page (a per-user install under
+/// an account named in another script; RESEARCH_NOTES F-105). The 8.3 short name of such a path is
+/// used instead; without one the start is refused with the reason. Photo and data paths are not
+/// affected: they reach ExifTool in UTF-8 through its argument file.
+fn ansi_path(p: &Path) -> Result<PathBuf, CoreError> {
+    if mm_fs::ansi_exact(p) {
+        return Ok(p.to_path_buf());
+    }
+    match mm_fs::short_path(p) {
+        Ok(s) if mm_fs::ansi_exact(&s) => Ok(s),
+        _ => Err(CoreError::Engine(format!(
+            "{}: ExifTool cannot start from a folder whose name has characters outside the \
+             system code page, and this drive keeps no short names for it; install MoriMeta in \
+             another folder",
+            p.display()
+        ))),
+    }
+}
+
 impl Engine {
-    pub fn start(cfg: EngineConfig) -> Result<Engine, CoreError> {
+    pub fn start(mut cfg: EngineConfig) -> Result<Engine, CoreError> {
+        cfg.program = ansi_path(&cfg.program)?;
+        cfg.script = cfg.script.as_deref().map(ansi_path).transpose()?;
         let mut e = Engine {
             cfg,
             session: None,
