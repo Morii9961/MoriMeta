@@ -886,6 +886,21 @@ fn plan_with(
         let e = &mut entries[*idx];
         e.status = cp.status;
         e.notes.extend(cp.notes);
+        // the file that is written already makes ExifTool warn when read: the write will most
+        // likely warn too, and verification refuses a write that warns (V1)
+        let written = match t {
+            Target::Embedded(s) => Some(*s),
+            Target::Sidecar { sidecar, .. } => *sidecar,
+        };
+        if let Some(w) = written.and_then(|s| s.text("ExifTool:Warning"))
+            && e.status == EntryStatus::Ready
+        {
+            e.notes.push(format!(
+                "{}ExifTool reports a problem in this file's metadata (\"{w}\"): verification may \
+                 refuse the write, and the file then stays unchanged",
+                mm_domain::plan::WARNING
+            ));
+        }
         // SAFETY_MODEL §8.12: writing in place would invalidate Content Credentials
         let c2pa = match t {
             Target::Embedded(s) => mm_domain::risk::has_c2pa(s),

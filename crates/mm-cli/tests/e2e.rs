@@ -6053,6 +6053,40 @@ fn a_folder_that_refuses_new_files_fails_with_the_reason() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// A file whose metadata already makes ExifTool warn when read (GE.jpg: a suspicious maker-note
+/// offset) is refused by verification (V1) when written. The Preview says so beforehand, as a
+/// warning; the write is still refused and the file stays unchanged (whether such warnings may be
+/// accepted is an open decision, research/PROGRESS.md).
+#[test]
+fn a_file_that_warns_when_read_is_flagged_in_the_preview() {
+    let pkg = require!();
+    let lab = Lab::new("read-warning", &pkg);
+    let ge = lab.dir.join("photos").join("GE.jpg");
+    std::fs::copy(timages().join("GE.jpg"), &ge).unwrap();
+    let before = blake(&ge);
+    let (p, pj) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[&ge, &lab.photos[1]],
+        "p.json",
+    );
+    let notes = pj["entries"][0]["notes"].to_string();
+    assert!(notes.contains("ExifTool reports a problem"), "{pj}");
+    assert!(
+        !pj["entries"][1]["notes"]
+            .to_string()
+            .contains("ExifTool reports")
+    );
+    assert_eq!(pj["summary"]["warnings"], 1, "{pj}");
+    let a = Lab::json(&lab.cli(&["apply", p.to_str().unwrap()]));
+    assert_eq!(a["files"][0]["state"], "failed", "{a}");
+    assert!(
+        a["files"][0]["reason"].as_str().unwrap().contains("V1"),
+        "{a}"
+    );
+    assert_eq!(blake(&ge), before);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
