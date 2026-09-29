@@ -5478,19 +5478,27 @@ fn exiftool_package_in_a_folder_outside_the_code_page() {
         .join("exiftool");
     copy_tree(&pkg, &far);
     let photo = &lab.photos[1];
-    for mode in ["launcher", "perl"] {
+    // and, since ExifTool runs in its own working folder, a package given by a relative path
+    for (mode, relative) in [("launcher", false), ("perl", false), ("perl", true)] {
+        let pkg_arg = if relative {
+            far.strip_prefix(&lab.dir).unwrap().to_path_buf()
+        } else {
+            far.clone()
+        };
+        let mode_case = format!("{mode}-{relative}");
         let run = |args: &[&str]| {
             Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+                .current_dir(&lab.dir)
                 .arg("--data")
                 .arg(&lab.data)
                 .arg("--exiftool")
-                .arg(&far)
+                .arg(&pkg_arg)
                 .args(["--engine", mode])
                 .args(args)
                 .output()
                 .unwrap()
         };
-        let plan = lab.dir.join(format!("{mode}.json"));
+        let plan = lab.dir.join(format!("{mode_case}.json"));
         let o = run(&[
             "plan-creator",
             "--set",
@@ -5505,16 +5513,16 @@ fn exiftool_package_in_a_folder_outside_the_code_page() {
             eprintln!("SKIP: this drive keeps no 8.3 names: {said}");
             return;
         }
-        assert!(o.status.success(), "{mode}: {said}");
+        assert!(o.status.success(), "{mode_case}: {said}");
         let a = run(&["apply", plan.to_str().unwrap()]);
         assert!(
             a.status.success(),
-            "{mode}: {}",
+            "{mode_case}: {}",
             String::from_utf8_lossy(&a.stdout)
         );
         assert_ne!(blake(photo).as_deref(), Some(lab.truth[photo].as_str()));
         let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
-        let u = lab.dir.join(format!("{mode}-undo.json"));
+        let u = lab.dir.join(format!("{mode_case}-undo.json"));
         assert!(
             run(&["plan-undo", &op, "--out", u.to_str().unwrap()])
                 .status
@@ -5524,7 +5532,7 @@ fn exiftool_package_in_a_folder_outside_the_code_page() {
         assert_eq!(
             blake(photo).as_deref(),
             Some(lab.truth[photo].as_str()),
-            "{mode}"
+            "{mode_case}"
         );
     }
     let _ = std::fs::remove_dir_all(&lab.dir);

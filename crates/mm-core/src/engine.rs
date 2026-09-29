@@ -133,14 +133,18 @@ pub fn source_key(p: &Path) -> Option<String> {
 /// from a folder whose name has characters outside the system code page (a per-user install under
 /// an account named in another script; RESEARCH_NOTES F-105). The 8.3 short name of such a path is
 /// used instead; without one the start is refused with the reason. Photo and data paths are not
-/// affected: they reach ExifTool in UTF-8 through its argument file.
+/// affected: they reach ExifTool in UTF-8 through its argument file. The path is made absolute
+/// first: ExifTool runs in its own empty working folder, where a relative script path would not
+/// be found.
 fn ansi_path(p: &Path) -> Result<PathBuf, CoreError> {
+    let p = &std::path::absolute(p)?;
     if mm_fs::ansi_exact(p) {
         return Ok(p.to_path_buf());
     }
     match mm_fs::short_path(p) {
         Ok(s) if mm_fs::ansi_exact(&s) => Ok(s),
-        _ => Err(CoreError::Engine(format!(
+        Err(e) => Err(CoreError::Engine(format!("{}: {e}", p.display()))),
+        Ok(_) => Err(CoreError::Engine(format!(
             "{}: ExifTool cannot start from a folder whose name has characters outside the \
              system code page, and this drive keeps no short names for it; install MoriMeta in \
              another folder",
