@@ -562,6 +562,9 @@ pub struct Startup {
     pub recovered: Vec<crate::recovery::RecoveryReport>,
     /// Prunes that were interrupted and are now finished.
     pub prunes_finished: Vec<String>,
+    /// Interrupted prunes whose folder could not be removed (Operation id, reason); they stay
+    /// marked pruned and are tried again at the next launch.
+    pub prunes_left: Vec<(String, String)>,
     /// Operations that still ask for a decision (the Recovery dialog).
     pub needs_decision: Vec<crate::recovery::RecoverySummary>,
     /// Running with administrator rights: every write is refused.
@@ -575,8 +578,8 @@ pub struct Startup {
 /// elevated; it then happens at the next normal launch.
 pub fn startup(store: &mut Store) -> Result<Startup, ServiceError> {
     let elevated = mm_fs::is_elevated().unwrap_or(true);
-    let (recovered, prunes_finished) = if elevated {
-        (vec![], vec![])
+    let (recovered, prunes) = if elevated {
+        (vec![], Default::default())
     } else {
         (
             crate::recovery::recover(store)?,
@@ -585,7 +588,8 @@ pub fn startup(store: &mut Store) -> Result<Startup, ServiceError> {
     };
     Ok(Startup {
         recovered,
-        prunes_finished,
+        prunes_finished: prunes.finished,
+        prunes_left: prunes.left,
         needs_decision: crate::recovery::summary(store)?,
         elevated,
         backup_problem: crate::executor::check_backup_location(store)

@@ -206,7 +206,7 @@ Planned ─► Prechecked(输出路径不存在、输出卷空间) ─► TempWr
 - 永不自动清理：最近 10 个 Operation、处于未完成/NeedsAttention 状态的 Operation、用户标记"保留"的 Operation。
 - 清理前在 UI 中告知将失去哪些 Operation 的撤销能力；清理后 History 保留记录并标注"备份已清理，不能撤销"。
 
-实现状态（2026-09-27，`mm-core::retention`；D-7 未定，以上数值为参数，暂用建议值）：用量与保护原因（未完成 / 用户保留 / 最近 N 个）；清理计划先按年龄、再在超出容量上限时从最旧开始，只取无保护的 Operation；用户在设置中手动清理可包含"保留"与"最近"，未完成（运行中、中断、需要处理、可继续）一律拒绝。清理顺序：数据库先标记 `pruned_ms`，再删除 `manifest.jsonl`（使残缺目录不会被 `rebuild-journal` 重新导入），再删除其余文件与目录；中断的清理由 `recover` 完成。已清理的 Operation 拒绝撤销与继续，fsck 不再要求其备份。数据库 schema v2（`keep`、`pruned_ms`），v1 自动升级。"保留"标记只在数据库中，不写入 manifest（重建 Journal 后丢失）。三个数值来自设置（`backup.max_age_days`、`backup.max_share_of_volume`、`backup.keep_latest`，schema v3），未设置时用上述建议值；无效值在保存时即被拒绝且不保留，读取时遇到无效值报错而不回退到默认值（它决定删除什么）。
+实现状态（2026-09-27，`mm-core::retention`；D-7 未定，以上数值为参数，暂用建议值）：用量与保护原因（未完成 / 用户保留 / 最近 N 个）；清理计划先按年龄、再在超出容量上限时从最旧开始，只取无保护的 Operation；用户在设置中手动清理可包含"保留"与"最近"，未完成（运行中、中断、需要处理、可继续）一律拒绝。清理顺序：数据库先标记 `pruned_ms`，再删除 `manifest.jsonl`（使残缺目录不会被 `rebuild-journal` 重新导入），再删除其余文件与目录；中断的清理由 `recover` 完成。删除只针对 MoriMeta 自己放进备份目录的文件（`plan.json`、`manifest.json`，以及执行器命名的 `<序号8位>-<8位十六进制>.<扩展名>` 备份）；其他文件保留，目录因此不删除并报告。备份目录本身若是符号链接、junction 或其他重解析点，一律不进入、不删除（否则会删除链接所指文件夹里的文件，§8.6）。启动时无法完成的中断清理只报告（`Startup::prunes_left`），不阻止启动，下次启动再试（2026-09-29）。已清理的 Operation 拒绝撤销与继续，fsck 不再要求其备份。数据库 schema v2（`keep`、`pruned_ms`），v1 自动升级。"保留"标记只在数据库中，不写入 manifest（重建 Journal 后丢失）。三个数值来自设置（`backup.max_age_days`、`backup.max_share_of_volume`、`backup.keep_latest`，schema v3），未设置时用上述建议值；无效值在保存时即被拒绝且不保留，读取时遇到无效值报错而不回退到默认值（它决定删除什么）。
 
 ---
 

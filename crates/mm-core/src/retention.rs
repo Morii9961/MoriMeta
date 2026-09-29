@@ -232,12 +232,36 @@ fn owned_backup_dir(store: &Store, op_id: &str) -> Result<std::path::PathBuf, Co
     Ok(dir)
 }
 
+/// A file MoriMeta puts in a backup folder: the Operation's records, and backups named
+/// `<seq:08>-<8 hex>.<ext>` by the executor.
+fn is_own_file(name: &str) -> bool {
+    const RECORDS: [&str; 3] = [mm_store::PLAN_FILE, "manifest.json", "manifest.json.tmp"];
+    if RECORDS.contains(&name) {
+        return true;
+    }
+    let b = name.as_bytes();
+    b.len() > 18
+        && b[..8].iter().all(u8::is_ascii_digit)
+        && b[8] == b'-'
+        && b[9..17].iter().all(u8::is_ascii_hexdigit)
+        && b[17] == b'.'
+        && !name[18..].contains(['.', '/', '\\'])
+}
+
 /// Delete a backup folder: the append-only record first, so that a partly deleted folder is never
-/// imported again by `rebuild-journal`; then the rest. Only plain files directly inside it are
-/// expected; anything else is left and reported.
+/// imported again by `rebuild-journal`; then the rest. Only plain files directly inside it and
+/// named as MoriMeta names them are removed; anything else is left and reported. A folder that is
+/// a link or other reparse point is never entered (SAFETY_MODEL §8.6): removing the files "in" a
+/// junction would remove the files of the folder it points to.
 fn remove_backup_dir(dir: &Path) -> Result<(), CoreError> {
-    if !dir.exists() {
+    if mm_fs::ensure_absent(dir).is_ok() {
         return Ok(());
+    }
+    if mm_fs::probe(dir)?.reparse_point {
+        return Err(CoreError::Input(format!(
+            "{}: the backup folder is a link or other reparse point; nothing deleted",
+            dir.display()
+        )));
     }
     let log = dir.join(mm_store::MANIFEST_LOG);
     if log.exists() {
@@ -245,7 +269,8 @@ fn remove_backup_dir(dir: &Path) -> Result<(), CoreError> {
     }
     for e in std::fs::read_dir(dir)? {
         let e = e?;
-        if e.file_type()?.is_file() {
+        // DirEntry::file_type does not follow links: a link is never a plain file here
+        if e.file_type()?.is_file() && is_own_file(&e.file_name().to_string_lossy()) {
             std::fs::remove_file(e.path())?;
         }
     }
@@ -257,14 +282,31 @@ fn remove_backup_dir(dir: &Path) -> Result<(), CoreError> {
     })
 }
 
-/// Finish prunes that were interrupted between the database mark and the deletion.
-pub fn finish_interrupted(store: &Store) -> Result<Vec<String>, CoreError> {
-    let mut out = Vec::new();
+/// Prunes that were interrupted between the database mark and the deletion.
+#[derive(Debug, Default)]
+pub struct Interrupted {
+    /// Finished now.
+    pub finished: Vec<String>,
+    /// Still not finished, with the reason; the launch goes on and they are tried again next time.
+    pub left: Vec<(String, String)>,
+}
+
+/// Finish prunes that were interrupted between the database mark and the deletion. A folder that
+/// cannot be removed is reported, not fatal: the Operation is already marked pruned.
+pub fn finish_interrupted(store: &Store) -> Result<Interrupted, CoreError> {
+    let mut out = Interrupted::default();
     for o in store.operations()? {
-        let dir = owned_backup_dir(store, &o.id)?;
-        if o.pruned_ms.is_some() && dir.exists() {
-            remove_backup_dir(&dir)?;
-            out.push(o.id);
+        if o.pruned_ms.is_none() {
+            continue;
+        }
+        let done = owned_backup_dir(store, &o.id).and_then(|dir| {
+            let present = mm_fs::ensure_absent(&dir).is_err();
+            remove_backup_dir(&dir).map(|()| present)
+        });
+        match done {
+            Ok(true) => out.finished.push(o.id),
+            Ok(false) => {}
+            Err(e) => out.left.push((o.id, e.to_string())),
         }
     }
     Ok(out)
@@ -279,7 +321,7 @@ mod tests {
     /// An Operation whose one file ended in `state`, with a 1,000-byte backup.
     fn op(store: &mut Store, id: &str, state: FileState, status: OpStatus) {
         let dir = store.backup_dir(id);
-        let backup = dir.join("00000000.jpg");
+        let backup = dir.join("00000000-0123abcd.jpg");
         store
             .begin_operation(
                 &NewOperation {
@@ -408,8 +450,81 @@ mod tests {
         // an interrupted prune (marked, folder still there) is finished
         op(&mut s, "op-e", FileState::Done, OpStatus::Completed);
         s.mark_pruned("op-e").unwrap();
-        assert_eq!(finish_interrupted(&s).unwrap(), ["op-e"]);
+        assert_eq!(finish_interrupted(&s).unwrap().finished, ["op-e"]);
         assert!(!s.backup_dir("op-e").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn backup_names() {
+        assert!(is_own_file("00000003-0123abcd.jpg"));
+        assert!(is_own_file("00000003-0123ABCD.bin"));
+        assert!(is_own_file("plan.json") && is_own_file("manifest.json"));
+        for n in [
+            "IMG_0001.JPG",
+            "00000003-0123abcd",
+            "00000003-0123abcd.",
+            "00000003-0123abcd.tar.gz",
+            "0000003-0123abcde.jpg",
+            "0000000x-0123abcd.jpg",
+            "00000003_0123abcd.jpg",
+            "00000003-0123abcg.jpg",
+        ] {
+            assert!(!is_own_file(n), "{n}");
+        }
+    }
+
+    /// SAFETY_MODEL §8.6: a backup folder replaced by a junction to a photo folder is never
+    /// entered; a folder holding a file MoriMeta did not put there keeps it and is reported; the
+    /// launch is not stopped by either.
+    #[test]
+    fn prune_never_deletes_through_a_link_or_foreign_files() {
+        let (d, mut s) = lab("link");
+        op(&mut s, "op-a", FileState::Done, OpStatus::Completed);
+        op(&mut s, "op-b", FileState::Done, OpStatus::Completed);
+        let p = Policy {
+            keep_latest: 0,
+            ..Policy::default()
+        };
+        // a photo folder, and op-a's backup folder replaced by a junction to it
+        let photos = d.join("photos");
+        std::fs::create_dir_all(&photos).unwrap();
+        std::fs::write(photos.join("00000000-0123abcd.jpg"), b"photo").unwrap();
+        std::fs::write(photos.join("IMG_0001.JPG"), b"photo").unwrap();
+        let a = s.backup_dir("op-a");
+        std::fs::remove_dir_all(&a).unwrap();
+        let st = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&a)
+            .arg(&photos)
+            .output()
+            .unwrap();
+        assert!(st.status.success(), "{st:?}");
+        let e = prune(&mut s, &p, &["op-a".into()], false).unwrap_err();
+        assert!(e.to_string().contains("reparse point"), "{e}");
+        assert_eq!(std::fs::read_dir(&photos).unwrap().count(), 2);
+
+        // a foreign file in op-b's folder: backups removed, the file kept, prune reported
+        let b = s.backup_dir("op-b");
+        std::fs::write(b.join("notes.txt"), b"mine").unwrap();
+        assert!(prune(&mut s, &p, &["op-b".into()], false).is_err());
+        let left: Vec<_> = std::fs::read_dir(&b)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["notes.txt"]);
+
+        // both are marked pruned; the next launch reports them and goes on
+        let r = finish_interrupted(&s).unwrap();
+        assert!(r.finished.is_empty());
+        let ids: Vec<_> = r.left.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["op-a", "op-b"]);
+        assert_eq!(std::fs::read_dir(&photos).unwrap().count(), 2);
+
+        // once the user moves the file away, it finishes
+        std::fs::remove_file(b.join("notes.txt")).unwrap();
+        assert_eq!(finish_interrupted(&s).unwrap().finished, ["op-b"]);
+        std::fs::remove_dir(&a).unwrap(); // the junction itself
         let _ = std::fs::remove_dir_all(&d);
     }
 }
