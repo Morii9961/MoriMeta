@@ -23,6 +23,7 @@ pub fn plan_undo(store: &Store, op_id: &str, exiftool_version: &str) -> Result<P
             "the backups of {op_id} were removed by the retention policy; it cannot be undone"
         )));
     }
+    crate::require_backups_present(store, op_id)?;
     let mut entries = Vec::new();
     for f in store.files(op_id)? {
         let kept = f.state == FileState::Conflict

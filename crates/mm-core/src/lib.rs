@@ -147,6 +147,21 @@ pub fn in_backup_folder(p: &Path) -> bool {
     })
 }
 
+/// The backups of an Operation must be where it recorded them before anything uses them (undo,
+/// resume, restore to a folder): a backup location on a drive that is not connected is reported
+/// as such instead of every file's backup as "missing or damaged".
+pub fn require_backups_present(store: &mm_store::Store, op_id: &str) -> Result<(), CoreError> {
+    let dir = store.recorded_backup_dir(op_id)?;
+    if dir.is_dir() {
+        Ok(())
+    } else {
+        Err(CoreError::BackupUnavailable(format!(
+            "the backups of {op_id} are in {}, which is not available: connect the drive",
+            dir.display()
+        )))
+    }
+}
+
 /// A cloud file that is not on this computer (reading it would download it, SAFETY_MODEL §8.3).
 /// Only the attributes are looked at.
 pub fn is_placeholder(p: &Path) -> bool {

@@ -482,6 +482,7 @@ pub fn resume(
             "the backups of {op_id} were removed; plan the remaining files again"
         )));
     }
+    crate::require_backups_present(store, op_id)?;
     if op.app_version != APP_VERSION || op.exiftool_version != version {
         return Err(CoreError::VersionMismatch(format!(
             "operation made with app {} / ExifTool {}; running {} / {} — undo it or plan again",

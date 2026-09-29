@@ -5960,6 +5960,28 @@ fn recovery_waits_for_a_backup_location_that_is_not_connected() {
     assert!(lab.cli(&["fsck", &op]).status.success());
     lab.undo(&op);
     lab.assert_all_original();
+
+    // a finished Operation while the drive is away: undo and restore-to say so instead of
+    // reporting every backup as missing or damaged
+    let done = lab.apply_ok(&lab.plan("Mori", "r.json"));
+    std::fs::rename(&ext, &away).unwrap();
+    for args in [
+        vec!["plan-undo", done.as_str(), "--out", "u.json"],
+        vec!["restore-to", done.as_str(), "--dir", "restored"],
+    ] {
+        let mut args: Vec<String> = args.into_iter().map(str::to_owned).collect();
+        args[3] = lab.dir.join(&args[3]).to_string_lossy().into_owned();
+        let a: Vec<&str> = args.iter().map(String::as_str).collect();
+        let o = lab.cli(&a);
+        let said = String::from_utf8_lossy(&o.stdout).into_owned();
+        assert!(
+            !o.status.success() && said.contains("connect the drive"),
+            "{said}"
+        );
+    }
+    std::fs::rename(&away, &ext).unwrap();
+    lab.undo(&done);
+    lab.assert_all_original();
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 

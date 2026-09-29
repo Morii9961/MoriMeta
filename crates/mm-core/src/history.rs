@@ -490,6 +490,7 @@ pub fn restore_backups_to(
             "the backups of {op_id} were removed by the retention policy"
         )));
     }
+    crate::require_backups_present(store, op_id)?;
     std::fs::create_dir_all(dir)?;
     let mut out = Vec::new();
     for f in store.files(op_id)? {
