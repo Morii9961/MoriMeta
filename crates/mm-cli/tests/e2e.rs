@@ -3597,6 +3597,48 @@ fn preserve_mtime_option() {
 /// SAFETY_MODEL §8.3 / §6.2: files in a synced folder get a note in the Plan (writing is still
 /// allowed); backups in a synced folder get a warning. The OneDrive client's environment variable
 /// is simulated for the child process.
+/// SAFETY_MODEL §6.1: MoriMeta's own backups are never planned or written, wherever the backup
+/// location is; a Plan edited to point at one is refused before anything is written.
+#[test]
+fn backups_are_never_planned_or_written() {
+    let pkg = require!();
+    let lab = Lab::new("ownbackup", &pkg);
+    let op = lab.apply_ok(&lab.plan("Morii", "p.json"));
+    let backup = std::fs::read_dir(lab.data.join("backups").join(&op))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("jpg")))
+        .unwrap();
+    let before = blake(&backup);
+    let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Mori"], &[&backup], "b.json");
+    assert_eq!(pj["entries"][0]["status"]["status"], "blocked", "{pj}");
+    assert!(pj.to_string().contains("MoriMeta's backups"), "{pj}");
+
+    let (fp, _) = lab.plan_on(
+        &["plan-creator", "--set", "Mori"],
+        &[&lab.photos[1]],
+        "c.json",
+    );
+    let mut plan: Value = serde_json::from_slice(&std::fs::read(&fp).unwrap()).unwrap();
+    plan["entries"][0]["path"] = backup.to_string_lossy().into_owned().into();
+    std::fs::write(&fp, plan.to_string()).unwrap();
+    let a = lab.cli(&["apply", fp.to_str().unwrap()]);
+    assert!(!a.status.success());
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&a.stdout),
+        String::from_utf8_lossy(&a.stderr)
+    );
+    assert!(said.contains("MoriMeta's backups"), "{said}");
+    assert_eq!(blake(&backup), before);
+    assert_eq!(
+        Lab::json(&lab.cli(&["history"])).as_array().unwrap().len(),
+        1
+    );
+    lab.undo(&op);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 #[test]
 fn synced_folders_are_noted() {
     let pkg = require!();

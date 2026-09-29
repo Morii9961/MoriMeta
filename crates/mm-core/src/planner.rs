@@ -720,6 +720,11 @@ fn plan_with(
                 }
             }
         }
+        // SAFETY_MODEL §6.1: MoriMeta's own backups are not photos to edit
+        if job.is_some() && crate::in_backup_folder(Path::new(&entry.path)) {
+            entry.status = EntryStatus::Blocked(crate::IN_BACKUP_FOLDER.into());
+            job = None;
+        }
         // SAFETY_MODEL §8.4 / §8.5: where the file that is written lives
         if job.is_some() {
             let root = mm_fs::volume_root(Path::new(&entry.path)).unwrap_or_default();

@@ -14,7 +14,7 @@
 
 | 命令（ARCHITECTURE §5.2） | mm-core | mm-cli | 说明 |
 |---|---|---|---|
-| `session_import_dialog` / `session_import_dropped` | `service::Session::import`、`import_folder` | —（`scan`） | 返回 `AssetId`；按卷 + File ID 去重；文件夹导入不跟随目录链接、不读取云占位符；非写入格式为只读资产 |
+| `session_import_dialog` / `session_import_dropped` | `service::Session::import`、`import_folder` | —（`scan`） | 返回 `AssetId`；按卷 + File ID 去重；文件夹导入不跟随目录链接、不读取云占位符、不纳入 MoriMeta 备份库中的文件（`backup_files`，逐个选择时拒绝）；非写入格式为只读资产 |
 | `session_rows` | `Session::assets`、`changed_since_import` | — | 分页与排序在适配层；"导入后被改动"按导入时的指纹 |
 | `asset_detail` | `inspect::asset_detail` | `inspect` | 字段有效值、来源、冲突、全部原始标签与 sidecar 标签；文件或其 sidecar 为未下载占位符时 `NotDownloaded`（不读取） |
 | `selection_aggregate` | `inspect::selection_aggregate` | `aggregate` | 每字段各值的文件数、空、冲突、不可读、未下载（不读取） |

@@ -402,6 +402,17 @@ pub fn start(
             plan.exiftool_version,
         )));
     }
+    // a Plan from the planner never has them; one edited or made elsewhere is refused whole
+    if let Some(e) = plan
+        .executable()
+        .find(|e| crate::in_backup_folder(Path::new(&e.path)))
+    {
+        return Err(CoreError::Input(format!(
+            "{}: {}",
+            e.path,
+            crate::IN_BACKUP_FOLDER
+        )));
+    }
     check_space(
         store,
         plan.executable(),

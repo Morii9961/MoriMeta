@@ -85,6 +85,9 @@ pub struct ImportReport {
     /// Folder import only: XMP files without a main file next to them, taken in on their own
     /// (PRODUCT_SPEC §6.1 "orphan sidecars are listed separately").
     pub orphan_sidecars: Vec<AssetId>,
+    /// Folder import only: files in MoriMeta's own backup folders, not taken in (SAFETY_MODEL
+    /// §6.1); a backup the user picks is refused with the reason.
+    pub backup_files: usize,
 }
 
 /// The files the user brought in. Paths come only from the backend's own dialogs and drop events;
@@ -114,6 +117,15 @@ impl Session {
     fn import_as(&mut self, paths: &[PathBuf], chosen: bool) -> ImportReport {
         let mut r = ImportReport::default();
         for p in paths {
+            if crate::in_backup_folder(p) {
+                if chosen {
+                    let why = crate::IN_BACKUP_FOLDER.into();
+                    r.failed.push((p.display().to_string(), why));
+                } else {
+                    r.backup_files += 1;
+                }
+                continue;
+            }
             let Some(kind) = crate::planner::import_kind(p, chosen) else {
                 r.failed.push((
                     p.display().to_string(),
@@ -176,6 +188,7 @@ impl Session {
             .partition(|p| crate::planner::import_kind(p, false).is_some());
         let mut r = self.import_as(&take, false);
         let o = self.import_as(&orphans, true);
+        r.backup_files += o.backup_files;
         r.orphan_sidecars = o.added.clone();
         r.added.extend(o.added);
         r.duplicates.extend(o.duplicates);
@@ -1051,6 +1064,29 @@ mod tests {
             "still not downloaded"
         );
         offline(false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// SAFETY_MODEL §6.1: a backup location inside a photo folder does not bring the backups in.
+    #[test]
+    fn backups_are_not_imported() {
+        let dir = std::env::temp_dir().join(format!("mm-import-bk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let op = dir.join("MoriMeta backups").join("op-20260929-0001");
+        std::fs::create_dir_all(&op).unwrap();
+        std::fs::write(dir.join("a.jpg"), "a").unwrap();
+        std::fs::write(op.join("00000000-0123abcd.jpg"), "a").unwrap();
+        std::fs::write(op.join(mm_store::MANIFEST_LOG), "").unwrap();
+        // a folder merely named like one, without a record, is an ordinary folder
+        let lookalike = dir.join("op-trip");
+        std::fs::create_dir_all(&lookalike).unwrap();
+        std::fs::write(lookalike.join("b.jpg"), "b").unwrap();
+        let mut s = Session::default();
+        let r = s.import_folder(&dir);
+        assert_eq!((r.added.len(), r.backup_files), (2, 1), "{r:?}");
+        let picked = s.import(&[op.join("00000000-0123abcd.jpg")]);
+        assert!(picked.added.is_empty());
+        assert_eq!(picked.failed[0].1, crate::IN_BACKUP_FOLDER);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

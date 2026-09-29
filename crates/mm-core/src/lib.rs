@@ -131,6 +131,22 @@ pub fn file_id_hex(id: &mm_fs::FileId) -> String {
     )
 }
 
+/// Why a file in one of MoriMeta's backup folders is never imported, planned or written.
+pub const IN_BACKUP_FOLDER: &str =
+    "one of MoriMeta's backups: never written (restore it from History instead)";
+
+/// A file inside one of MoriMeta's backup folders (SAFETY_MODEL §6.1): `op-…`, holding the
+/// Operation's record. Recognised by the folder itself, so it holds wherever the backup location
+/// is or was, and after the Journal is rebuilt. Writing to a backup would change the pre-image
+/// an Undo restores.
+pub fn in_backup_folder(p: &Path) -> bool {
+    p.parent().is_some_and(|d| {
+        d.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("op-"))
+            && (d.join(mm_store::MANIFEST_LOG).exists() || d.join(mm_store::PLAN_FILE).exists())
+    })
+}
+
 /// A cloud file that is not on this computer (reading it would download it, SAFETY_MODEL §8.3).
 /// Only the attributes are looked at.
 pub fn is_placeholder(p: &Path) -> bool {
