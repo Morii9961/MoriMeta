@@ -2176,7 +2176,20 @@ fn time_tools_apply_and_undo() {
     lab.assert_all_original();
 
     // Absolute: every file, including the one without a time
-    let (p, _) = lab.plan_time(&["--absolute", "2026:09:27 10:00:00"], "abs.json");
+    let (p, pj) = lab.plan_time(&["--absolute", "2026:09:27 10:00:00"], "abs.json");
+    // INTERACTION_SPEC §17: a shared timestamp loses the order by time, and the Preview says so
+    assert!(pj.to_string().contains("order by time is lost"), "{pj}");
+    assert_eq!(
+        pj["summary"]["warnings"], pj["summary"]["ready"],
+        "{}",
+        pj["summary"]
+    );
+    let (_, one) = lab.plan_on(
+        &["plan-time", "--absolute", "2026:09:27 10:00:00"],
+        &[&lab.photos[1]],
+        "abs-one.json",
+    );
+    assert!(!one.to_string().contains("order by time"), "{one}");
     let op = lab.apply_ok(&p);
     assert!(
         lab.times()

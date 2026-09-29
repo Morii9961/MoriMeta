@@ -423,6 +423,11 @@ fn plan_capture_time_inner(
             other => CoreError::Input(other.to_string()),
         })?;
         let n = results.len();
+        // INTERACTION_SPEC §17: Absolute gives every position one time, so their order by time
+        // is lost (a RAW and its JPG are one position and keep sharing it)
+        let positions: std::collections::HashSet<&Option<String>> =
+            items.iter().map(|it| &it.pair).collect();
+        let shared = matches!(tool, TimeTool::Absolute(_)) && positions.len() > 1;
         Ok(readable
             .iter()
             .map(|(idx, t)| {
@@ -436,6 +441,14 @@ fn plan_capture_time_inner(
                         0,
                         format!("position {} of {n} in the sequence", r.index + 1),
                     );
+                }
+                if shared && fp.status == EntryStatus::Ready {
+                    fp.notes.push(format!(
+                        "{}{} files (a RAW and its JPG counted once) get the same capture time: \
+                         their order by time is lost",
+                        mm_domain::plan::WARNING,
+                        positions.len()
+                    ));
                 }
                 vec![("capture_time", fp)]
             })

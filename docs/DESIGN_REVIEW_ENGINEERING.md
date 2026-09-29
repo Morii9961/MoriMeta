@@ -36,6 +36,7 @@
 | G-6 | INTERACTION §1：规则构建器在模板变量依赖另一规则所设字段时警告 | **已补**：`Preset::lint`（`{creator}` ↔ Creator，`{year}`/`{month}`/`{day}` ↔ 拍摄时间），`mm-cli presets` 输出 `warnings` |
 | G-7 | INTERACTION §7 / SCREEN §14："清除只读属性…"是单独、记录在案的操作 | **已补**：`service::clear_read_only`（经写入闸门、写入日志，提权时拒绝），`mm-cli clear-readonly`；从不自动清除 |
 | G-8 | INTERACTION §9：排除单个改动（某文件的某字段）与整项编辑；"排除拍摄时间会一并去掉三个日期标签" | **已补**（2026-09-29，此前评审遗漏）：`PlanBook::exclude_field` / `Plan::set_field_excluded`；多字段条目保留每个字段的写入与校验期望（`PlanEntry::parts`），排除后由其余字段重新合并，因此写入、V2 校验、执行前核对、摘要计数与所需确认都只看仍会写入的改动；被排除的改动在 `excluded_changes` 中供界面划掉显示；`mm-cli plan-exclude`；e2e `a_change_or_a_whole_edit_is_left_out_in_preview` |
+| G-9 | INTERACTION §17："Absolute 产生相同时间戳时警告按时间排序会丢失" | **已补**（2026-09-29，此前评审遗漏）：Absolute 作用于多于一个位置（RAW 与同名 JPG 算一个）时，每个将写入的条目带警告（计入 Preview 的 Warnings 类别）；单个位置不警告；e2e `time_tools_apply_and_undo` |
 
 ## 4. 需要共同决定
 
