@@ -5740,6 +5740,89 @@ fn crate_is_offline(p: &Path) -> bool {
     std::fs::symlink_metadata(p).unwrap().file_attributes() & 0x1000 != 0
 }
 
+/// SAFETY_MODEL §8.5 / A-1: photos on an SMB share are written through the whole product chain
+/// (the transaction itself was verified on SMB in S2): planned with the network note, written in
+/// place and through a new NEF sidecar, crashed after a commit, recovered and resumed, and undone
+/// byte for byte. Needs a writable UNC folder (`MM_E2E_SMB_DIR`; CI shares a folder over
+/// `\\localhost`).
+#[test]
+fn photos_on_a_network_share_through_write_crash_and_undo() {
+    let pkg = require!();
+    let Some(share) = std::env::var_os("MM_E2E_SMB_DIR").map(PathBuf::from) else {
+        eprintln!("SKIP: MM_E2E_SMB_DIR not set (needs a writable folder on an SMB share)");
+        return;
+    };
+    let base = tmp().join(format!("mm-e2e-smb-{}", std::process::id()));
+    let on_share = share.join(format!("mm-e2e-smb-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&on_share);
+    let lab = Lab::at(&pkg, base.clone(), on_share.clone(), base.join("data"), 1);
+    let nef = on_share.join("DSC_0001.NEF");
+    std::fs::copy(timages().join("Nikon.nef"), &nef).unwrap();
+    let mut files: Vec<&Path> = lab.photos.iter().map(PathBuf::as_path).collect();
+    files.push(&nef);
+
+    let (p1, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &files, "c.json");
+    let ready: Vec<&Value> = pj["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["status"]["status"] == "ready")
+        .collect();
+    assert!(ready.len() >= 6, "{pj}");
+    assert!(
+        ready
+            .iter()
+            .all(|e| e.to_string().contains("on a network drive")),
+        "{pj}"
+    );
+    let creator = lab.apply_ok(&p1);
+    assert!(lab.cli(&["fsck", &creator]).status.success());
+    assert!(nef.with_extension("xmp").exists());
+
+    let (p2, _) = lab.plan_on(&["plan-time", "--shift", "+01:00:00"], &files, "t.json");
+    let o = lab.cli_env(
+        &[
+            "apply",
+            p2.to_str().unwrap(),
+            "--crash-at",
+            "1:8",
+            "--workers",
+            "2",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(77),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let shift = lab.last_op();
+    assert!(lab.cli(&["recover"]).status.success());
+    let res = lab.cli(&["resume", &shift]);
+    assert!(
+        res.status.code().is_some_and(|c| c == 0 || c == 3),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    assert!(lab.cli(&["fsck", &shift]).status.success());
+    let left: Vec<String> = std::fs::read_dir(&on_share)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".mmtmp-") || n.contains(".mmbak-"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+
+    lab.undo(&shift);
+    lab.undo(&creator);
+    lab.assert_all_original();
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    assert!(!nef.with_extension("xmp").exists());
+    let _ = std::fs::remove_dir_all(&on_share);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {

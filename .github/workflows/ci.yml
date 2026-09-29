@@ -82,6 +82,15 @@ jobs:
           diskpart /s $script
           if (Test-Path 'X:\') { 'MM_E2E_EXFAT_VOLUME=X:\' | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
 
+      - name: SMB share over localhost (photos_on_a_network_share_through_write_crash_and_undo)
+        # best effort: without it that test is skipped
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force 'C:\mm-smb' | Out-Null
+          New-SmbShare -Name mmsmb -Path 'C:\mm-smb' -FullAccess Everyone | Out-Null
+          if (Test-Path '\\localhost\mmsmb') { 'MM_E2E_SMB_DIR=\\localhost\mmsmb' | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+
       - name: Tests
         # the runner is elevated; MoriMeta refuses to write then (SECURITY_MODEL §4.1)
         env:
