@@ -42,8 +42,10 @@
 //!   recover [--journal-fail-at ...]
 //!   resolve OP_ID --keep SEQ...   files recovery left as "needs attention": keep what is on
 //!                             disk (the backup stays; plan-undo --force-conflicts restores it)
-//!   rebuild-journal           re-import operations missing from the database from their
-//!                             backup folders (manifest.jsonl, plan.json); then run recover
+//!   rebuild-journal [--from DIR]...
+//!                             re-import operations missing from the database from their
+//!                             backup folders (manifest.jsonl, plan.json) in the default, current
+//!                             and every recorded backup location, and DIR; then run recover
 //!   resume OP_ID [FAULTS]
 //!   recovery-status           interrupted Operations: done, remaining, needing attention
 //!   dismiss OP_ID             keep a recovered Operation as it is (remaining files stay; resumable)
@@ -834,7 +836,14 @@ fn main() -> ExitCode {
                 Ok(report_exit(&r))
             }
             "rebuild-journal" => {
-                let r = store.import_from_backups().map_err(|e| e.to_string())?;
+                // backup locations the user names, beyond the default, current and recorded ones
+                let mut from = Vec::new();
+                while let Some(d) = take_opt(&mut args, "--from") {
+                    from.push(PathBuf::from(d));
+                }
+                let r = store
+                    .import_from_backups_in(&from)
+                    .map_err(|e| e.to_string())?;
                 println!(
                     "{}",
                     json!({"imported": r.imported,

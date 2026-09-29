@@ -5450,6 +5450,136 @@ fn long_unicode_paths_through_write_crash_and_undo() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// A Windows account named in Chinese puts MoriMeta's data (Journal, backups, logs, lock) under a
+/// Chinese path, and ExifTool reads every backup as its write source (§4.1 step 4). The whole
+/// chain with the data folder and a second backup location under Chinese / emoji names: write
+/// JPEG + new NEF sidecar, crash and resume, lose and rebuild the Journal, export the log, restore
+/// to a folder, undo byte for byte.
+#[test]
+fn unicode_data_folder_and_backup_location() {
+    let pkg = require!();
+    let dir = tmp().join(format!("mm-e2e-unidata-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let data = dir.join("用户 森 Morii 🙂").join("AppData 数据");
+    let lab = Lab::at(&pkg, dir.clone(), dir.join("photos"), data.clone(), 1);
+    let nef = lab.add_nef("DSC_0001.NEF");
+    let xmp = nef.with_file_name("DSC_0001.xmp");
+    let mut files: Vec<&Path> = lab.photos.iter().map(PathBuf::as_path).collect();
+    files.push(&nef);
+
+    let (p1, _) = lab.plan_on(&["plan-creator", "--set", "森 Morii"], &files, "c.json");
+    let creator = lab.apply_ok(&p1);
+    assert!(
+        data.join("backups")
+            .join(&creator)
+            .join("plan.json")
+            .exists()
+    );
+    assert!(xmp.exists());
+
+    // a second backup location, also in Chinese with an emoji; a crash after a commit
+    let second = dir.join("备份 📦 位置");
+    assert!(
+        lab.cli(&["setting", "backup.root", second.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let (p2, _) = lab.plan_on(&["plan-time", "--shift", "+01:00:00"], &files, "t.json");
+    let o = lab.cli_env(
+        &[
+            "apply",
+            p2.to_str().unwrap(),
+            "--crash-at",
+            "1:8",
+            "--workers",
+            "1",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(77),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let shift = lab.last_op();
+    assert!(second.join(&shift).join("plan.json").exists());
+    assert!(lab.cli(&["recover"]).status.success());
+    let res = lab.cli(&["resume", &shift]);
+    assert!(
+        res.status.code().is_some_and(|c| c == 0 || c == 3),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    // (the first one's files were changed later by the second, which fsck reports for it)
+    assert!(lab.cli(&["fsck", &shift]).status.success());
+
+    // the Journal is lost, with the backup location setting in it: both Operations come back
+    // from their Chinese-named folders (the second from the list of locations used)
+    lab.lose_database();
+    let r = lab.rebuild();
+    assert_eq!(r["imported"].as_array().unwrap().len(), 2, "{r}");
+    assert!(lab.cli(&["recover"]).status.success());
+    // that list lost as well: the user names the folder
+    lab.lose_database();
+    std::fs::remove_file(data.join("backup-locations.txt")).unwrap();
+    assert_eq!(lab.rebuild()["imported"].as_array().unwrap().len(), 1);
+    let o = lab.cli(&["rebuild-journal", "--from", second.to_str().unwrap()]);
+    assert_eq!(
+        Lab::json(&o)["imported"],
+        serde_json::json!([shift]),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    assert!(lab.cli(&["recover"]).status.success());
+
+    let log = dir.join("日志 导出.json");
+    assert!(
+        lab.cli(&["export-log", &shift, "--out", log.to_str().unwrap()])
+            .status
+            .success()
+    );
+    assert!(log.exists());
+    let restored = dir.join("恢复 🗂");
+    std::fs::create_dir_all(&restored).unwrap();
+    let rows = Lab::json(&lab.cli(&["restore-to", &creator, "--dir", restored.to_str().unwrap()]));
+    // every file written in place comes back as its original under a Chinese folder name
+    let mut restored_n = 0;
+    for row in rows.as_array().unwrap() {
+        let Some(to) = row["to"].as_str() else {
+            continue; // the new sidecar had nothing before it
+        };
+        let orig = lab
+            .photos
+            .iter()
+            .find(|p| p.file_name() == Path::new(to).file_name())
+            .unwrap();
+        assert_eq!(
+            blake(Path::new(to)).as_deref(),
+            Some(lab.truth[orig].as_str()),
+            "{row}"
+        );
+        restored_n += 1;
+    }
+    assert!(restored_n >= 6, "{rows}");
+
+    lab.undo(&shift);
+    lab.undo(&creator);
+    for p in &lab.photos {
+        assert_eq!(
+            blake(p).as_deref(),
+            Some(lab.truth[p].as_str()),
+            "{}",
+            p.display()
+        );
+    }
+    assert_eq!(blake(&nef).as_deref(), Some(NEF_BLAKE3));
+    assert!(!xmp.exists());
+    let logs: Vec<_> = std::fs::read_dir(data.join("logs")).unwrap().collect();
+    assert!(!logs.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// SAFETY_MODEL §8.2 at the commit: another program (a virus scanner) opens the file without
 /// delete sharing just before ReplaceFileW. A short hold is waited out by the retries and the file
 /// is written; a hold longer than every retry leaves the file skipped as in use, unchanged, with

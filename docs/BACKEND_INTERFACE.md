@@ -53,6 +53,7 @@
 | 重新规划 | `history::replan` | `plan-again` | 按 Plan 来源对失败、跳过、冲突的文件重新读取 |
 | 恢复备份到文件夹 | `history::restore_backups_to` | `restore-to` | 新文件，不覆盖，核对哈希；先写入 `…​.mmrestore-N`，完整且核对后才以不覆盖的改名取得照片的名字，中断不会留下看似完整的原片 |
 | 启动 | `service::open_data`（单实例锁 + Journal）、`service::startup` | —（`recover`） | 先取单实例锁（另一个 MoriMeta 或 `mm-cli` 占用同一数据目录时 `AnotherInstance`），再打开 Journal 并应用备份位置、程序日志与调试日志设置（适配层不必重复）；崩溃恢复、完成中断的清理（无法完成的列在 `prunes_left`，不阻止启动）、恢复摘要、提权状态与备份位置问题；提权运行时不做恢复（它也会写入） |
+| 重建 Journal（数据库丢失或损坏） | `Store::import_from_backups`、`import_from_backups_in(extra)`，随后 `service::startup` | `rebuild-journal [--from DIR]` | 扫描默认、当前与 `<data>/backup-locations.txt` 中登记过的每个备份位置；数据文件夹整个丢失时由用户指定文件夹 |
 | `recovery_status` | `recovery::summary` | `recovery-status` | 恢复对话框的数据 |
 | `recovery_resolve` | `recovery::resolve_keep`、`dismiss` | `resolve`、`dismiss` | 需要处理的文件保持现状；保持现状并关闭 |
 

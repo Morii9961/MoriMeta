@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::params;
 use serde_json::Value;
@@ -146,9 +146,19 @@ impl Store {
     /// Operations already in the database are left alone, so this can be run repeatedly.
     /// Afterwards, run crash recovery as usual: it decides every unfinished file from the disk.
     pub fn import_from_backups(&mut self) -> Result<ImportReport> {
+        self.import_from_backups_in(&[])
+    }
+
+    /// The same, also searching `extra` backup locations the user names (when the list of
+    /// locations was lost with the data folder).
+    pub fn import_from_backups_in(&mut self, extra: &[PathBuf]) -> Result<ImportReport> {
         let mut report = ImportReport::default();
         let mut dirs: Vec<_> = Vec::new();
-        for root in self.backup_roots() {
+        let mut seen = std::collections::HashSet::new();
+        for root in self.backup_roots().into_iter().chain(extra.iter().cloned()) {
+            if !seen.insert(root.to_string_lossy().to_lowercase()) {
+                continue;
+            }
             if let Ok(rd) = std::fs::read_dir(&root) {
                 dirs.extend(rd.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()));
             }

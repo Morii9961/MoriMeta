@@ -199,7 +199,7 @@ Planned ─► Prechecked(输出路径不存在、输出卷空间) ─► TempWr
 - 备份位置更改只影响之后的 Operation。
 - 备份库中的文件不是可编辑的照片：文件夹导入不纳入（计为 `backup_files`），逐个选择时拒绝并说明，Plan 中为 Blocked，编辑过的 Plan 指向它时整个执行被拒绝、不写入任何文件。以文件夹本身识别（名称 `op-…` 且含 `manifest.jsonl` 或 `plan.json`），因此备份位置在照片文件夹内、改过位置或重建 Journal 后同样有效（2026-09-29；此前备份位置设在照片文件夹内时，备份会被当作照片导入并可写入，改变撤销要恢复的原始内容）。
 - 备份库位于云同步目录时警告。
-- 实现状态（2026-09-28）：备份位置为设置 `backup.root`（默认 `<data>/backups`），只影响之后的 Operation；已有 Operation 一律使用数据库中记录的目录（撤销、继续、清单、清理）。执行与继续前检查备份位置存在（父目录存在时自动创建）且可写入新文件，否则 `BackupUnavailable`、不写入任何文件，不回退到其他位置。清理只删除名称等于 Operation id 的记录目录；重建 Journal 同时扫描当前与默认位置。
+- 实现状态（2026-09-28）：备份位置为设置 `backup.root`（默认 `<data>/backups`），只影响之后的 Operation；已有 Operation 一律使用数据库中记录的目录（撤销、继续、清单、清理）。执行与继续前检查备份位置存在（父目录存在时自动创建）且可写入新文件，否则 `BackupUnavailable`、不写入任何文件，不回退到其他位置。清理只删除名称等于 Operation id 的记录目录；重建 Journal 扫描当前与默认位置，以及用过的每个备份位置。**缺陷修正（2026-09-29）**：备份位置设置保存在数据库中，数据库丢失后重建只找得到默认位置中的 Operation，放在其他位置的 Operation 从历史与撤销中消失。现在每个 Operation 在其备份文件夹创建之前，把尚未登记的备份位置追加到数据库之外的 `<data>/backup-locations.txt`（刷盘），重建时逐一扫描；整个数据文件夹丢失时由用户指定位置（`import_from_backups_in`，`mm-cli rebuild-journal --from DIR`）。e2e `unicode_data_folder_and_backup_location`。
 
 ### 6.3 保留策略（D-7）
 
@@ -253,7 +253,7 @@ op_undo_plan(op, scope)
 | 8.7 | 硬链接（链接数 > 1） | `Blocked(HardLinked)`：S2 实测替换后其他链接仍指向旧内容 |
 | 8.8 | 同一文件经不同路径导入 | 卷序列号 + File ID 去重 |
 | 8.9 | 文件修改时间 | 默认不保留（让 mtime 更新），理由：增量备份工具依据大小 + 修改时间判断变化；可在设置中选择保留（`-P` [F-16]）并提示风险（D-6）。创建时间由 ReplaceFileW 保留（S2 已核对）。选项已实现（设置 `metadata.preserve_mtime`，默认关）：替换前把临时文件的修改时间设为原文件的（经锁句柄读取），撤销同理；e2e 核对默认会更新、开启后执行与撤销都保持 |
-| 8.10 | 长路径与特殊文件名 | 内部统一 `\\?\` 形式；ExifTool 13.59 在 334 字符中文路径与 emoji 文件名上读写正常（S0），`Blocked(UnsupportedFileName)` 规则取消，保留回归测试。产品链路（2026-09-28，e2e `long_unicode_paths_through_write_crash_and_undo`）：中文与 emoji 文件夹下超过 300 字符的 JPEG 与 NEF（新建 sidecar）经"需要注意"标记、写入、提交后进程终止、恢复与继续、fsck 与撤销，逐字节还原、无残留 |
+| 8.10 | 长路径与特殊文件名 | 内部统一 `\\?\` 形式；ExifTool 13.59 在 334 字符中文路径与 emoji 文件名上读写正常（S0），`Blocked(UnsupportedFileName)` 规则取消，保留回归测试。产品链路（2026-09-28，e2e `long_unicode_paths_through_write_crash_and_undo`）：中文与 emoji 文件夹下超过 300 字符的 JPEG 与 NEF（新建 sidecar）经"需要注意"标记、写入、提交后进程终止、恢复与继续、fsck 与撤销，逐字节还原、无残留。数据文件夹与第二个备份位置在中文与 emoji 路径下（中文 Windows 用户名；ExifTool 以备份为写入源）：写入、崩溃与继续、数据库丢失后重建、导出日志、恢复到文件夹、撤销，均正常（2026-09-29） |
 | 8.11 | Lightroom / darktable 等的覆盖 | 无法技术阻止；在 RAW 相关 Preview 与帮助中说明 |
 | 8.12 | C2PA 内容凭证 | 导入时检测 JUMBF（S3：可检测）；修改会使凭证失效（APP11 原样保留但签名不再匹配）；Preview 显著警告并默认排除；Plan 中标为 Blocked 已实现（以合成 JUMBF 测试；真实带凭证文件待 S3 语料） |
 | 8.13 | 磁盘满 | 预检（§6.2）；执行中出现 `DiskFull` → 暂停 Operation（不再启动新文件，进行中的文件照常结算；未开始的文件为 Cancelled，可继续） |

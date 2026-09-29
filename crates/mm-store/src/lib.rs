@@ -19,6 +19,23 @@ pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
 pub const SCHEMA_VERSION: i32 = 5;
 
+/// Every backup location an Operation has used, one per line, in the data folder but outside the
+/// database: the location setting lives in the database, so a lost database would otherwise be
+/// rebuilt from the default location only, and the Operations kept elsewhere would vanish from
+/// History and Undo.
+pub const BACKUP_LOCATIONS: &str = "backup-locations.txt";
+
+/// The same folder, as Windows compares names (case-insensitive, trailing separators ignored).
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let k = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .replace('/', "\\")
+            .to_lowercase()
+    };
+    k(a) == k(b)
+}
+
 pub type Result<T> = std::result::Result<T, StoreError>;
 
 #[derive(Debug)]
@@ -487,17 +504,56 @@ impl Store {
 
     /// The backup locations to look in: the current one and the default.
     pub fn backup_roots(&self) -> Vec<PathBuf> {
-        let default = self.data_dir.join("backups");
-        if self.backup_root == default {
-            vec![default]
-        } else {
-            vec![self.backup_root.clone(), default]
+        let mut roots = vec![self.backup_root.clone(), self.data_dir.join("backups")];
+        for r in self.recorded_backup_roots() {
+            if !roots.iter().any(|k| same_dir(k, &r)) {
+                roots.push(r);
+            }
         }
+        if same_dir(&roots[0], &roots[1]) {
+            roots.remove(1);
+        }
+        roots
+    }
+
+    /// The locations listed in [`BACKUP_LOCATIONS`].
+    fn recorded_backup_roots(&self) -> Vec<PathBuf> {
+        std::fs::read_to_string(self.data_dir.join(BACKUP_LOCATIONS))
+            .map(|s| {
+                s.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(PathBuf::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Add the current backup location to [`BACKUP_LOCATIONS`] (flushed) before an Operation
+    /// puts its first file there; the default location is always searched and not listed.
+    fn record_backup_root(&self) -> Result<()> {
+        let root = &self.backup_root;
+        if same_dir(root, &self.data_dir.join("backups"))
+            || self
+                .recorded_backup_roots()
+                .iter()
+                .any(|r| same_dir(r, root))
+        {
+            return Ok(());
+        }
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.data_dir.join(BACKUP_LOCATIONS))?;
+        writeln!(f, "{}", root.display())?;
+        f.sync_all()?;
+        Ok(())
     }
 
     /// Step 0: register the Operation, its executable plan and every file, in one transaction.
     pub fn begin_operation(&mut self, op: &NewOperation, files: &[NewFile]) -> Result<PathBuf> {
         let dir = self.backup_dir(&op.id);
+        self.record_backup_root()?;
         std::fs::create_dir_all(&dir)?;
         let now = now_ms();
         self.write(WriteTarget::Begin, |conn| {
@@ -1118,6 +1174,34 @@ mod tests {
         assert_eq!(s.unfinished().unwrap(), vec!["op1".to_string()]);
         // already present: nothing imported twice
         assert!(s.import_from_backups().unwrap().imported.is_empty());
+        drop(s);
+
+        // an Operation in another backup location: the setting is lost with the database, the
+        // location list outside it is not
+        let elsewhere = d.join("备份 📦");
+        {
+            let mut s = Store::open(&d).unwrap();
+            s.set_backup_root(elsewhere.clone());
+            s.begin_operation(&op("op2"), &[file(0)]).unwrap();
+            s.begin_operation(&op("op3"), &[file(0)]).unwrap();
+        }
+        let listed = std::fs::read_to_string(d.join(BACKUP_LOCATIONS)).unwrap();
+        assert_eq!(listed.lines().count(), 1, "{listed}");
+        std::fs::remove_dir_all(d.join("db")).unwrap();
+        let mut s = Store::open(&d).unwrap();
+        let r = s.import_from_backups().unwrap();
+        assert_eq!(r.imported, ["op1", "op2", "op3"]);
+        assert_eq!(s.recorded_backup_dir("op2").unwrap(), elsewhere.join("op2"));
+        // the list itself lost too (the whole data folder): the user names the folder
+        drop(s);
+        std::fs::remove_dir_all(d.join("db")).unwrap();
+        std::fs::remove_file(d.join(BACKUP_LOCATIONS)).unwrap();
+        let mut s = Store::open(&d).unwrap();
+        assert_eq!(s.import_from_backups().unwrap().imported, ["op1"]);
+        let r = s
+            .import_from_backups_in(std::slice::from_ref(&elsewhere))
+            .unwrap();
+        assert_eq!(r.imported, ["op2", "op3"]);
         // a damaged line before the end makes the record unusable instead of guessed
         drop(s);
         std::fs::remove_dir_all(d.join("db")).unwrap();
