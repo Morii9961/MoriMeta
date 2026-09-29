@@ -604,6 +604,9 @@ pub struct Startup {
     /// Interrupted prunes whose folder could not be removed (Operation id, reason); they stay
     /// marked pruned and are tried again at the next launch.
     pub prunes_left: Vec<(String, String)>,
+    /// Unfinished Operations not recovered because their backup folder is not available (a drive
+    /// that is not connected), with the reason; writes stay refused until they are.
+    pub recovery_waiting: Vec<(String, String)>,
     /// Operations that still ask for a decision (the Recovery dialog).
     pub needs_decision: Vec<crate::recovery::RecoverySummary>,
     /// Running with administrator rights: every write is refused.
@@ -626,6 +629,7 @@ pub fn startup(store: &mut Store) -> Result<Startup, ServiceError> {
         )
     };
     Ok(Startup {
+        recovery_waiting: crate::recovery::waiting_for_backups(store)?,
         recovered,
         prunes_finished: prunes.finished,
         prunes_left: prunes.left,
@@ -894,6 +898,40 @@ mod tests {
             b.page("nope", 1, EntryFilter::All, 0, 1),
             Err(ServiceError::UnknownPlan(_))
         ));
+    }
+
+    /// An interrupted Operation whose backup folder is on a drive that is not connected does not
+    /// stop the launch: it is listed as waiting and left unfinished.
+    #[test]
+    fn startup_waits_for_a_missing_backup_location() {
+        let d = std::env::temp_dir().join(format!("mm-startup-wait-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let mut store = Store::open(&d.join("data")).unwrap();
+        store.set_backup_root(d.join("ext"));
+        store
+            .begin_operation(
+                &mm_store::NewOperation {
+                    id: "op-w".into(),
+                    kind: "apply".into(),
+                    title: "t".into(),
+                    plan_json: "{}".into(),
+                    app_version: "0".into(),
+                    exiftool_version: "0".into(),
+                    registry_version: 0,
+                    undo_of: None,
+                },
+                &[],
+            )
+            .unwrap();
+        std::fs::remove_dir_all(d.join("ext")).unwrap();
+        let s = startup(&mut store).unwrap();
+        if !s.elevated {
+            assert_eq!(s.recovery_waiting.len(), 1, "{:?}", s.recovery_waiting);
+            assert!(s.recovered.is_empty());
+            assert_eq!(store.unfinished().unwrap(), ["op-w"]);
+        }
+        drop(store);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// INTERACTION_SPEC §9 through the book: a field left out makes a new version; an unknown

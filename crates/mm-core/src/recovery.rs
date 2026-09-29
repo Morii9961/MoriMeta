@@ -24,9 +24,37 @@ pub struct RecoveryReport {
     pub files: Vec<RecoveredFile>,
 }
 
+/// Unfinished Operations whose backup folder is not there (the backup location is on a drive that
+/// is not connected), with the reason. They are not recovered yet: recovery appends its decisions
+/// to the record next to the backups, and some decisions read the backups. They stay unfinished,
+/// so writes stay refused, and are recovered once the folder is back (INTERACTION_SPEC §15).
+pub fn waiting_for_backups(store: &Store) -> Result<Vec<(String, String)>, CoreError> {
+    let mut out = Vec::new();
+    for op_id in store.unfinished()? {
+        let dir = store.recorded_backup_dir(&op_id)?;
+        if !dir.is_dir() {
+            out.push((
+                op_id,
+                format!(
+                    "its backup folder {} is not available: connect the drive, then recover",
+                    dir.display()
+                ),
+            ));
+        }
+    }
+    Ok(out)
+}
+
 pub fn recover(store: &mut Store) -> Result<Vec<RecoveryReport>, CoreError> {
     let mut reports = Vec::new();
+    let waiting: Vec<String> = waiting_for_backups(store)?
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
     for op_id in store.unfinished()? {
+        if waiting.contains(&op_id) {
+            continue;
+        }
         store.set_status(&op_id, OpStatus::Interrupted)?;
         let mut rep = RecoveryReport {
             op_id: op_id.clone(),

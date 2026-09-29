@@ -5900,6 +5900,69 @@ fn one_file_with_abnormally_large_metadata_does_not_stop_the_others() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// INTERACTION_SPEC §15 / SAFETY_MODEL §10: an Operation was interrupted, and at the next start
+/// its backup location (an external drive) is not connected. Recovery used to fail as a whole
+/// (so the app could not start); now that Operation waits, writes stay refused, and once the drive
+/// is back it is recovered, resumed and undone as usual.
+#[test]
+fn recovery_waits_for_a_backup_location_that_is_not_connected() {
+    let pkg = require!();
+    let lab = Lab::new("unplugged", &pkg);
+    let ext = lab.dir.join("external drive");
+    assert!(
+        lab.cli(&["setting", "backup.root", ext.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let plan = lab.plan("Morii", "p.json");
+    let o = lab.cli_env(
+        &[
+            "apply",
+            plan.to_str().unwrap(),
+            "--crash-at",
+            "1:8",
+            "--workers",
+            "1",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(77),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let op = lab.last_op();
+    let away = lab.dir.join("drive not connected");
+    std::fs::rename(&ext, &away).unwrap();
+
+    let r = lab.cli(&["recover"]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stdout));
+    assert_eq!(Lab::json(&r), serde_json::json!([]));
+    let again = lab.plan("Mori", "q.json");
+    let refused = lab.cli(&["apply", again.to_str().unwrap()]);
+    assert!(
+        !refused.status.success(),
+        "a write while recovery is pending"
+    );
+
+    // the drive is back
+    let _ = std::fs::remove_dir_all(&ext); // what a later start may have created in its place
+    std::fs::rename(&away, &ext).unwrap();
+    let r = Lab::json(&lab.cli(&["recover"]));
+    assert_eq!(r[0]["op_id"], op.as_str(), "{r}");
+    let res = lab.cli(&["resume", &op]);
+    assert!(
+        res.status.code().is_some_and(|c| c == 0 || c == 3),
+        "{}",
+        String::from_utf8_lossy(&res.stdout)
+    );
+    assert!(lab.cli(&["fsck", &op]).status.success());
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
