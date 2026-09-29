@@ -21,6 +21,8 @@ pub struct Preflight {
     pub exiftool: Option<String>,
     /// Nothing above stands in the way.
     pub ok: bool,
+    /// Shown, but does not stand in the way: the backup location is in a synced folder.
+    pub backup_warning: Option<String>,
 }
 
 pub fn preflight(store: &Store, plan: &Plan) -> Result<Preflight, CoreError> {
@@ -61,5 +63,6 @@ pub fn preflight(store: &Store, plan: &Plan) -> Result<Preflight, CoreError> {
         space,
         exiftool,
         ok,
+        backup_warning: crate::retention::sync_warning(store),
     })
 }

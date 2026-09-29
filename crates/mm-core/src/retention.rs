@@ -95,6 +95,19 @@ pub struct Usage {
     pub total_bytes: u64,
     /// Capacity of the volume that holds the backups.
     pub volume_bytes: u64,
+    /// The backup location is in a synced folder (SAFETY_MODEL §6.2).
+    pub sync_warning: Option<String>,
+}
+
+/// SAFETY_MODEL §6.2: backups inside a folder a sync client keeps are uploaded as well (every
+/// original, with its location and other private data), and "free up space" may turn them into
+/// placeholders that an undo has to download first. A warning, not a refusal.
+pub fn sync_warning(store: &Store) -> Option<String> {
+    mm_fs::sync_provider(store.backup_root(), &mm_fs::sync_roots()).map(|p| {
+        format!(
+            "the backups are in a {p} folder: every backup is uploaded too; choose a local folder"
+        )
+    })
 }
 
 fn dir_bytes(dir: &Path) -> u64 {
@@ -152,6 +165,7 @@ pub fn usage(store: &Store, policy: &Policy) -> Result<Usage, CoreError> {
         total_bytes: out.iter().map(|o| o.bytes).sum(),
         ops: out,
         volume_bytes,
+        sync_warning: sync_warning(store),
     })
 }
 

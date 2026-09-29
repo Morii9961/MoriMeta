@@ -3636,6 +3636,13 @@ fn synced_folders_are_noted() {
     );
     let b = Lab::json(&run(&["backups"], &lab.dir));
     assert!(b["warning"].as_str().unwrap().contains("OneDrive"), "{b}");
+    // the pre-flight the app shows before Apply carries it too, without blocking
+    let pf = Lab::json(&run(&["preflight", out.to_str().unwrap()], &lab.dir));
+    assert!(
+        pf["backup_warning"].as_str().unwrap().contains("OneDrive"),
+        "{pf}"
+    );
+    assert_eq!(pf["ok"], true, "{pf}");
     // a RAW's new sidecar in the synced folder (an ordinary new file) is noted the same way
     let nef = lab.add_nef("DSC_0001.NEF");
     let o = run(
@@ -3676,6 +3683,8 @@ fn synced_folders_are_noted() {
             .contains("OneDrive")
     );
     assert!(Lab::json(&run(&["backups"], &elsewhere))["warning"].is_null());
+    let pf = Lab::json(&run(&["preflight", out.to_str().unwrap()], &elsewhere));
+    assert!(pf["backup_warning"].is_null(), "{pf}");
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 

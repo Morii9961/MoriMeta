@@ -1015,12 +1015,9 @@ fn main() -> ExitCode {
                 };
                 let u = retention::usage(&store, &policy).map_err(|e| e.to_string())?;
                 let plan = retention::prune_plan(&u, &policy, now);
-                // SAFETY_MODEL §6.2: backups inside a synced folder are uploaded as well
-                let sync = mm_fs::sync_provider(store.backup_root(), &mm_fs::sync_roots())
-                    .map(|p| format!("the backups are in a {p} folder: every backup is uploaded too; choose a local folder"));
                 println!(
                     "{}",
-                    json!({"total_bytes": u.total_bytes, "volume_bytes": u.volume_bytes, "warning": sync,
+                    json!({"total_bytes": u.total_bytes, "volume_bytes": u.volume_bytes, "warning": u.sync_warning,
                            "ops": u.ops.iter().map(|o| json!({"id": o.op_id, "title": o.title, "bytes": o.bytes,
                                "pruned": o.pruned, "protection": o.protection.map(|p| format!("{p:?}").to_lowercase())})).collect::<Vec<_>>(),
                            "would_prune": plan.iter().map(|(id, why)| json!({"id": id, "reason": format!("{why:?}").to_lowercase()})).collect::<Vec<_>>()})

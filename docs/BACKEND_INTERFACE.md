@@ -29,7 +29,7 @@
 | 保存 Plan | `service::PlanBook::insert` | — | Plan 不可变，带来源（`PlanSource`） |
 | `plan_page` | `PlanBook::page` | — | 按状态筛选，每页 200 行；摘要含警告数 |
 | `plan_exclude` | `PlanBook::exclude` | — | 生成新版本；旧版本只读 |
-| `plan_preflight` | `PlanBook::preflight`（`preflight::preflight`） | `preflight` | 需重扫的条目、备份位置、空间、ExifTool 版本 |
+| `plan_preflight` | `PlanBook::preflight`（`preflight::preflight`） | `preflight` | 需重扫的条目、备份位置、空间、ExifTool 版本；备份位置在同步目录中时 `backup_warning`（只提示，不阻止） |
 | 确认对话框 | `Plan::required_acks`、`PlanBook::confirm_with` | —（`apply --ack`） | 高风险 Plan 缺少必需确认时拒绝；确认项随 Operation 记录 |
 
 ## 3. 执行
@@ -62,7 +62,7 @@
 |---|---|---|---|
 | `presets_*` | `presets::list`、`get`、`save`、`import`、`duplicate`、`delete`；`Preset::lint` | `presets`、`preset-*` | 内置 Preset 只读；导入受大小与数量限制，首次使用标为未信任 |
 | `settings_*` | `settings::KEYS`、`get`、`set` | `settings`、`setting` | 已知键、默认值与校验；未知键拒绝 |
-| `backup_usage` / `prune_plan` | `retention::usage`、`prune_plan`、`prune` | `backups`、`prune`、`keep` | 保留策略来自设置；未完成的 Operation 从不清理 |
+| `backup_usage` / `prune_plan` | `retention::usage`、`prune_plan`、`prune` | `backups`、`prune`、`keep` | 保留策略来自设置；未完成的 Operation 从不清理；备份位置在同步目录中时 `Usage::sync_warning` |
 | 清除只读属性 | `service::clear_read_only` | `clear-readonly` | 仅用户显式操作，写入日志 |
 | ExifTool 完整性 | `service::verify_exiftool`（`Scope::Key` 启动前、`Scope::All` 之后在后台；不一致或缺少清单时自行 `OperationGate::refuse_writes`） | `exiftool-check`、`exiftool-manifest` | SECURITY_MODEL §5；不一致时禁止写入并提示重新安装 |
 | 日志 | `log::init`、`log::set_debug_since` | `debug-log` | 每日文件，7 天 / 50 MB；调试日志 24 小时 |
