@@ -114,7 +114,12 @@ pub struct FileId {
     pub id: [u8; 16],
 }
 
+/// The 128-bit ID where the file system has one (NTFS, ReFS). exFAT and FAT refuse
+/// `FileIdInfo` (ERROR_INVALID_PARAMETER, found on a real exFAT volume in CI): their 64-bit file
+/// index is used instead, so that such files can still be imported, inspected and planned (their
+/// writing is blocked, SAFETY_MODEL §8.4).
 pub fn file_id(f: &File) -> io::Result<FileId> {
+    const ERROR_INVALID_PARAMETER: i32 = 87;
     // SAFETY: `info` is a properly sized, writable FILE_ID_INFO; the handle is valid for `f`'s lifetime.
     unsafe {
         let mut info: FILE_ID_INFO = std::mem::zeroed();
@@ -123,13 +128,27 @@ pub fn file_id(f: &File) -> io::Result<FileId> {
             FileIdInfo,
             &mut info as *mut _ as *mut _,
             std::mem::size_of::<FILE_ID_INFO>() as u32,
-        ) == 0
+        ) != 0
         {
+            return Ok(FileId {
+                volume: info.VolumeSerialNumber,
+                id: info.FileId.Identifier,
+            });
+        }
+        let e = io::Error::last_os_error();
+        if e.raw_os_error() != Some(ERROR_INVALID_PARAMETER) {
+            return Err(e);
+        }
+        let mut bh: BY_HANDLE_FILE_INFORMATION = std::mem::zeroed();
+        if GetFileInformationByHandle(f.as_raw_handle() as HANDLE, &mut bh) == 0 {
             return Err(io::Error::last_os_error());
         }
+        let mut id = [0u8; 16];
+        let index = (u64::from(bh.nFileIndexHigh) << 32) | u64::from(bh.nFileIndexLow);
+        id[..8].copy_from_slice(&index.to_le_bytes());
         Ok(FileId {
-            volume: info.VolumeSerialNumber,
-            id: info.FileId.Identifier,
+            volume: u64::from(bh.dwVolumeSerialNumber),
+            id,
         })
     }
 }
@@ -180,7 +199,13 @@ pub fn reparse_tag(f: &File) -> io::Result<u32> {
             std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
         ) == 0
         {
-            return Err(io::Error::last_os_error());
+            let e = io::Error::last_os_error();
+            // a file system without this class (FAT, exFAT) has no reparse points either
+            return if e.raw_os_error() == Some(87) {
+                Ok(0)
+            } else {
+                Err(e)
+            };
         }
         Ok(if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             info.ReparseTag
