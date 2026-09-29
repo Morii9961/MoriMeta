@@ -80,6 +80,7 @@ impl Lab {
             script: Some(pkg.join("exiftool_files").join("exiftool.pl")),
             cwd: run.join("exiftool-cwd"),
             temp: run.join("tmp"),
+            max_output: mm_exiftool::MAX_OUTPUT,
         };
         std::fs::create_dir_all(&cfg.cwd).unwrap();
         std::fs::create_dir_all(&cfg.temp).unwrap();

@@ -32,6 +32,11 @@ impl KillSwitch {
     }
 }
 
+/// A command that ran out of time (the session is restarted).
+const TIMED_OUT: &str = "ExifTool timed out";
+/// A command whose output passed the session's limit (the session is restarted).
+const TOO_LARGE: &str = "ExifTool's output for it is abnormally large: not read";
+
 /// Files per ExifTool read command (ARCHITECTURE §6.1: 100–200).
 const READ_CHUNK: usize = 100;
 
@@ -209,7 +214,8 @@ impl Engine {
     pub fn exec(&mut self, cmd: &Command, timeout: Duration) -> Result<Output, CoreError> {
         let t = std::time::Instant::now();
         let r = self.session()?.execute(cmd, timeout).map_err(|e| match e {
-            EngineError::Timeout { .. } => CoreError::Engine("ExifTool timed out".into()),
+            EngineError::Timeout { .. } => CoreError::Engine(TIMED_OUT.into()),
+            EngineError::OutputTooLarge => CoreError::Engine(TOO_LARGE.into()),
             other => CoreError::Engine(other.to_string()),
         });
         if crate::log::debug_on() {
@@ -316,8 +322,27 @@ impl Engine {
         Ok(results)
     }
 
-    /// One ExifTool command for up to 100 files, results matched by `SourceFile`.
+    /// One ExifTool command for up to 100 files, results matched by `SourceFile`. When the command
+    /// runs out of time or its output is too large, the files are read one by one, so that one
+    /// abnormal file (a huge XMP packet, a file that makes ExifTool hang) is reported as not read
+    /// and the others are read (SECURITY_MODEL T-15, T-17) instead of failing them all.
     fn read_chunk(&mut self, chunk: &[PathBuf]) -> ChunkResult {
+        match self.read_chunk_once(chunk) {
+            Err(CoreError::Engine(e)) if e == TOO_LARGE || e == TIMED_OUT => {
+                if chunk.len() == 1 {
+                    return Ok(vec![Err(e)]);
+                }
+                let mut out = Vec::with_capacity(chunk.len());
+                for p in chunk {
+                    out.extend(self.read_chunk(std::slice::from_ref(p))?);
+                }
+                Ok(out)
+            }
+            other => other,
+        }
+    }
+
+    fn read_chunk_once(&mut self, chunk: &[PathBuf]) -> ChunkResult {
         let mut c = Command::read_json();
         c.push(Line::option("-G1"));
         numeric_gps_then_all(&mut c);

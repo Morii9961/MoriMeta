@@ -79,7 +79,7 @@
 | 每条命令使用新的随机 64 位 ID 作为 `-execute`/`-echo4` 终止标记，只接受当前 ID；文件内容中的 `{ready…}` 被当作数据 | S1 R3 |
 | **永不使用** `<`/`<=` 复制与重定向语法承载任何用户数据（Perl 表达式插值） | F-07 |
 | **永不使用** 的选项：`-if`、`-p`、`-fileNUM`、`-api filter`/`filterw`、`-userParam`、`-ee`、`-geotag`/`-geosync`/`-geotime`（v1 GPX 同步需单独设计）、`-overwrite_original*`、`-srcfile` 指向计划外文件、`-config` 非空 | F-06（CVE-2026-7580 经 `-ee`）、F-07 |
-| 读取 JSON 输出时使用 `-api StructFormat=JSONQ`，严格解析并设大小上限（单文件输出 > 16 MB 视为异常） | DoS；默认 JSON 会把字符串转成数字/布尔值（S1） |
+| 读取 JSON 输出时使用 `-api StructFormat=JSONQ`，严格解析并设大小上限（单文件输出 > 16 MB 视为异常）。实现（2026-09-29）：上限按命令计（一次读取 100 个文件，256 MB，`EngineConfig::max_output`）；一次读取因输出过大或超时失败时逐个文件重读，只有异常的文件记为"未读取"，其余照常（此前整批失败，一个异常文件会让整个 Plan 与 Library 扫描失败；本机实测 270 MB XMP 的文件）。异常文件被读两次，每次约 1 分钟 | DoS；默认 JSON 会把字符串转成数字/布尔值（S1） |
 
 ### 4.3 永久禁止写入的标签（即使在 Advanced 模式）
 

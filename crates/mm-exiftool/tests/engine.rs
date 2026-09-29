@@ -46,6 +46,7 @@ fn config(pkg: &Path, mode: &str, dir: &Path) -> EngineConfig {
             script: Some(pkg.join("exiftool_files/exiftool.pl")),
             cwd,
             temp,
+            max_output: mm_exiftool::MAX_OUTPUT,
         },
         _ => {
             let exe = pkg.join("exiftool.exe");
@@ -57,6 +58,7 @@ fn config(pkg: &Path, mode: &str, dir: &Path) -> EngineConfig {
                 script: None,
                 cwd,
                 temp,
+                max_output: mm_exiftool::MAX_OUTPUT,
             }
         }
     }

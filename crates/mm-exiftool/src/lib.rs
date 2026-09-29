@@ -9,4 +9,4 @@ pub mod encode;
 pub mod session;
 
 pub use encode::{ArgError, Command, Line, TagName, ValueError, check_value, xml_value};
-pub use session::{EngineConfig, EngineError, Output, Session, Terminator};
+pub use session::{EngineConfig, EngineError, MAX_OUTPUT, Output, Session, Terminator};

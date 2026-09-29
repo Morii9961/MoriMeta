@@ -153,18 +153,26 @@ fn engine_config(g: &Global) -> Result<EngineConfig, String> {
     let temp = run.join("tmp");
     std::fs::create_dir_all(&cwd).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
+    // tests lower the output limit to exercise it without huge files (fault injection only)
+    let max_output = std::env::var("MM_MAX_OUTPUT")
+        .ok()
+        .filter(|_| std::env::var("MM_FAULT_INJECTION").as_deref() == Ok("1"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(mm_exiftool::MAX_OUTPUT);
     match g.engine.as_str() {
         "perl" => Ok(EngineConfig {
             program: pkg.join("exiftool_files").join("perl.exe"),
             script: Some(pkg.join("exiftool_files").join("exiftool.pl")),
             cwd,
             temp,
+            max_output,
         }),
         "launcher" => Ok(EngineConfig {
             program: pkg.join("exiftool.exe"),
             script: None,
             cwd,
             temp,
+            max_output,
         }),
         other => Err(format!("unknown engine mode {other}")),
     }

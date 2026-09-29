@@ -5823,6 +5823,83 @@ fn photos_on_a_network_share_through_write_crash_and_undo() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// SECURITY_MODEL T-15 / T-17: one file whose metadata output is abnormally large (a huge XMP
+/// packet) failed the whole read of its chunk, so the Plan (and the Library scan) of every file
+/// selected with it failed. Now that file alone is reported as not read and the others are
+/// planned, listed and written. The output limit (256 MB) is lowered for the test.
+#[test]
+fn one_file_with_abnormally_large_metadata_does_not_stop_the_others() {
+    let pkg = require!();
+    let lab = Lab::new("toolarge", &pkg);
+    let big = lab.dir.join("photos").join("big.jpg");
+    std::fs::copy(&lab.photos[2], &big).unwrap();
+    let text = lab.dir.join("desc.txt");
+    std::fs::write(&text, "A".repeat(3_000_000)).unwrap();
+    // the pinned ExifTool itself, on this lab copy only
+    let made = Command::new(pkg.join("exiftool.exe"))
+        .args(["-config", "", "-overwrite_original"])
+        .arg(format!("-XMP-dc:Description<={}", text.display()))
+        .arg(&big)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let before = blake(&big);
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_mm-cli"))
+            .env("MM_FAULT_INJECTION", "1")
+            .env("MM_MAX_OUTPUT", "1000000")
+            .arg("--data")
+            .arg(&lab.data)
+            .arg("--exiftool")
+            .arg(&lab.pkg)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let mut files: Vec<String> = vec![big.to_string_lossy().into_owned()];
+    files.extend(lab.photos.iter().map(|p| p.to_string_lossy().into_owned()));
+    let plan = lab.dir.join("p.json");
+    let mut args = vec![
+        "plan-creator",
+        "--set",
+        "Morii",
+        "--out",
+        plan.to_str().unwrap(),
+    ];
+    args.extend(files.iter().map(String::as_str));
+    let o = run(&args);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let pj = Lab::json(&o);
+    let entries = pj["entries"].as_array().unwrap();
+    assert_eq!(entries[0]["status"]["status"], "blocked", "{pj}");
+    assert!(entries[0].to_string().contains("abnormally large"), "{pj}");
+    let ready = entries
+        .iter()
+        .filter(|e| e["status"]["status"] == "ready")
+        .count();
+    assert!(ready >= 6, "{pj}");
+
+    let mut args = vec!["rows"];
+    args.extend(files.iter().map(String::as_str));
+    let rows = Lab::json(&run(&args));
+    let rows = rows["rows"].as_array().unwrap();
+    assert!(
+        rows[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("abnormally large")
+    );
+    assert!(rows[1..].iter().all(|r| r["error"].is_null()), "{rows:?}");
+
+    let a = run(&["apply", plan.to_str().unwrap()]);
+    assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stdout));
+    assert_eq!(blake(&big), before);
+    let op = Lab::json(&a)["op_id"].as_str().unwrap().to_owned();
+    lab.undo(&op);
+    lab.assert_all_original();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {

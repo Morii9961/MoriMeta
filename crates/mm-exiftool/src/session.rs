@@ -31,8 +31,9 @@ use crate::encode::Command;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_SUSPENDED: u32 = 0x0000_0004;
-/// Output above this size is treated as abnormal (SECURITY_MODEL §4.2).
-const MAX_OUTPUT: usize = 256 << 20;
+/// Output of one command above this size is treated as abnormal (SECURITY_MODEL §4.2); the
+/// default of [`EngineConfig::max_output`].
+pub const MAX_OUTPUT: usize = 256 << 20;
 
 /// How to start ExifTool (ARCHITECTURE ADR-03; the choice between A and B is D-17).
 #[derive(Debug, Clone)]
@@ -45,6 +46,9 @@ pub struct EngineConfig {
     pub cwd: PathBuf,
     /// Private TEMP/TMP.
     pub temp: PathBuf,
+    /// Output of one command above this many bytes ends it as abnormal ([`MAX_OUTPUT`]; lower
+    /// only in tests).
+    pub max_output: usize,
 }
 
 #[derive(Debug)]
@@ -251,6 +255,7 @@ fn spawn_reader(
     prefix: &'static [u8],
     with_status: bool,
     expected: Arc<AtomicU64>,
+    max_output: usize,
 ) {
     thread::spawn(move || {
         let mut buf: Vec<u8> = Vec::with_capacity(1 << 16);
@@ -283,7 +288,7 @@ fn spawn_reader(
             }
             // a terminator is < 64 bytes; rescan only the tail next time
             scan_from = buf.len().saturating_sub(64);
-            if buf.len() > MAX_OUTPUT {
+            if buf.len() > max_output {
                 let _ = tx.send(Frame::TooLarge);
                 buf.clear();
                 scan_from = 0;
@@ -385,6 +390,7 @@ impl Session {
             b"{ready",
             false,
             expected.clone(),
+            cfg.max_output,
         );
         spawn_reader(
             child.stderr.take().expect("piped stderr"),
@@ -392,6 +398,7 @@ impl Session {
             b"{mm-end:",
             true,
             expected.clone(),
+            cfg.max_output,
         );
         Ok(Session {
             child,
