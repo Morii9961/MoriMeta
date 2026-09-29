@@ -5965,6 +5965,19 @@ fn recovery_waits_for_a_backup_location_that_is_not_connected() {
     // reporting every backup as missing or damaged
     let done = lab.apply_ok(&lab.plan("Mori", "r.json"));
     std::fs::rename(&ext, &away).unwrap();
+    let h = Lab::json(&lab.cli(&["history"]));
+    let row = h
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["id"] == done.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (row["backups_unavailable"].clone(), row["undoable"].clone()),
+        (serde_json::json!(true), serde_json::json!(false)),
+        "{row}"
+    );
     for args in [
         vec!["plan-undo", done.as_str(), "--out", "u.json"],
         vec!["restore-to", done.as_str(), "--dir", "restored"],

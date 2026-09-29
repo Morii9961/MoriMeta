@@ -29,6 +29,9 @@ pub struct OpSummary {
     pub changes: usize,
     pub keep: bool,
     pub backups_pruned: bool,
+    /// The backup folder is not where the Operation recorded it (a drive that is not connected):
+    /// Undo and "Restore to folder" wait for it.
+    pub backups_unavailable: bool,
     /// Whether an undo Plan can be made now (not running, not interrupted, backups present).
     pub undoable: bool,
     /// Files stopped while they were being written (their temporary output discarded, the
@@ -86,6 +89,7 @@ fn summarize(
         })
         .sum();
     let pending = matches!(o.status.as_str(), "running" | "interrupted");
+    let unavailable = o.pruned_ms.is_none() && !std::path::Path::new(&o.backup_dir).is_dir();
     Ok(OpSummary {
         id: o.id.clone(),
         kind: o.kind.clone(),
@@ -104,7 +108,9 @@ fn summarize(
         changes,
         keep: o.keep,
         backups_pruned: o.pruned_ms.is_some(),
+        backups_unavailable: unavailable,
         undoable: !pending
+            && !unavailable
             && o.pruned_ms.is_none()
             && files.iter().any(|f| f.state == FileState::Done),
         warnings: files

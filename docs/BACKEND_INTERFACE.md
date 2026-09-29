@@ -46,7 +46,7 @@
 
 | 命令 | mm-core | mm-cli | 说明 |
 |---|---|---|---|
-| `history_list(page)` | `history::list` | `history` | 文件数、修改数、状态计数、撤销链接、保留/已清理、可撤销、回滚数、警告数 |
+| `history_list(page)` | `history::list` | `history` | 文件数、修改数、状态计数、撤销链接、保留/已清理、可撤销、回滚数、警告数；备份文件夹不在（硬盘未连接）时 `backups_unavailable`，不可撤销 |
 | `op_detail(id)` | `history::detail`、`now_vs_after` | `show`、`now` | 逐文件前后值；当前 vs 执行后（按页请求；未下载占位符为 `not_downloaded`，不读取） |
 | 导出日志 | `history::export_view`、`export_log` | `export-log` | 默认脱敏 |
 | `op_undo_plan(id, scope)` | `undo::plan_undo`（`is_forced`） | `plan-undo` | 冲突文件默认排除，可强制恢复；选定文件 = `PlanBook::exclude` |
