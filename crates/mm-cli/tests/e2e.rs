@@ -6247,6 +6247,66 @@ fn attributes_and_data_streams_survive_write_and_undo() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// SECURITY_MODEL T-01 / T-02: file names that ExifTool would read as options or comments if
+/// they reached it as bare arguments (`-o.jpg`, `#1.jpg`, `-execute.jpg`, `@args.jpg`, a Unicode
+/// minus) go through planning, writing, verification and undo as ordinary files: each gets its
+/// own result, nothing else is created, and undo restores every byte.
+#[test]
+fn option_like_file_names_are_ordinary_files() {
+    let pkg = require!();
+    let lab = Lab::new("option-names", &pkg);
+    let dir = lab.photos[0].parent().unwrap().to_path_buf();
+    let names = [
+        "-o.jpg",
+        "#1.jpg",
+        "-execute.jpg",
+        "@args.jpg",
+        "\u{2212}x.jpg",
+        "-overwrite_original.jpg",
+    ];
+    let mut files: Vec<PathBuf> = names.iter().map(|n| dir.join(n)).collect();
+    for f in &files {
+        std::fs::copy(&lab.photos[1], f).unwrap();
+    }
+    let nef = dir.join("-P.NEF");
+    std::fs::copy(timages().join("Nikon.nef"), &nef).unwrap();
+    files.push(nef.clone());
+    let before: Vec<Vec<u8>> = files.iter().map(|f| std::fs::read(f).unwrap()).collect();
+    let listing = || {
+        let mut v: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    };
+    let start = listing();
+
+    let refs: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
+    let (p, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &refs, "p.json");
+    let entries = pj["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), files.len(), "{pj}");
+    assert!(
+        entries.iter().all(|e| e["status"]["status"] == "ready"),
+        "{pj}"
+    );
+    let a = Lab::json(&lab.cli(&["apply", p.to_str().unwrap()]));
+    let done: Vec<&Value> = a["files"].as_array().unwrap().iter().collect();
+    assert_eq!(done.len(), files.len(), "{a}");
+    assert!(done.iter().all(|f| f["state"] == "done"), "{a}");
+    let mut with_sidecar = start.clone();
+    with_sidecar.push("-P.xmp".into());
+    with_sidecar.sort();
+    assert_eq!(listing(), with_sidecar);
+    let op = a["op_id"].as_str().unwrap().to_owned();
+    lab.undo(&op);
+    for (f, b) in files.iter().zip(&before) {
+        assert_eq!(&std::fs::read(f).unwrap(), b, "{}", f.display());
+    }
+    assert_eq!(listing(), start);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
