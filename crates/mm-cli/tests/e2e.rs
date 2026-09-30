@@ -6186,6 +6186,60 @@ fn a_jpeg_with_its_own_xmp_sidecar_is_noted() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// What NTFS keeps beside a file's data survives a write and its undo: the hidden and
+/// compressed attributes, and alternate data streams such as the mark of the web
+/// (`Zone.Identifier`, which Windows uses to warn about downloaded files) and a stream another
+/// program added. ReplaceFileW carries them over from the replaced file.
+#[test]
+fn attributes_and_data_streams_survive_write_and_undo() {
+    use std::os::windows::fs::MetadataExt;
+    let pkg = require!();
+    let lab = Lab::new("streams", &pkg);
+    let (hidden, packed) = (&lab.photos[1], &lab.photos[2]);
+    let ok = Command::new("attrib")
+        .arg("+H")
+        .arg(hidden)
+        .status()
+        .unwrap();
+    assert!(ok.success());
+    let ok = Command::new("compact")
+        .arg("/c")
+        .arg(packed)
+        .output()
+        .unwrap();
+    assert!(ok.status.success(), "{ok:?}");
+    let zone = format!("{}:Zone.Identifier", hidden.display());
+    std::fs::write(&zone, "[ZoneTransfer]\r\nZoneId=3\r\n").unwrap();
+    let note = format!("{}:other.program", packed.display());
+    std::fs::write(&note, "kept").unwrap();
+    let attrs = |p: &Path| std::fs::metadata(p).unwrap().file_attributes();
+    const HIDDEN: u32 = 0x2;
+    const COMPRESSED: u32 = 0x800;
+    let check = |when: &str| {
+        assert!(attrs(hidden) & HIDDEN != 0, "{when}: hidden");
+        assert!(attrs(packed) & COMPRESSED != 0, "{when}: compressed");
+        assert_eq!(
+            std::fs::read_to_string(&zone).unwrap(),
+            "[ZoneTransfer]\r\nZoneId=3\r\n",
+            "{when}"
+        );
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), "kept", "{when}");
+    };
+    let (p, _) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[hidden, packed],
+        "p.json",
+    );
+    let op = lab.apply_ok(&p);
+    assert_ne!(blake(hidden).as_deref(), Some(lab.truth[hidden].as_str()));
+    check("after the write");
+    lab.undo(&op);
+    lab.assert_all_original();
+    check("after the undo");
+    let _ = Command::new("attrib").arg("-H").arg(hidden).status();
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
