@@ -131,4 +131,5 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - Needs a dedicated sync folder (not the user's own): real Cloud Files placeholders and downloaded cloud files end to end, sync-client upload / conflict copies / "free up space" around a new or undone sidecar (SAFETY_MODEL §8.3).
 - Library scan and planning read every tag; restricting them to SCAN_TAGS saves about a quarter of ExifTool time on NEFs (measured on 90 reads) but risks missing a source tag: decide in S4.
 - A file that makes ExifTool hang is now read alone after the chunk times out (like an oversize one), but no hanging file was found to test with; the timeout path is covered only by the oversize case.
+- Seen once (2026-09-30): under the full test suite's parallel load one regression write of Google.jpg hit the 30 s write timeout ("ExifTool timed out"; original unchanged); it passed alone and in a rerun of the full suite. Write timeouts are initial values for S4 to calibrate; watch CI for repeats.
 - Waiting on decisions: message codes for a translated UI (inventory in docs/MESSAGE_INVENTORY.md), Clean Export (D-15), time-zone correction (D-18), updates (D-2/D-4).
