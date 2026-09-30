@@ -5463,19 +5463,26 @@ fn long_unicode_paths_through_write_crash_and_undo() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
-/// SAFETY_MODEL A-1 / §8.4: a USB drive Windows reports as a fixed disk may be exFAT, which keeps
-/// no journal and is not verified for writing in place. JPEG and NEF (new sidecar) there are
-/// Blocked with the file system named, and "Needs attention" lists them. Needs an exFAT test
-/// volume (`MM_E2E_EXFAT_VOLUME`; CI mounts one).
+/// The same on FAT32 (memory cards, older USB sticks): no 128-bit file IDs either (RESEARCH_NOTES
+/// F-106). Needs a FAT32 test volume (`MM_E2E_FAT32_VOLUME`; CI mounts one).
 #[test]
-fn files_on_an_exfat_drive_are_not_written() {
+fn files_on_a_fat32_drive_are_not_written() {
     let pkg = require!();
-    let Some(vol) = std::env::var_os("MM_E2E_EXFAT_VOLUME").map(PathBuf::from) else {
-        eprintln!("SKIP: MM_E2E_EXFAT_VOLUME not set (needs an exFAT test volume)");
-        return;
+    if let Some((lab, dir)) = not_written_on("MM_E2E_FAT32_VOLUME", "FAT32", &pkg) {
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&lab.dir);
+    }
+}
+
+/// A JPEG and a NEF on the test volume named by `var` (file system `fs`): planned as Blocked with
+/// the file system named, listed by "Needs attention" and the Library rows, and left unchanged.
+fn not_written_on(var: &str, fs: &str, pkg: &Path) -> Option<(Lab, PathBuf)> {
+    let Some(vol) = std::env::var_os(var).map(PathBuf::from) else {
+        eprintln!("SKIP: {var} not set (needs a {fs} test volume)");
+        return None;
     };
-    let lab = Lab::new("exfat", &pkg);
-    let dir = vol.join(format!("mm-e2e-exfat-{}", std::process::id()));
+    let lab = Lab::new(&format!("fs-{fs}"), pkg);
+    let dir = vol.join(format!("mm-e2e-{fs}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let jpg = dir.join("Canon.jpg");
@@ -5487,12 +5494,33 @@ fn files_on_an_exfat_drive_are_not_written() {
     let (_, pj) = lab.plan_on(&["plan-creator", "--set", "Morii"], &[&jpg, &nef], "x.json");
     for e in pj["entries"].as_array().unwrap() {
         assert_eq!(e["status"]["status"], "blocked", "{pj}");
-        assert!(e.to_string().contains("on a drive formatted exFAT"), "{pj}");
+        assert!(
+            e.to_string()
+                .contains(&format!("on a drive formatted {fs}")),
+            "{pj}"
+        );
     }
     let att = Lab::json(&lab.cli(&["attention", jpg.to_str().unwrap(), nef.to_str().unwrap()]));
     assert_eq!(att["other_file_system"], serde_json::json!([0, 1]), "{att}");
+    let rows = Lab::json(&lab.cli(&["rows", jpg.to_str().unwrap(), nef.to_str().unwrap()]));
+    for r in rows["rows"].as_array().unwrap() {
+        assert!(r["error"].is_null(), "{rows}");
+    }
     assert_eq!(blake(&jpg), before);
     assert!(!nef.with_extension("xmp").exists());
+    Some((lab, dir))
+}
+
+/// SAFETY_MODEL A-1 / §8.4: a USB drive Windows reports as a fixed disk may be exFAT, which keeps
+/// no journal and is not verified for writing in place. JPEG and NEF (new sidecar) there are
+/// Blocked with the file system named, and "Needs attention" lists them. Needs an exFAT test
+/// volume (`MM_E2E_EXFAT_VOLUME`; CI mounts one).
+#[test]
+fn files_on_an_exfat_drive_are_not_written() {
+    let pkg = require!();
+    let Some((lab, dir)) = not_written_on("MM_E2E_EXFAT_VOLUME", "exFAT", &pkg) else {
+        return;
+    };
 
     // RESEARCH_NOTES F-105 on a drive without 8.3 names (exFAT keeps none): an ExifTool package
     // in a folder outside the code page is refused with the reason, not a Perl error
