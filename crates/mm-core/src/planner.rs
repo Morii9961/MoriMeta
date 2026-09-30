@@ -499,6 +499,44 @@ pub(crate) enum Policy {
     Unsupported,
 }
 
+/// A JPEG with an XMP file of the same name next to it and no RAW of that name (which would own
+/// the XMP): some programs keep a JPEG's metadata in such a sidecar and read it before the file.
+/// MoriMeta writes into the JPEG and leaves the sidecar alone, so those programs may keep
+/// showing the sidecar's values; the Preview says so.
+fn jpeg_sidecar_note(
+    path: &Path,
+    folders: &mut HashMap<PathBuf, HashSet<String>>,
+) -> Option<String> {
+    let dir = path.parent()?;
+    let stem = path.file_stem()?.to_string_lossy().to_lowercase();
+    let names = folders.entry(dir.to_path_buf()).or_insert_with(|| {
+        std::fs::read_dir(dir)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    let sidecar = format!("{stem}.xmp");
+    if !names.contains(&sidecar) {
+        return None;
+    }
+    let raw_owner = names.iter().any(|n| {
+        n.rsplit_once('.').is_some_and(|(s, e)| {
+            s == stem && (SIDECAR_RAW.contains(&e) || READ_ONLY_PHOTOS.contains(&e))
+        })
+    });
+    (!raw_owner).then(|| {
+        format!(
+            "{WARNING}an XMP sidecar of the same name is next to this JPEG (from another program): \
+             MoriMeta writes into the JPEG and leaves the sidecar unchanged, so programs that read \
+             the sidecar may still show its values",
+            WARNING = mm_domain::plan::WARNING
+        )
+    })
+}
+
 /// ExifTool names a file's format from its content. A file whose content is another format than
 /// its extension says (a text file named `.jpg`) is not planned: the Preview would show a write
 /// that verification refuses anyway (V1).
@@ -668,6 +706,8 @@ fn plan_with(
     let mut pending: Vec<Pending> = Vec::new();
     let mut volumes: HashMap<PathBuf, VolumeKind> = HashMap::new();
     let mut file_systems: HashMap<PathBuf, Option<String>> = HashMap::new();
+    // lower-cased names per folder, for the sidecars of JPEGs (listed once per folder)
+    let mut folders: HashMap<PathBuf, HashSet<String>> = HashMap::new();
     let sync_roots = mm_fs::sync_roots();
     for (i, input) in inputs.iter().enumerate() {
         if i % PROGRESS_EVERY == 0 {
@@ -697,6 +737,11 @@ fn plan_with(
                 }
             }
             Policy::Embedded | Policy::OwnSidecar => {
+                if matches!(policy(&path), Policy::Embedded)
+                    && let Some(note) = jpeg_sidecar_note(&path, &mut folders)
+                {
+                    entry.notes.push(note);
+                }
                 if !seen.insert(fp_in.file_id.clone()) {
                     continue; // same file through another path, or already a RAW's sidecar
                 }

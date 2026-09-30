@@ -72,6 +72,7 @@
 | sidecar 扩展名大小写不同（`.XMP`） | 使用已存在的文件名，不新建第二个。 |
 | 同目录同 basename 有多个 RAW | sidecar 归属歧义 → `Blocked(AmbiguousSidecar)`。 |
 | `DSC_0001.NEF` + `DSC_0001.JPG` | 不冲突：JPEG 写入自身，`.xmp` 归属 NEF。 |
+| 仅 `IMG_0001.JPG` + `IMG_0001.xmp`（其他软件为 JPEG 写的 sidecar） | JPEG 写入自身，sidecar 不读不写；Preview 警告：读取 sidecar 的软件可能仍显示其中的值（2026-09-29，e2e `a_jpeg_with_its_own_xmp_sidecar_is_noted`）。是否读取这类 sidecar 的值作为有效值未定。 |
 | `DSC_0001.NEF.xmp`（darktable） | 识别并只读；不写入 [F-43]。 |
 | `DSC_0001.acr`（Lightroom Classic 15+） | 从不读写、移动或删除 [F-41]。 |
 | sidecar 是符号链接 / 多硬链接 / 只读 | 同主文件规则（§8）。 |

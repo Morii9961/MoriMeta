@@ -6116,6 +6116,48 @@ fn a_file_that_warns_when_read_is_flagged_in_the_preview() {
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
+/// A JPEG with an XMP file of the same name next to it (some programs keep a JPEG's metadata in
+/// such a sidecar): MoriMeta writes into the JPEG and leaves the sidecar alone, and the Preview
+/// says that programs reading the sidecar may still show its values. With a RAW of that name the
+/// XMP belongs to the RAW (SAFETY_MODEL §3.1) and the JPEG gets no such note.
+#[test]
+fn a_jpeg_with_its_own_xmp_sidecar_is_noted() {
+    let pkg = require!();
+    let lab = Lab::new("jpeg-xmp", &pkg);
+    let dir = lab.photos[0].parent().unwrap().to_path_buf();
+    let alone = dir.join("IMG_0001.JPG");
+    std::fs::copy(&lab.photos[1], &alone).unwrap();
+    let sidecar = dir.join("IMG_0001.xmp");
+    std::fs::copy(timages().join("XMP.xmp"), &sidecar).unwrap();
+    let paired = dir.join("DSC_0002.JPG");
+    std::fs::copy(&lab.photos[2], &paired).unwrap();
+    lab.add_nef("DSC_0002.NEF");
+    std::fs::copy(timages().join("XMP.xmp"), dir.join("DSC_0002.xmp")).unwrap();
+    let side_before = blake(&sidecar);
+
+    let (p, pj) = lab.plan_on(
+        &["plan-creator", "--set", "Morii"],
+        &[&alone, &paired],
+        "p.json",
+    );
+    assert!(
+        pj["entries"][0]["notes"]
+            .to_string()
+            .contains("XMP sidecar of the same name"),
+        "{pj}"
+    );
+    assert!(
+        !pj["entries"][1]["notes"]
+            .to_string()
+            .contains("XMP sidecar of the same name"),
+        "{pj}"
+    );
+    let op = lab.apply_ok(&p);
+    assert_eq!(blake(&sidecar), side_before, "the sidecar is left alone");
+    lab.undo(&op);
+    let _ = std::fs::remove_dir_all(&lab.dir);
+}
+
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap() {
