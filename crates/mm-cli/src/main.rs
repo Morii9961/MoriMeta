@@ -29,7 +29,9 @@
 //!   exiftool-check [--full] [--manifest FILE]   the package against its manifest (default
 //!                             <package>/exiftool.manifest); write commands check the key files
 //!                             first whenever the package has a manifest
-//!   settings                  every known setting with its value, default and meaning
+//!   settings [--reset]        every known setting with its value, default and meaning
+//!                             (--reset: all back to their defaults first)
+//!   migrations                schema migrations of this data folder, with the copy taken before
 //!   setting KEY [VALUE | --clear]   checked before it is kept; unknown keys are refused   e.g. backup.max_age_days, backup.max_share_of_volume,
 //!                             backup.keep_latest (the retention policy, SAFETY_MODEL §6.3),
 //!                             backup.root (where new Operations keep their backups)
@@ -773,7 +775,19 @@ fn main() -> ExitCode {
                 );
                 Ok(ExitCode::SUCCESS)
             }
+            "migrations" => {
+                let out: Vec<Value> = store
+                    .migrations()
+                    .into_iter()
+                    .map(|(ms, what)| json!({"at_ms": ms, "what": what}))
+                    .collect();
+                println!("{}", Value::Array(out));
+                Ok(ExitCode::SUCCESS)
+            }
             "settings" => {
+                if take_flag(&mut args, "--reset") {
+                    mm_core::settings::reset_all(&mut store).map_err(|e| e.to_string())?;
+                }
                 let mut out = Vec::new();
                 for k in mm_core::settings::KEYS {
                     out.push(json!({"key": k.name, "value": store.setting(k.name).map_err(|e| e.to_string())?,

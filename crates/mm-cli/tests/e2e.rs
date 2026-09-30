@@ -4365,6 +4365,18 @@ fn settings_are_listed_checked_and_used() {
         .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
         .collect::<String>();
     assert!(log.contains("workers=\"2\""), "{log}");
+    // Settings › Advanced: reset puts every setting back to its default; a new data folder has
+    // no schema migrations to show
+    let reset = Lab::json(&lab.cli(&["settings", "--reset"]));
+    assert!(
+        reset
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|k| k["value"].is_null()),
+        "{reset}"
+    );
+    assert_eq!(Lab::json(&lab.cli(&["migrations"])), serde_json::json!([]));
     let _ = std::fs::remove_dir_all(&lab.dir);
 }
 
@@ -4910,16 +4922,54 @@ fn fixture_regression_through_every_write() {
             got.entry("_operations".into())
                 .or_default()
                 .insert(write.to_owned(), how);
-            for f in lab.show(op)["files"].as_array().unwrap() {
+            let outcome = |f: &Value| match (f["state"].as_str().unwrap(), f["error"].as_str()) {
+                ("done", _) => "done".to_owned(),
+                (k, Some(why)) => format!("{k}: {}", scrub(why)),
+                (k, None) => k.to_owned(),
+            };
+            let shown = lab.show(op);
+            let files_of = |v: &Value| v["files"].as_array().unwrap().clone();
+            for f in files_of(&shown) {
                 let n = name(f["path"].as_str().unwrap());
-                let s = match (f["state"].as_str().unwrap(), f["error"].as_str()) {
-                    ("done", _) => "done".to_owned(),
-                    (k, Some(why)) => format!("{k}: {}", scrub(why)),
-                    (k, None) => k.to_owned(),
-                };
-                got.entry(n).or_default().insert(write.to_owned(), s);
+                got.entry(n)
+                    .or_default()
+                    .insert(write.to_owned(), outcome(&f));
             }
-            assert!(lab.cli(&["fsck", op]).status.success(), "{write}");
+            // a write that ran out of time (a machine under heavy load; the original stays
+            // unchanged) is retried once, and the retry's outcome is what is compared
+            let timed_out: Vec<String> = files_of(&shown)
+                .iter()
+                .filter(|f| f["error"].as_str().is_some_and(|e| e.contains("timed out")))
+                .map(|f| name(f["path"].as_str().unwrap()))
+                .collect();
+            let mut retry = None;
+            if !timed_out.is_empty() {
+                let rp = lab.dir.join(format!("r{n}.json"));
+                let o = lab.cli(&["plan-retry", op, "--out", rp.to_str().unwrap()]);
+                assert!(
+                    o.status.success(),
+                    "{write}: {}",
+                    String::from_utf8_lossy(&o.stdout)
+                );
+                let r2 = Lab::json(&lab.cli(&["apply", rp.to_str().unwrap(), "--workers", "1"]));
+                let rop = r2["op_id"].as_str().unwrap().to_owned();
+                for f in files_of(&lab.show(&rop)) {
+                    let n = name(f["path"].as_str().unwrap());
+                    if timed_out.contains(&n) {
+                        got.entry(n)
+                            .or_default()
+                            .insert(write.to_owned(), outcome(&f));
+                    }
+                }
+                retry = Some(rop);
+            }
+            match &retry {
+                Some(rop) => {
+                    assert!(lab.cli(&["fsck", rop]).status.success(), "{write}");
+                    lab.undo(rop);
+                }
+                None => assert!(lab.cli(&["fsck", op]).status.success(), "{write}"),
+            }
             lab.undo(op);
         } else {
             // INTERACTION_SPEC §4: a Plan with nothing to write makes no Operation

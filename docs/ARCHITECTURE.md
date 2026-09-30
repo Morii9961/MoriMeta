@@ -414,6 +414,8 @@ struct UserFacingError {
 
 降级：检测到数据库版本高于应用 → 拒绝写操作，提示安装新版本；不自动降级数据。
 
+实现状态（2026-09-30）：设置与 Preset 在 SQLite 中（schema v3 起），没有单独的 settings.json。已有数据库升级前以 `VACUUM INTO` 复制为 `<data>/db/morimeta.v<旧版本>-<时间>.sqlite`，并在 `<data>/db/migrations.txt` 追加一行（时间、版本、副本名），`Store::migrations()` 供设置 › 高级显示（此前升级不留副本也不记录）。数据库版本高于应用时 `Store::open` 拒绝打开（`NewerSchema`），整个应用不读也不写。有未完成 Operation 时的迁移：现有迁移只增加列与表，恢复所需的列都不变，迁移后照常恢复。
+
 ---
 
 ## 12. 日志

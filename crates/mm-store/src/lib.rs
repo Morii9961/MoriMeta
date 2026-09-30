@@ -19,6 +19,10 @@ pub use mlog::{ImportReport, MANIFEST_LOG, PLAN_FILE};
 
 pub const SCHEMA_VERSION: i32 = 5;
 
+/// Record of the schema migrations of this data folder, one line each: time (ms), versions, and
+/// the copy of the database taken before it (in `<data>/db`).
+pub const MIGRATIONS: &str = "migrations.txt";
+
 /// Every backup location an Operation has used, one per line, in the data folder but outside the
 /// database: the location setting lives in the database, so a lost database would otherwise be
 /// rebuilt from the default location only, and the Operations kept elsewhere would vanish from
@@ -312,6 +316,26 @@ impl Store {
         if v > SCHEMA_VERSION {
             return Err(StoreError::NewerSchema(v));
         }
+        // ARCHITECTURE §11: an existing database is copied before it is migrated, and every
+        // migration is recorded (Settings › Advanced shows the record)
+        if (1..SCHEMA_VERSION).contains(&v) {
+            let db = data_dir.join("db");
+            let copy = db.join(format!("morimeta.v{v}-{}.sqlite", now_ms()));
+            conn.execute("VACUUM INTO ?1", params![copy.to_string_lossy()])?;
+            let mut log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(db.join(MIGRATIONS))?;
+            writeln!(
+                log,
+                "{}\tschema {v} -> {SCHEMA_VERSION}\tcopy {}",
+                now_ms(),
+                copy.file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default()
+            )?;
+            log.sync_all()?;
+        }
         if v < 1 {
             conn.execute_batch(
                 "BEGIN;
@@ -503,6 +527,20 @@ impl Store {
     }
 
     /// The backup locations to look in: the current one and the default.
+    /// The migrations recorded in [`MIGRATIONS`], oldest first: (time ms, description).
+    pub fn migrations(&self) -> Vec<(i64, String)> {
+        std::fs::read_to_string(self.data_dir.join("db").join(MIGRATIONS))
+            .map(|s| {
+                s.lines()
+                    .filter_map(|l| {
+                        let (ms, rest) = l.split_once('\t')?;
+                        Some((ms.parse().ok()?, rest.replace('\t', "; ")))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn backup_roots(&self) -> Vec<PathBuf> {
         let mut roots = vec![self.backup_root.clone(), self.data_dir.join("backups")];
         for r in self.recorded_backup_roots() {
@@ -1286,12 +1324,30 @@ mod tests {
                 )
                 .unwrap();
         }
-        let mut s = Store::open(&d).unwrap();
+        let s = Store::open(&d).unwrap();
         let v: i32 = s
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+        // ARCHITECTURE §11: the old database was copied first, and the migration recorded
+        let m = s.migrations();
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert!(
+            m[0].1
+                .starts_with(&format!("schema 1 -> {SCHEMA_VERSION}; copy morimeta.v1-"))
+        );
+        let copy = d.join("db").join(m[0].1.rsplit(' ').next().unwrap());
+        let old = Connection::open(&copy).unwrap();
+        let ov: i32 = old
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ov, 1);
+        drop(old);
+        // opening again migrates nothing
+        drop(s);
+        let mut s = Store::open(&d).unwrap();
+        assert_eq!(s.migrations().len(), 1);
         s.begin_operation(
             &NewOperation {
                 id: "op-1".into(),

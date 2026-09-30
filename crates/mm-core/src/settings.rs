@@ -163,6 +163,15 @@ pub fn set(store: &mut Store, name: &str, value: &str) -> Result<(), CoreError> 
     Ok(())
 }
 
+/// Settings › Advanced "Reset": every setting back to its default. Later Operations keep their
+/// backups in the default location again; earlier ones keep the folders they recorded.
+pub fn reset_all(store: &mut Store) -> Result<(), CoreError> {
+    for k in KEYS {
+        store.clear_setting(k.name)?;
+    }
+    Ok(())
+}
+
 /// Files written side by side: the `exec.workers` setting, else ARCHITECTURE §8's
 /// clamp(physical cores / 2, 1, 4) (logical cores / 2 approximates it).
 pub fn workers(store: &Store) -> usize {
@@ -221,6 +230,10 @@ mod tests {
         assert_eq!(workers(&s), 7);
         set(&mut s, "backup.max_age_days", "").unwrap();
         assert_eq!(get(&s, "backup.max_age_days").unwrap(), "30");
+        reset_all(&mut s).unwrap();
+        for k in KEYS {
+            assert_eq!(get(&s, k.name).unwrap(), k.default, "{}", k.name);
+        }
         drop(s);
         let _ = std::fs::remove_dir_all(&d);
     }

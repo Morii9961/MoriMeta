@@ -63,7 +63,7 @@
 | 命令 | mm-core | mm-cli | 说明 |
 |---|---|---|---|
 | `presets_*` | `presets::list`、`get`、`save`、`import`、`duplicate`、`delete`；`Preset::lint` | `presets`、`preset-*` | 内置 Preset 只读；导入受大小与数量限制，首次使用标为未信任 |
-| `settings_*` | `settings::KEYS`、`get`、`set` | `settings`、`setting` | 已知键、默认值与校验；未知键拒绝 |
+| `settings_*` | `settings::KEYS`、`get`、`set` | `settings`、`setting` | 已知键、默认值与校验；未知键拒绝；`settings::reset_all`（设置 › 高级"重置"）；`Store::migrations()`（迁移记录，每次迁移前的数据库副本） |
 | `backup_usage` / `prune_plan` | `retention::usage`、`prune_plan`、`prune` | `backups`、`prune`、`keep` | 保留策略来自设置；未完成的 Operation 从不清理；备份位置在同步目录中时 `Usage::sync_warning` |
 | 清除只读属性 | `service::clear_read_only` | `clear-readonly` | 仅用户显式操作，写入日志 |
 | ExifTool 完整性 | `service::verify_exiftool`（`Scope::Key` 启动前、`Scope::All` 之后在后台；不一致或缺少清单时自行 `OperationGate::refuse_writes`） | `exiftool-check`、`exiftool-manifest` | SECURITY_MODEL §5；不一致时禁止写入并提示重新安装 |
