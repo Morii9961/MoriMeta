@@ -25,9 +25,6 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 1 << 20
 
-# Files owned by the design session: never committed from the engineering side.
-DESIGN_SESSION_FILES = {"DESIGN.md", "DESIGN_SYSTEM.md", "SCREEN_SPEC.md", "INTERACTION_SPEC.md"}
-
 PATH_DENY = [
     (re.compile(r"(^|/)target/"), "build output"),
     (re.compile(r"^research/\.work/"), "downloaded tools / corpora / lab files"),
@@ -63,8 +60,6 @@ def check(rel: str) -> list[str]:
     reasons = []
     posix = PurePosixPath(rel.replace("\\", "/"))
     s = str(posix)
-    if posix.name in DESIGN_SESSION_FILES:
-        reasons.append("owned by the design session (not committed from engineering)")
     for rx, why in PATH_DENY:
         if rx.search(s):
             reasons.append(f"path: {why}")

@@ -11,7 +11,7 @@
 |---|---|---|
 | `crates/`、`Cargo.toml`、`Cargo.lock` | 是 | 产品代码（Phase 1） |
 | `docs/*.md`（工程文档） | 是 | v0.3 草案 |
-| `docs/DESIGN.md`、`DESIGN_SYSTEM.md`、`SCREEN_SPEC.md`、`INTERACTION_SPEC.md` | **否（由设计会话负责）** | 设计稿交接后由设计会话决定何时入库；工程侧不修改、不提交 |
+| `docs/DESIGN.md`、`DESIGN_SYSTEM.md`、`SCREEN_SPEC.md`、`INTERACTION_SPEC.md` | 是 | 设计 v1.0 冻结稿，2026-09-30 按 Morii 的决定入库；内容仍由设计会话负责，工程侧不修改 |
 | `MoriMeta_Project_Spec_v0.1.md`、`MoriMeta_Design_Brief_v0.1.md` | 本地是；公开前待确认（§3） | 需求基线；含个人化 Preset 示例（Morii / Moriium / Hokkaido） |
 | `research/` 下的脚本、原型源码、锁定文件（`exiftool.lock.json`、`corpus.lock.json`）、`README.md`、`PROGRESS.md` | 是 | 可复现的验证依据 |
 | `research/results/` | **否** | 生成结果，含本机绝对路径与样本元数据（序列号、标签值）；由脚本重新生成 |
