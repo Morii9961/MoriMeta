@@ -393,6 +393,13 @@ pub fn start(
     opts: &ExecOptions,
 ) -> Result<OpReport, CoreError> {
     require_no_pending_recovery(store)?;
+    // INTERACTION_SPEC §4: Apply needs at least one change left; an empty Operation would only
+    // add a History entry and a backup folder with nothing in them
+    if plan.executable().next().is_none() {
+        return Err(CoreError::Input(
+            "nothing to write: every file is unchanged, blocked or left out".into(),
+        ));
+    }
     // INTERACTION_SPEC: with the backup location unavailable nothing is written
     check_backup_location(store)?;
     let version = engine_version(engines)?;

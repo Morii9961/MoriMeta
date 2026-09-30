@@ -37,7 +37,7 @@
 
 | 命令 | mm-core | mm-cli | 说明 |
 |---|---|---|---|
-| `op_execute(plan_id, version, token)` | `PlanBook::execute`（`executor::start`） | `apply` | 一次性令牌；备份位置、空间与恢复状态检查；worker 数（即 ExifTool 会话数）用 `settings::workers` |
+| `op_execute(plan_id, version, token)` | `PlanBook::execute`（`executor::start`） | `apply` | 一次性令牌；备份位置、空间与恢复状态检查；worker 数（即 ExifTool 会话数）用 `settings::workers`；没有可写入的条目时拒绝（"nothing to write"），不产生 Operation |
 | 进度 Channel | `ExecOptions.progress`（`ExecProgress`） | — | 每个文件结算后回调；批量合并在适配层 |
 | `op_cancel` | `ExecOptions.cancel` | — | 不再启动新文件；提交前的文件放弃；立即结束 ExifTool |
 | 继续剩余文件 | `executor::resume` | `resume` | |

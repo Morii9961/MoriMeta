@@ -4921,6 +4921,13 @@ fn fixture_regression_through_every_write() {
             }
             assert!(lab.cli(&["fsck", op]).status.success(), "{write}");
             lab.undo(op);
+        } else {
+            // INTERACTION_SPEC §4: a Plan with nothing to write makes no Operation
+            let why = r["error"].as_str().unwrap_or_default();
+            assert!(why.contains("nothing to write"), "{write}: {r}");
+            got.entry("_operations".into())
+                .or_default()
+                .insert(write.to_owned(), "nothing to write".into());
         }
         for p in &files {
             let n = name(p.to_str().unwrap());

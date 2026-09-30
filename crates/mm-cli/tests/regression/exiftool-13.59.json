@@ -2516,7 +2516,7 @@
     "2 copyright": "completed_with_errors",
     "3 gps": "completed_with_errors",
     "4 time": "completed_with_errors",
-    "5 preset copyright template": "completed",
+    "5 preset copyright template": "nothing to write",
     "6 preset remove gps": "completed_with_errors",
     "7 preset copyright template with defaults": "completed_with_errors",
     "8 time absolute": "completed_with_errors",
