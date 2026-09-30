@@ -13,8 +13,33 @@ publish = false
 version = "0.0.0"
 license = "GPL-3.0-or-later"
 
+[workspace.dependencies]
+# One feature set for every crate: `cargo test -p mm-fs` then builds the same windows-sys as the
+# whole workspace instead of another variant (and another copy of every crate above it).
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_JobObjects",
+    "Win32_System_Power",
+    "Win32_System_Threading",
+] }
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]
 dbg_macro = "deny"
+
+# Full debug info was about three quarters of every test executable. Line tables keep file:line in
+# backtraces of our own code; panic messages carry their location without debug info.
+# Clean test build of the workspace: 830 MB -> 520 MB.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

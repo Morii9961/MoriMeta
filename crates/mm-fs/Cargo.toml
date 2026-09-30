@@ -10,7 +10,7 @@ version.workspace = true
 blake3 = "1.8.7"
 getrandom = "0.4.3"
 serde_json = "1.0.151"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Power", "Win32_System_Threading"] }
+windows-sys.workspace = true
 
 [lints]
 workspace = true
