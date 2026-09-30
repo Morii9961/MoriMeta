@@ -410,6 +410,31 @@ pub fn replan(
             p.title = title;
             p
         }
+        PlanSource::Batch {
+            preset,
+            time,
+            digitized,
+        } => {
+            let tool = match time {
+                Some(TimeSpec::Sequence { .. } | TimeSpec::PreserveRelative { .. }) => {
+                    return Err(CoreError::Input(
+                        "a Sequence or Preserve Relative Timing depends on the whole selection; \
+                         select the files and plan it again"
+                            .into(),
+                    ));
+                }
+                Some(t) => Some(TimeTool::from_spec(t)?),
+                None => None,
+            };
+            planner::plan_batch(
+                engine,
+                &paths,
+                preset,
+                tool.as_ref().map(|t| (t, *digitized)),
+                &title,
+                ctl,
+            )?
+        }
         PlanSource::Undo { .. } => {
             return Err(CoreError::Input(
                 "an undo is planned again with plan-undo".into(),

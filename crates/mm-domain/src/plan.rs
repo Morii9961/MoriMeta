@@ -329,6 +329,19 @@ pub enum PlanSource {
     Undo {
         of: String,
     },
+    /// Several edits staged together in the batch editor: the field edits as an unconditional
+    /// Preset, and a capture-time tool over the whole selection.
+    Batch {
+        preset: crate::rules::Preset,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        time: Option<TimeSpec>,
+        #[serde(default = "yes")]
+        digitized: bool,
+    },
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

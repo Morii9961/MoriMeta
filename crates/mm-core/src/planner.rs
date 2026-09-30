@@ -355,105 +355,173 @@ fn plan_capture_time_inner(
     title: &str,
     ctl: &PlanCtl,
 ) -> Result<Plan, CoreError> {
-    let keep_subsec = matches!(tool, TimeTool::Shift(_) | TimeTool::PreserveRelative { .. });
     plan_with(engine, inputs, title, ctl, |readable, entries| {
-        // a sidecar is ordered and anchored by the name of its RAW
-        let shown = |i: usize| {
-            entries[i]
-                .raw
-                .clone()
-                .unwrap_or_else(|| entries[i].path.clone())
-        };
-        let items: Vec<TimeItem> = readable
-            .iter()
-            .map(|(idx, t)| TimeItem {
-                id: *idx as u64,
-                file_name: Path::new(&shown(*idx))
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                time: capture::read_target(t).ok().flatten(),
-                // a RAW and its JPG (same folder, same name) share one Sequence position
-                pair: {
-                    let p = shown(*idx);
-                    let p = Path::new(&p);
-                    Some(format!(
-                        "{}|{}",
-                        p.parent()
-                            .map(|d| d.to_string_lossy().to_lowercase())
-                            .unwrap_or_default(),
-                        p.file_stem()
-                            .map(|s| s.to_string_lossy().to_lowercase())
-                            .unwrap_or_default()
-                    ))
-                },
-            })
-            .collect();
-        let name = |id: u64| shown(id as usize);
-        let op = match tool {
-            TimeTool::Absolute(l) => TimeOp::Absolute(*l),
-            TimeTool::Shift(d) => TimeOp::Shift(*d),
-            TimeTool::Sequence { start, step, order } => TimeOp::Sequence {
-                start: *start,
-                step: *step,
-                order: *order,
+        time_fields(tool, digitized, readable, entries)
+    })
+}
+
+/// The capture-time field of every readable target, planned over them together (Sequence orders
+/// them, Preserve Relative Timing measures from its anchor).
+fn time_fields(
+    tool: &TimeTool,
+    digitized: bool,
+    readable: &[(usize, Target)],
+    entries: &[PlanEntry],
+) -> Result<Vec<FileFields>, CoreError> {
+    let keep_subsec = matches!(tool, TimeTool::Shift(_) | TimeTool::PreserveRelative { .. });
+    // a sidecar is ordered and anchored by the name of its RAW
+    let shown = |i: usize| {
+        entries[i]
+            .raw
+            .clone()
+            .unwrap_or_else(|| entries[i].path.clone())
+    };
+    let items: Vec<TimeItem> = readable
+        .iter()
+        .map(|(idx, t)| TimeItem {
+            id: *idx as u64,
+            file_name: Path::new(&shown(*idx))
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            time: capture::read_target(t).ok().flatten(),
+            // a RAW and its JPG (same folder, same name) share one Sequence position
+            pair: {
+                let p = shown(*idx);
+                let p = Path::new(&p);
+                Some(format!(
+                    "{}|{}",
+                    p.parent()
+                        .map(|d| d.to_string_lossy().to_lowercase())
+                        .unwrap_or_default(),
+                    p.file_stem()
+                        .map(|s| s.to_string_lossy().to_lowercase())
+                        .unwrap_or_default()
+                ))
             },
-            TimeTool::PreserveRelative { anchor, new_local } => {
-                let a = normalize(anchor)?.to_string_lossy().into_owned();
-                let id = items
-                    .iter()
-                    .find(|it| entries[it.id as usize].path == a || shown(it.id as usize) == a)
-                    .ok_or_else(|| {
-                        CoreError::Input(format!(
-                            "anchor {a} is not a writable file of this selection"
-                        ))
-                    })?
-                    .id;
-                TimeOp::PreserveRelative {
-                    anchor: id,
-                    new_local: *new_local,
-                }
+        })
+        .collect();
+    let name = |id: u64| shown(id as usize);
+    let op = match tool {
+        TimeTool::Absolute(l) => TimeOp::Absolute(*l),
+        TimeTool::Shift(d) => TimeOp::Shift(*d),
+        TimeTool::Sequence { start, step, order } => TimeOp::Sequence {
+            start: *start,
+            step: *step,
+            order: *order,
+        },
+        TimeTool::PreserveRelative { anchor, new_local } => {
+            let a = normalize(anchor)?.to_string_lossy().into_owned();
+            let id = items
+                .iter()
+                .find(|it| entries[it.id as usize].path == a || shown(it.id as usize) == a)
+                .ok_or_else(|| {
+                    CoreError::Input(format!(
+                        "anchor {a} is not a writable file of this selection"
+                    ))
+                })?
+                .id;
+            TimeOp::PreserveRelative {
+                anchor: id,
+                new_local: *new_local,
             }
-        };
-        let results = time::apply(&op, &items).map_err(|e| match e {
-            TimeOpError::OrderNeedsValidTimes(ids) => CoreError::Input(format!(
-                "ordering by capture time needs a valid time on every file; missing: {}",
-                ids.into_iter().map(name).collect::<Vec<_>>().join(", ")
-            )),
-            other => CoreError::Input(other.to_string()),
-        })?;
-        let n = results.len();
-        // INTERACTION_SPEC §17: Absolute gives every position one time, so their order by time
-        // is lost (a RAW and its JPG are one position and keep sharing it)
-        let positions: std::collections::HashSet<&Option<String>> =
-            items.iter().map(|it| &it.pair).collect();
-        let shared = matches!(tool, TimeTool::Absolute(_)) && positions.len() > 1;
-        Ok(readable
+        }
+    };
+    let results = time::apply(&op, &items).map_err(|e| match e {
+        TimeOpError::OrderNeedsValidTimes(ids) => CoreError::Input(format!(
+            "ordering by capture time needs a valid time on every file; missing: {}",
+            ids.into_iter().map(name).collect::<Vec<_>>().join(", ")
+        )),
+        other => CoreError::Input(other.to_string()),
+    })?;
+    let n = results.len();
+    // INTERACTION_SPEC §17: Absolute gives every position one time, so their order by time
+    // is lost (a RAW and its JPG are one position and keep sharing it)
+    let positions: std::collections::HashSet<&Option<String>> =
+        items.iter().map(|it| &it.pair).collect();
+    let shared = matches!(tool, TimeTool::Absolute(_)) && positions.len() > 1;
+    Ok(readable
+        .iter()
+        .map(|(idx, t)| {
+            let r = results.iter().find(|r| r.id == *idx as u64);
+            let after = r
+                .map(|r| r.after.clone())
+                .unwrap_or(Err(TimeOpError::EmptySelection));
+            let mut fp = capture::plan_target(t, &after, keep_subsec, digitized);
+            if let (TimeTool::Sequence { .. }, Some(r)) = (tool, r) {
+                fp.notes.insert(
+                    0,
+                    format!("position {} of {n} in the sequence", r.index + 1),
+                );
+            }
+            if shared && fp.status == EntryStatus::Ready {
+                fp.notes.push(format!(
+                    "{}{} files (a RAW and its JPG counted once) get the same capture time: \
+                     their order by time is lost",
+                    mm_domain::plan::WARNING,
+                    positions.len()
+                ));
+            }
+            vec![("capture_time", fp)]
+        })
+        .collect())
+}
+
+/// Several edits staged together in the batch editor (INTERACTION_SPEC §3): the field edits as
+/// the rules of an unconditional Preset, and a capture-time tool planned over the whole selection
+/// (so Sequence and Preserve Relative Timing combine with the other fields). One entry per file.
+pub fn plan_batch(
+    engine: &mut Engine,
+    inputs: &[PathBuf],
+    preset: &Preset,
+    time: Option<(&TimeTool, bool)>,
+    title: &str,
+    ctl: &PlanCtl,
+) -> Result<Plan, CoreError> {
+    if preset.rules.is_empty() && time.is_none() {
+        return Err(CoreError::Input("nothing is staged".into()));
+    }
+    if !preset.rules.is_empty() {
+        preset.validate().map_err(CoreError::Input)?;
+    }
+    let timed_rule = preset
+        .rules
+        .iter()
+        .flat_map(|r| &r.then)
+        .any(|a| a.field() == rules::Field::CaptureTime);
+    if time.is_some() && timed_rule {
+        return Err(CoreError::Input(
+            "the capture time is staged twice (a time tool and a time action)".into(),
+        ));
+    }
+    let mut plan = plan_with(engine, inputs, title, ctl, |targets, entries| {
+        let mut out: Vec<FileFields> = targets
             .iter()
             .map(|(idx, t)| {
-                let r = results.iter().find(|r| r.id == *idx as u64);
-                let after = r
-                    .map(|r| r.after.clone())
-                    .unwrap_or(Err(TimeOpError::EmptySelection));
-                let mut fp = capture::plan_target(t, &after, keep_subsec, digitized);
-                if let (TimeTool::Sequence { .. }, Some(r)) = (tool, r) {
-                    fp.notes.insert(
-                        0,
-                        format!("position {} of {n} in the sequence", r.index + 1),
-                    );
+                if preset.rules.is_empty() {
+                    return vec![];
                 }
-                if shared && fp.status == EntryStatus::Ready {
-                    fp.notes.push(format!(
-                        "{}{} files (a RAW and its JPG counted once) get the same capture time: \
-                         their order by time is lost",
-                        mm_domain::plan::WARNING,
-                        positions.len()
-                    ));
-                }
-                vec![("capture_time", fp)]
+                let e = &entries[*idx];
+                let shown = e.raw.as_deref().unwrap_or(&e.path);
+                rules::plan_target(preset, t, shown)
             })
-            .collect())
-    })
+            .collect();
+        if let Some((tool, digitized)) = time {
+            for (o, t) in out
+                .iter_mut()
+                .zip(time_fields(tool, digitized, targets, entries)?)
+            {
+                o.extend(t);
+            }
+        }
+        Ok(out)
+    })?;
+    plan.source = Some(PlanSource::Batch {
+        preset: preset.clone(),
+        time: time.map(|(t, _)| t.spec()),
+        digitized: time.is_none_or(|(_, d)| d),
+    });
+    Ok(plan)
 }
 
 /// Pre-checks, fingerprints and the snapshot of every input, then the pure field planner.

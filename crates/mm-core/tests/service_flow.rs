@@ -729,3 +729,131 @@ fn startup_recovers_and_reports_what_needs_a_decision() {
     drop(store);
     lab.close();
 }
+
+/// The batch editor stages several fields at once (INTERACTION_SPEC §3): field edits as an
+/// unconditional Preset plus a capture-time tool over the whole selection make one entry per
+/// file; it is written, verified and undone like any Plan.
+#[test]
+fn batch_edits_make_one_entry_per_file() {
+    use mm_domain::rules::{Action, Preset, Rule};
+    use mm_domain::time::{self, SequenceOrder};
+    let Some(mut lab) = Lab::new("batch", 3) else {
+        return;
+    };
+    let preset = Preset {
+        schema_version: mm_domain::rules::PRESET_SCHEMA_VERSION,
+        name: "Batch".into(),
+        rules: vec![
+            Rule {
+                name: String::new(),
+                enabled: true,
+                when: vec![],
+                then: vec![Action::SetCreator {
+                    names: vec!["Morii".into()],
+                }],
+            },
+            Rule {
+                name: String::new(),
+                enabled: true,
+                when: vec![],
+                then: vec![Action::SetCopyright {
+                    value: "© {creator|Morii} {year|2026}".into(),
+                }],
+            },
+        ],
+    };
+    let tool = planner::TimeTool::Sequence {
+        start: time::parse_local("2026:09:30 10:00:00").unwrap(),
+        step: time::parse_shift("+00:01:00").unwrap(),
+        order: SequenceOrder::NaturalFileName,
+    };
+    // nothing staged, or the time staged twice, is refused
+    let empty = Preset {
+        rules: vec![],
+        ..preset.clone()
+    };
+    assert!(
+        planner::plan_batch(
+            &mut lab.engines[0],
+            &lab.files,
+            &empty,
+            None,
+            "x",
+            &Default::default()
+        )
+        .is_err()
+    );
+    let mut twice = preset.clone();
+    twice.rules[0].then.push(Action::ShiftTime {
+        by: "+01:00:00".into(),
+        digitized: true,
+    });
+    assert!(
+        planner::plan_batch(
+            &mut lab.engines[0],
+            &lab.files,
+            &twice,
+            Some((&tool, true)),
+            "x",
+            &Default::default()
+        )
+        .is_err()
+    );
+
+    let plan = planner::plan_batch(
+        &mut lab.engines[0],
+        &lab.files,
+        &preset,
+        Some((&tool, true)),
+        "Batch",
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(plan.entries.len(), 3);
+    for (i, e) in plan.entries.iter().enumerate() {
+        let fields: Vec<&str> = e.changes.iter().map(|c| c.field.as_str()).collect();
+        assert!(
+            fields.contains(&"creator")
+                && fields.contains(&"copyright")
+                && fields.contains(&"capture_time"),
+            "{e:?}"
+        );
+        let t = e
+            .changes
+            .iter()
+            .find(|c| c.field == "capture_time")
+            .unwrap();
+        assert!(
+            t.after.as_ref().unwrap()[0].starts_with(&format!("2026:09:30 10:0{i}:00")),
+            "{t:?}"
+        );
+    }
+    let rep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &plan,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(rep.status, OpStatus::Completed, "{rep:?}");
+    let d = inspect::asset_detail(&mut lab.engines[0], &lab.files[1]).unwrap();
+    let value = |f: &str| {
+        d.fields
+            .iter()
+            .find(|v| v.field == f)
+            .and_then(|v| v.value.clone())
+    };
+    assert_eq!(value("creator").as_deref(), Some("Morii"));
+    assert!(value("copyright").unwrap().starts_with("© "));
+    let up = undo::plan_undo(&lab.store, &rep.op_id, lab.engines[0].version()).unwrap();
+    let urep = executor::start(
+        &mut lab.store,
+        &mut lab.engines,
+        &up,
+        &ExecOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(urep.status, OpStatus::Completed, "{urep:?}");
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
