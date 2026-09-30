@@ -6204,7 +6204,8 @@ fn a_file_that_warns_when_read_is_flagged_in_the_preview() {
 /// A JPEG with an XMP file of the same name next to it (some programs keep a JPEG's metadata in
 /// such a sidecar): MoriMeta writes into the JPEG and leaves the sidecar alone, and the Preview
 /// says that programs reading the sidecar may still show its values. With a RAW of that name the
-/// XMP belongs to the RAW (SAFETY_MODEL §3.1) and the JPEG gets no such note.
+/// XMP belongs to the RAW (SAFETY_MODEL §3.1) and the JPEG gets no such note. An XMP picked on
+/// its own with no photo of its name is written with a warning (DECISIONS R-6).
 #[test]
 fn a_jpeg_with_its_own_xmp_sidecar_is_noted() {
     let pkg = require!();
@@ -6219,11 +6220,28 @@ fn a_jpeg_with_its_own_xmp_sidecar_is_noted() {
     lab.add_nef("DSC_0002.NEF");
     std::fs::copy(timages().join("XMP.xmp"), dir.join("DSC_0002.xmp")).unwrap();
     let side_before = blake(&sidecar);
+    // an XMP picked on its own: an orphan (no photo of its name) is written with a warning
+    // (DECISIONS R-6); a RAW's sidecar picked on its own is not an orphan
+    let lone = dir.join("LONE.xmp");
+    std::fs::copy(timages().join("XMP.xmp"), &lone).unwrap();
+    let owned = dir.join("DSC_0002.xmp");
 
     let (p, pj) = lab.plan_on(
         &["plan-creator", "--set", "Morii"],
-        &[&alone, &paired],
+        &[&alone, &paired, &lone, &owned],
         "p.json",
+    );
+    let orphan = |i: usize| {
+        pj["entries"][i]["notes"]
+            .to_string()
+            .contains("no photo of this name is next to this XMP sidecar")
+    };
+    assert!(orphan(2), "{pj}");
+    assert!(!orphan(0) && !orphan(1) && !orphan(3), "{pj}");
+    assert_eq!(pj["entries"][2]["status"]["status"], "ready", "{pj}");
+    assert!(
+        !pj["entries"][2]["notes"].to_string().contains("RAW file"),
+        "{pj}"
     );
     assert!(
         pj["entries"][0]["notes"]

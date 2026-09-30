@@ -507,17 +507,8 @@ fn jpeg_sidecar_note(
     path: &Path,
     folders: &mut HashMap<PathBuf, HashSet<String>>,
 ) -> Option<String> {
-    let dir = path.parent()?;
     let stem = path.file_stem()?.to_string_lossy().to_lowercase();
-    let names = folders.entry(dir.to_path_buf()).or_insert_with(|| {
-        std::fs::read_dir(dir)
-            .map(|rd| {
-                rd.filter_map(|e| e.ok())
-                    .map(|e| e.file_name().to_string_lossy().to_lowercase())
-                    .collect()
-            })
-            .unwrap_or_default()
-    });
+    let names = folder_names(path, folders)?;
     let sidecar = format!("{stem}.xmp");
     if !names.contains(&sidecar) {
         return None;
@@ -532,6 +523,49 @@ fn jpeg_sidecar_note(
             "{WARNING}an XMP sidecar of the same name is next to this JPEG (from another program): \
              MoriMeta writes into the JPEG and leaves the sidecar unchanged, so programs that read \
              the sidecar may still show its values",
+            WARNING = mm_domain::plan::WARNING
+        )
+    })
+}
+
+/// The lower-cased names in the file's folder, listed once per folder.
+fn folder_names<'a>(
+    path: &Path,
+    folders: &'a mut HashMap<PathBuf, HashSet<String>>,
+) -> Option<&'a HashSet<String>> {
+    let dir = path.parent()?;
+    Some(folders.entry(dir.to_path_buf()).or_insert_with(|| {
+        std::fs::read_dir(dir)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }))
+}
+
+const ORPHAN_XMP: &str = "no photo of this name is next to this XMP sidecar";
+
+/// An XMP file picked on its own with no photo of its name next to it (an orphan sidecar,
+/// DECISIONS R-6): it is written as the user asked, and the Preview says no photo goes with it,
+/// so the change shows only in programs that open this XMP file itself.
+fn orphan_xmp_note(path: &Path, folders: &mut HashMap<PathBuf, HashSet<String>>) -> Option<String> {
+    let stem = path.file_stem()?.to_string_lossy().to_lowercase();
+    let names = folder_names(path, folders)?;
+    let photo = names.iter().any(|n| {
+        n.rsplit_once('.').is_some_and(|(s, e)| {
+            s == stem
+                && (e == "jpg"
+                    || e == "jpeg"
+                    || SIDECAR_RAW.contains(&e)
+                    || READ_ONLY_PHOTOS.contains(&e))
+        })
+    });
+    (!photo).then(|| {
+        format!(
+            "{WARNING}{ORPHAN_XMP}: the change is written to the sidecar alone and shows only \
+             in programs that open it",
             WARNING = mm_domain::plan::WARNING
         )
     })
@@ -737,11 +771,11 @@ fn plan_with(
                 }
             }
             Policy::Embedded | Policy::OwnSidecar => {
-                if matches!(policy(&path), Policy::Embedded)
-                    && let Some(note) = jpeg_sidecar_note(&path, &mut folders)
-                {
-                    entry.notes.push(note);
-                }
+                let note = match policy(&path) {
+                    Policy::Embedded => jpeg_sidecar_note(&path, &mut folders),
+                    _ => orphan_xmp_note(&path, &mut folders),
+                };
+                entry.notes.extend(note);
                 if !seen.insert(fp_in.file_id.clone()) {
                     continue; // same file through another path, or already a RAW's sidecar
                 }
@@ -930,7 +964,13 @@ fn plan_with(
         let cp = mm_domain::plan::merge(fields);
         let e = &mut entries[*idx];
         e.status = cp.status;
-        e.notes.extend(cp.notes);
+        // an orphan XMP has no RAW that the sidecar note could speak of
+        let orphan = e.notes.iter().any(|n| n.contains(ORPHAN_XMP));
+        e.notes.extend(
+            cp.notes
+                .into_iter()
+                .filter(|n| !(orphan && n.contains("the RAW file"))),
+        );
         // the file that is written already makes ExifTool warn when read: the write will most
         // likely warn too, and verification refuses a write that warns (V1)
         let written = match t {

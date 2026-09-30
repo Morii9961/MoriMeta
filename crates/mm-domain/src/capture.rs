@@ -313,6 +313,8 @@ pub fn plan(
             located.join(", ")
         ));
     }
+    let offsets: Vec<String> = offsets_in(snap);
+    notes.extend(offset_note(&offsets));
     FieldPlan {
         status: EntryStatus::Ready,
         change: Some(FieldChange {
@@ -433,8 +435,49 @@ fn plan_sidecar(
         }),
         ops,
         expect,
-        notes: vec!["written to the XMP sidecar; the RAW file keeps its own EXIF time".into()],
+        notes: std::iter::once(
+            "written to the XMP sidecar; the RAW file keeps its own EXIF time".to_owned(),
+        )
+        .chain(offset_note(
+            &after.exif_offset().into_iter().collect::<Vec<_>>(),
+        ))
+        .collect(),
     }
+}
+
+/// Every distinct UTC offset the file's capture-time locations carry, in reading order.
+fn offsets_in(snap: &Snapshot) -> Vec<String> {
+    let stamps = [XMP_DTO, XMP_DATE_CREATED, XMP_CREATE]
+        .into_iter()
+        .filter_map(|t| snap.text(t))
+        .filter_map(|v| parse_stamp(&v)?.time?.2);
+    let iptc_offset = snap
+        .text(IPTC_TIME)
+        .and_then(|t| parse_iptc_time(&t))
+        .map(|(_, o)| o);
+    let mut offsets: Vec<String> = Vec::new();
+    for o in snap
+        .text(OFFSET_DTO)
+        .into_iter()
+        .chain(stamps)
+        .chain(iptc_offset)
+    {
+        if !offsets.contains(&o) {
+            offsets.push(o);
+        }
+    }
+    offsets
+}
+
+/// D-18: no MVP time tool changes an offset. A file that has one keeps it (a camera set to the
+/// wrong time zone needs the v1.3 correction), and the Preview says so.
+fn offset_note(offsets: &[String]) -> Option<String> {
+    (!offsets.is_empty()).then(|| {
+        format!(
+            "UTC offset not changed ({}): only the clock time is set; correcting a time zone is not part of this version",
+            offsets.join(", ")
+        )
+    })
 }
 
 #[cfg(test)]
@@ -519,6 +562,14 @@ mod tests {
         );
         assert!(!p.ops.iter().any(|o| o.tag() == SUBSEC_DTO)); // kept by Shift
         assert!(!p.ops.iter().any(|o| o.tag() == OFFSET_DTO)); // offsets never change
+        // D-18: the Preview says the offsets stay (each distinct offset once)
+        assert!(
+            p.notes
+                .iter()
+                .any(|n| n.starts_with("UTC offset not changed (+09:00, +08:00)")),
+            "{:?}",
+            p.notes
+        );
     }
 
     #[test]
