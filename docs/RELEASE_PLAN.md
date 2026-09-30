@@ -1,6 +1,6 @@
 # MoriMeta — Release Plan (Windows first)
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > 已确定：MoriMeta 公开开源。待决：具体许可证（D-1）、签名路线（D-2）、发布者身份（D-3）、SignPath 团队角色（D-16）、ExifTool 调用方式（D-17）。本文不做任何公开发布、签名申请或证书购买。
 > 本文定义公开发布所需的安装、签名、更新、版本、许可证与发布流程。
 > `[F-xx]` / `[V-xx]` 引用 [RESEARCH_NOTES](RESEARCH_NOTES.md)。

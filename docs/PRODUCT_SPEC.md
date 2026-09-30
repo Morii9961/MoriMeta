@@ -1,7 +1,7 @@
 # MoriMeta — Product Specification
 
 > **Version:** 0.3（取代 v0.2；v0.1 原件 `MoriMeta_Project_Spec_v0.1.md` 仍是需求基线）
-> **Status:** 草案——**未批准**。标注"待决"的内容不得当作已确定范围。
+> **Status:** 已批准（2026-09-30）。原标"待决"的事项已在 [DECISIONS](DECISIONS.md) 中决定，以该文件为准。
 > **Date:** 2026-09-26
 > **Related:** [ARCHITECTURE](ARCHITECTURE.md) · [METADATA_MODEL](METADATA_MODEL.md) · [SAFETY_MODEL](SAFETY_MODEL.md) · [SECURITY_MODEL](SECURITY_MODEL.md) · [DEVELOPMENT_PLAN](DEVELOPMENT_PLAN.md) · [RELEASE_PLAN](RELEASE_PLAN.md) · [RESEARCH_NOTES](RESEARCH_NOTES.md) · [SPIKE_REPORT](SPIKE_REPORT.md)
 
@@ -13,10 +13,10 @@
 |---|---|
 | 公开开源 | **已确定** |
 | MVP 时间工具：Absolute、Shift、Sequence、Preserve Relative Timing | **已确定**（v0.1 §33） |
-| 具体许可证（Apache-2.0 / GPL-3.0-or-later 等） | 待决（D-1） |
-| 隐私功能的 MVP 范围 | 待决（D-15）；当前按 (c) 做验证，见 §6.8 |
-| Windows 签名路线 | 待决（D-2），见 RELEASE_PLAN §4 |
-| 时区修正是否进入 MVP | 待决（D-18，新增建议），见 §6.5.2 |
+| 具体许可证 | **已决定**：GPL-3.0-or-later（D-1） |
+| 隐私功能的 MVP 范围 | **已决定**：(c) Clean Export + 就地移除 GPS（D-15），见 §6.8 |
+| Windows 签名路线 | **已决定**：未签名公开预览 → SignPath Foundation，后备 OV（D-2），见 RELEASE_PLAN §4 |
+| 时区修正是否进入 MVP | **已决定**：不进入，v1.3（D-18），见 §6.5.2 |
 
 ---
 
@@ -190,7 +190,7 @@ Technical 字段（Make/Model/ISO/光圈/快门等）在 MVP 只读（C-11）。
 - 对 sidecar 写入的 RAW，Preview 提示：只读取文件内 EXIF 的软件仍会看到原时间。
 - Windows 资源管理器按钟面时间显示拍摄时间，不使用 OffsetTimeOriginal（SPIKE_REPORT §4）。
 
-#### 6.5.2 新增建议：时区修正（未批准，D-18）
+#### 6.5.2 时区修正（D-18：v1.3，不进 MVP；MVP 按下文"若不纳入 MVP"处理）
 
 - **依据：** v0.1 §12.2 把"相机时区错误"列为 Shift 的适用场景。Shift 只改钟面时间；文件里如果已有 EXIF 2.31 的 OffsetTimeOriginal（S3 语料中 Nikon Z8、D850 均有）或带偏移的 XMP 日期，只做 Shift 会让钟面时间与偏移互相矛盾。
 - **最小形式：** 在 Shift 中增加可选项"同时把 UTC 偏移设为 X"，不另开工具。
@@ -220,7 +220,7 @@ Technical 字段（Make/Model/ISO/光圈/快门等）在 MVP 只读（C-11）。
 - 中文等非拉丁字符必须完整保存。已有 IPTC 且其字符集不能表示新值、或新值超过 IPTC 字节上限时，该字段在该文件上**整体阻止**，Preview 给出三种显式处理（METADATA_MODEL §6）；默认不允许留下互相矛盾的副本。
 - 写入方式采用显式映射，不使用 MWG Composite 写入：后者在 Latin IPTC 中会把中文写成 `?`，退出码仍为 0（SPIKE_REPORT §4）。
 
-### 6.8 Privacy [待决：D-15]
+### 6.8 Privacy [MVP：D-15 = (c)]
 
 #### 6.8.1 范围选项与取舍
 

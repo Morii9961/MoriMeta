@@ -1,6 +1,6 @@
-# Progress (2026-09-27)
+# Progress (2026-09-30)
 
-Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence: `docs/SPIKE_REPORT.md`, `docs/PHASE1_REPORT.md`.
+Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 specifications are approved and every open decision is taken (`docs/DECISIONS.md`, 2026-09-30, on Morii's delegation); design v1.0 is frozen. Evidence: `docs/SPIKE_REPORT.md`, `docs/PHASE1_REPORT.md`.
 
 ## Done
 
@@ -119,11 +119,10 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 
 ## Waiting / needs the user
 
-- Design session files (`docs/DESIGN.md`, `DESIGN_SYSTEM.md`, `SCREEN_SPEC.md`, `INTERACTION_SPEC.md`): frozen v1.0 committed 2026-09-30 at Morii's request; the content stays the design session's (engineering does not edit it); review against the architecture after handoff.
-- Decisions: D-2 signing, D-15 (interim direction (c)), D-18 (after S3 third-party results). (D-1 decided: GPL-3.0-or-later, public repository.)
-- Open questions from 2026-09-28: (1) downloaded cloud files (OneDrive etc.) are still not written, while SAFETY_MODEL §8.3 says "allow with a warning"; allow before V-04 is verified with a safe sync folder? (2) V1 refuses writes whose EXIF rewrite makes ExifTool warn about the file's own defects (GoPro and GE maker notes, IFD0 order, a wrong XMP list type); keep refusing, or accept some warnings when V3 finds nothing? (3) Report F-104 (protobuf decoding state kept between files) to the ExifTool forum? (outward-facing, needs Morii's OK). (4) Dependabot glib alert in the research spike: dismiss or keep (Morii 2026-09-28: keep).
-- Open questions from 2026-09-29/30: (5) R-6 in DESIGN_REVIEW_ENGINEERING: an orphan XMP picked on its own is written (SAFETY_MODEL §3), INTERACTION_SPEC §14 says orphans are never edited. (6) A JPEG's own `IMG.xmp` sidecar is noted in the Preview but not read as a source: read it (it would change effective values) or keep ignoring it? (7) Ten commits pushed on 2026-09-29 (d3dc598 … 16c2216) carry a `Signed-off-by: Morii9961` line added by mistake (the rule is never to add it for Morii); removing it means rewriting public history with a force push, so it is left as is until Morii decides.
-- Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, a real SD card (exFAT and FAT32 are now covered by VHDs in CI), a real NAS (SMB is covered over localhost), a safe cloud-sync folder.
+- Decided 2026-09-30 (`docs/DECISIONS.md`): D-2 … D-18, the open questions of 2026-09-28/30, the design alignment (H-1…H-7, R-1…R-6).
+- Morii to carry out (outward-facing or paid): SignPath Foundation application and the D-16 question (D-2); posting the F-104 report to the ExifTool forum (draft in `research/reports/`).
+- Design session files stay the design session's (engineering does not edit them); Morii's manual screen review once the app runs.
+- Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, a real SD card (exFAT and FAT32 are covered by VHDs in CI), a real NAS (SMB is covered over localhost), a dedicated cloud-sync folder (V-04, downloaded cloud files stay blocked until then).
 
 ## Next engineering steps (no design dependency)
 
@@ -134,4 +133,4 @@ Local Git repository (no remote). docs/ are v0.3 drafts (not approved). Evidence
 - Library scan and planning read every tag; restricting them to SCAN_TAGS saves about a quarter of ExifTool time on NEFs (measured on 90 reads) but risks missing a source tag: decide in S4.
 - A file that makes ExifTool hang is now read alone after the chunk times out (like an oversize one), but no hanging file was found to test with; the timeout path is covered only by the oversize case.
 - Seen twice (2026-09-30), both in the regression's time Sequence pass under heavy parallel load (one full run took 1,141 s instead of ~270 s): a write hit the 30 s timeout ("ExifTool timed out"; original unchanged). Alone the slowest command of that pass takes 1.1 s. The regression now retries a timed-out file once (`plan-retry`) and compares the retry's outcome; write timeouts are initial values for S4 to calibrate.
-- Waiting on decisions: message codes for a translated UI (inventory in docs/MESSAGE_INVENTORY.md), Clean Export (D-15), time-zone correction (D-18), updates (D-2/D-4).
+- Product work now unblocked by the decisions: message codes + parameters for the en / zh-CN UI; Clean Export (JPEG, D-15 (c)); the "UTC offset unchanged" note for Shift (D-18); the orphan-XMP warning (R-6); the desktop app (Tauri adapter + React UI per the frozen design); updates (asked at first launch, D-4) after S6.

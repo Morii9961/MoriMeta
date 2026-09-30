@@ -1,6 +1,6 @@
 # MoriMeta — Security Model & Threat Model
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > v0.3 的修改依据 [SPIKE_REPORT](SPIKE_REPORT.md) §1–§2（S0/S1）。
 > 数据完整性（不损坏照片）见 [SAFETY_MODEL](SAFETY_MODEL.md)；本文处理**恶意输入与攻击者**。
 > `[F-xx]` / `[V-xx]` 引用 [RESEARCH_NOTES](RESEARCH_NOTES.md)。

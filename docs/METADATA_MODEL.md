@@ -1,6 +1,6 @@
 # MoriMeta — Metadata Model
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > 本文定义 Metadata Abstraction Layer：MoriMeta 如何把 ExifTool 的底层标签（Tag）映射为摄影师可理解的字段（Field），如何读取调和、如何写入、如何表示变化。
 > `[F-xx]`/`[V-xx]` 见 [RESEARCH_NOTES](RESEARCH_NOTES.md)；验证数据见 [SPIKE_REPORT](SPIKE_REPORT.md) §4–§5。
 

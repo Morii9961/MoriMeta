@@ -1,6 +1,6 @@
 # MoriMeta — Development Plan
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > 本文定义从架构确认到 1.0 公开发布的路径、每阶段的退出条件、测试策略、风险与待决策事项。
 > `[V-xx]` 见 [RESEARCH_NOTES](RESEARCH_NOTES.md) 验证登记表；Spike 结果见 [SPIKE_REPORT](SPIKE_REPORT.md)。
 
@@ -180,6 +180,8 @@ Phase 1a 当前状态（2026-09-26，根目录 Cargo workspace `crates/`，未�
 
 ## 8. 需要人工决策的事项
 
+> 2026-09-30：全部事项已决定，见 [DECISIONS](DECISIONS.md) §2；下表保留原选项作为背景。
+
 | # | 决策 | 状态与选项 | 建议 / 说明 | 影响 |
 |---|---|---|---|---|
 | D-1 | **许可证** | **已决定（2026-09-27）：GPL-3.0-or-later**；公开仓库 Morii9961/MoriMeta | 比较见 RELEASE_PLAN §7.1；不因签名渠道而替用户选择（二者都满足 OSI 要求） | 贡献流程、代码复用、衍生版本 |
@@ -204,6 +206,8 @@ Phase 1a 当前状态（2026-09-26，根目录 Cargo workspace `crates/`，未�
 ---
 
 ## 9. 进入产品实现前的确认清单
+
+> 2026-09-30：已完成（[DECISIONS](DECISIONS.md) §1）。
 
 - [ ] 审阅 PRODUCT_SPEC §11 的变更（尤其"收窄已列 MVP"与"待决"两类）。
 - [ ] 确认 ARCHITECTURE ADR-01/02/05/08/10/11。

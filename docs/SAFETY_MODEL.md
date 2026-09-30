@@ -1,6 +1,6 @@
 # MoriMeta — Safety Model
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > 本文是"不因软件错误损坏用户数据"的工程化定义。§1 的不变量是**内部发布阻断测试标准**；对用户的表述只使用 §2 的措辞，并以 §0 的前提为条件。
 > `[F-xx]`/`[V-xx]` 见 [RESEARCH_NOTES](RESEARCH_NOTES.md)；验证数据见 [SPIKE_REPORT](SPIKE_REPORT.md) §3。
 

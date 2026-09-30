@@ -1,6 +1,6 @@
 # MoriMeta — Architecture
 
-> **Version:** 0.3 · **Status:** 草案（未批准）· **Date:** 2026-09-26
+> **Version:** 0.3 · **Status:** 已批准（2026-09-30，按 [DECISIONS](DECISIONS.md) 修订）· **Date:** 2026-09-26
 > v0.3 的修改以 [SPIKE_REPORT](SPIKE_REPORT.md) 的 S0/S1/S2/S3/S7 结果为依据；未经验证的部分标为"候选"或"待 Sx"。
 > 本文定义模块边界、数据流、进程模型与关键技术决策。安全细节见 [SAFETY_MODEL](SAFETY_MODEL.md)，字段语义见 [METADATA_MODEL](METADATA_MODEL.md)，威胁模型见 [SECURITY_MODEL](SECURITY_MODEL.md)。
 > `[F-xx]` / `[V-xx]` 引用 [RESEARCH_NOTES](RESEARCH_NOTES.md)。
