@@ -52,11 +52,18 @@ fn replace_ignore_case(text: &str, from: &str, to: &str) -> String {
     if from.is_empty() {
         return text.to_owned();
     }
-    let (lt, lf) = (text.to_lowercase(), from.to_lowercase());
-    // lower-casing can change byte lengths outside ASCII; fall back to an exact replace then
-    if lt.len() != text.len() || lf.len() != from.len() {
+    // lower-casing can change a character's byte length outside ASCII (Turkish "İ" grows, the
+    // Kelvin sign shrinks); positions in the lower-cased text are only valid in the original when
+    // no character changes length, so fall back to an exact replace otherwise (the totals alone
+    // can balance out, and slicing inside a character would panic)
+    let same_len = |t: &str| {
+        t.chars()
+            .all(|c| c.to_lowercase().map(char::len_utf8).sum::<usize>() == c.len_utf8())
+    };
+    if !same_len(text) || !same_len(from) {
         return text.replace(from, to);
     }
+    let (lt, lf) = (text.to_lowercase(), from.to_lowercase());
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while let Some(k) = lt[i..].find(&lf) {
@@ -71,6 +78,17 @@ fn replace_ignore_case(text: &str, from: &str, to: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lower-casing that changes byte lengths but balances out in total ("İ" +1 twice, the Kelvin
+    /// sign -2) must not slice inside a character.
+    #[test]
+    fn case_folding_that_changes_lengths_does_not_panic() {
+        let text = "D:\\\u{130}\u{130}x\u{212A}\\a.jpg";
+        assert_eq!(text.len(), text.to_lowercase().len());
+        let out = replace_ignore_case(text, "x", "<dir>");
+        assert!(out.contains("<dir>"), "{out}");
+        assert_eq!(replace_ignore_case("ABC-abc", "b", "_"), "A_C-a_c");
+    }
 
     #[test]
     fn paths_and_user_names_are_replaced() {
