@@ -857,3 +857,132 @@ fn batch_edits_make_one_entry_per_file() {
     assert_eq!(lab.hashes(), lab.before);
     lab.close();
 }
+
+/// Clean Export (D-15 (c), METADATA_MODEL §10.1) with the pinned ExifTool: a JPEG with GPS, an
+/// unknown APP5 segment, a JUMBF APP11 segment and data after the end of the image. The Preview
+/// predicts each removal; the copy holds only whitelisted segments and tags, the same image
+/// data, and nothing else; the source is not touched; a taken name is numbered or skipped; a
+/// file that is not a JPEG is not exported.
+#[test]
+fn clean_export_keeps_only_the_whitelist() {
+    use mm_core::clean_export::{self, CleanStatus, OnConflict};
+    use mm_domain::clean::KeepSpec;
+    use mm_domain::jpeg;
+    let Some(mut lab) = Lab::new("clean", 1) else {
+        return;
+    };
+    let images = lab.files[0].parent().unwrap().to_path_buf();
+    // GPS.jpg of the ExifTool test images, with segments a metadata reader may not decode
+    let src = images.join("hazard.jpg");
+    let gps = repo()
+        .join("research/.work/exiftool")
+        .join(version().unwrap())
+        .join("src")
+        .join(format!("Image-ExifTool-{}", version().unwrap()))
+        .join("t/images/GPS.jpg");
+    let mut b = std::fs::read(&gps).unwrap();
+    let seg = |m: u8, payload: &[u8]| {
+        let mut v = vec![0xFF, m];
+        v.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+        v.extend_from_slice(payload);
+        v
+    };
+    b.splice(2..2, seg(0xE5, b"MMTEST\0hidden payload"));
+    b.splice(2..2, seg(0xEB, b"JP\0\x01\0\0\0\x01jumb"));
+    b.extend_from_slice(b"SECRET AFTER EOI");
+    std::fs::write(&src, &b).unwrap();
+    let not_jpeg = images.join("notes.png");
+    std::fs::write(&not_jpeg, b"x").unwrap();
+    let before = hash(&src);
+
+    let plan = clean_export::plan(
+        &mut lab.engines[0],
+        &[src.clone(), not_jpeg.clone()],
+        KeepSpec::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    let e = &plan.entries[0];
+    assert_eq!(e.status, CleanStatus::Ready, "{e:?}");
+    assert!(
+        e.prediction.remove.iter().any(|r| r.category == "gps"),
+        "{:?}",
+        e.prediction
+    );
+    let segs: Vec<&str> = e
+        .prediction
+        .remove_segments
+        .iter()
+        .map(|s| s.label.as_str())
+        .collect();
+    assert!(segs.contains(&"APP5:unknown:MMTEST"), "{segs:?}");
+    assert!(segs.contains(&"APP11:JUMBF"), "{segs:?}");
+    assert!(segs.contains(&"after the end of the image"), "{segs:?}");
+    assert!(matches!(plan.entries[1].status, CleanStatus::Blocked(_)));
+
+    let out = lab.dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("hazard.jpg"), b"taken").unwrap();
+    let r = clean_export::export(
+        &mut lab.engines[0],
+        &plan,
+        &out,
+        OnConflict::Number,
+        &|_, _| {},
+        None,
+    )
+    .unwrap();
+    assert_eq!(r[0].status, "exported", "{r:?}");
+    assert_eq!(r[1].status, "blocked");
+    let copy = std::path::PathBuf::from(r[0].output.as_ref().unwrap());
+    assert!(copy.ends_with("hazard (2).jpg"), "{copy:?}");
+    let j = jpeg::parse(&std::fs::read(&copy).unwrap()).unwrap();
+    assert!(
+        jpeg::check_clean(&j).is_empty(),
+        "{:?}",
+        jpeg::check_clean(&j)
+    );
+    let inv = lab.engines[0].read_inventory(&copy).unwrap();
+    assert!(
+        !inv.tags.keys().any(|k| k.contains("GPS")),
+        "{:?}",
+        inv.tags.keys()
+    );
+    assert_eq!(hash(&src), before, "the source is only read");
+    assert_eq!(
+        std::fs::read(out.join("hazard.jpg")).unwrap(),
+        b"taken",
+        "never replaced"
+    );
+    // no temporary copies left
+    assert!(!std::fs::read_dir(&out).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains(".mmexport-")
+    }));
+    // Skip leaves the name to the existing file
+    let r = clean_export::export(
+        &mut lab.engines[0],
+        &plan,
+        &out,
+        OnConflict::Skip,
+        &|_, _| {},
+        None,
+    )
+    .unwrap();
+    assert_eq!(r[0].status, "skipped", "{r:?}");
+    // a source changed after the Preview is refused
+    std::fs::write(&src, [b.as_slice(), b"more"].concat()).unwrap();
+    let r = clean_export::export(
+        &mut lab.engines[0],
+        &plan,
+        &out,
+        OnConflict::Number,
+        &|_, _| {},
+        None,
+    )
+    .unwrap();
+    assert_eq!(r[0].status, "refused", "{r:?}");
+    lab.close();
+}

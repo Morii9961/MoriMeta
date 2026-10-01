@@ -19,6 +19,7 @@ import { HistoryView } from '../features/history/HistoryView'
 import { SettingsView } from '../features/settings/SettingsView'
 import { PresetsView } from '../features/presets/PresetsView'
 import { RulesView } from '../features/presets/RulesView'
+import { CleanExportView } from '../features/clean/CleanExportView'
 import { RecoveryDialog } from '../features/recovery/RecoveryDialog'
 import { useGlobalKeys } from './keys'
 import { CloseDialog } from './CloseDialog'
@@ -51,6 +52,7 @@ function onEvent(e: AppEvent) {
       break
     case 'exec_progress': {
       const st = s.stage
+      if (st.kind === 'clean') useApp.setState({ cleanProgress: { done: e.done, total: e.total } })
       if (st.kind === 'applying') {
         const { kind: _k, ...p } = e
         s.setStage({ ...st, progress: p })
@@ -88,6 +90,7 @@ export function App() {
   if (settingsOpen) body = <SettingsView />
   else if (operation) body = <OperationView />
   else if (preview) body = <PreviewView />
+  else if (stage.kind === 'clean') body = <CleanExportView />
   else if (module === 'history') body = <HistoryView />
   else if (module === 'presets') body = <PresetsView />
   else if (module === 'rules') body = <RulesView />

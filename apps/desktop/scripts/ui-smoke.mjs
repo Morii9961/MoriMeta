@@ -234,6 +234,18 @@ const presetSummary = await js(`document.querySelector('.summary-strip').innerTe
 console.log(`preset preview: ${presetSummary.replace(/\s+/g, ' ')}`)
 await js(`__t.click('Discard plan'); true`)
 if (JSON.stringify(hashes()) !== JSON.stringify(before)) fail('the preset Preview changed files')
+
+// Clean Export Preview of the same selection (exporting needs the folder dialog; the core's
+// integration test covers it)
+await js(`[...document.querySelectorAll('.toolbar [role=tab]')].find(b => b.innerText === 'Library').click(); true`)
+await sleep(300)
+await js(`__t.click('Clean export'); true`)
+await until('clean preview', `document.querySelectorAll('.clean-row').length > 0 && !/Reading…/.test(document.querySelector('.summary-strip').innerText)`, 60000)
+await until('clean detail', `/MAKER NOTES|SERIAL NUMBERS/i.test(document.querySelector('.pane-inspector').innerText)`)
+await shot('10-clean-preview')
+console.log(`clean export preview: ${(await js(`document.querySelector('.summary-strip').innerText`)).replace(/\s+/g, ' ')}`)
+await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+if (JSON.stringify(hashes()) !== JSON.stringify(before)) fail('the Clean Export Preview changed files')
 console.log('PASS')
 app.kill()
 process.exit(0)

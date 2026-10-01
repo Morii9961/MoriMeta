@@ -72,7 +72,7 @@
 ## 6. 尚缺
 
 - 更新（`update_check` / `update_download` / `update_install`）：依赖 D-2 / D-4 与 S6；`OperationGate::exclusive` 已就绪。
-- 界面语言：消息码 + 参数，见 `DESIGN_REVIEW_ENGINEERING.md` §4。
-- Clean Export：依赖 D-15。
+- 界面语言：已实施（DECISIONS §3 第 8 项）：后端英文模板即消息码，界面翻译表 `apps/desktop/src/i18n/backend.zh.json`，CI 检查覆盖。
+- Clean Export：已实施（`mm-core::clean_export`，`clean_plan` / `clean_entry` / `clean_export` 命令）。
 - 时区修正与"从参考同步"：依赖 D-18。
-- 可序列化的 IPC 类型与 TypeScript 类型生成：在适配层开始时一并做。
+- 适配层：`apps/desktop/src-tauri`（命令见 `src/cmd.rs`，前端镜像类型 `src/ipc/types.ts`，手工维护）。

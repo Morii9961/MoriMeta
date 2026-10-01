@@ -930,6 +930,140 @@ pub async fn plan_preset(app: AppHandle, ids: Vec<u64>, preset_id: String) -> Re
 }
 
 // ---------------------------------------------------------------------------------------------
+// Clean Export (D-15 (c), PRODUCT_SPEC §6.8.3)
+
+#[derive(Serialize)]
+pub struct CleanEntryDto {
+    pub seq: u32,
+    pub name: String,
+    pub source: String,
+    pub status: mm_core::clean_export::CleanStatus,
+    /// Removed tags per privacy category.
+    pub categories: Vec<(String, usize)>,
+    pub removed: usize,
+    pub kept: usize,
+    pub segments: Vec<mm_domain::clean::RemovedSegment>,
+    pub lens_lost: bool,
+}
+
+#[derive(Serialize)]
+pub struct CleanPlanDto {
+    pub id: String,
+    pub entries: Vec<CleanEntryDto>,
+}
+
+/// Build the Clean Export Preview for these files: what each copy loses. Nothing is written.
+#[tauri::command]
+pub async fn clean_plan(
+    app: AppHandle,
+    ids: Vec<u64>,
+    spec: mm_domain::clean::KeepSpec,
+) -> Res<CleanPlanDto> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let paths = paths_of(&core, &ids)?;
+        let ctl = plan_ctl(&core);
+        let plan = with_planner(&core, |engine| {
+            mm_core::clean_export::plan(engine, &paths, spec, &ctl).map_err(ue)
+        })?;
+        let dto = CleanPlanDto {
+            id: plan.id.clone(),
+            entries: plan
+                .entries
+                .iter()
+                .map(|e| {
+                    let mut cats: Vec<(String, usize)> = Vec::new();
+                    for r in &e.prediction.remove {
+                        match cats.iter_mut().find(|(c, _)| *c == r.category) {
+                            Some((_, n)) => *n += 1,
+                            None => cats.push((r.category.clone(), 1)),
+                        }
+                    }
+                    cats.sort_by_key(|c| std::cmp::Reverse(c.1));
+                    CleanEntryDto {
+                        seq: e.seq,
+                        name: e.name.clone(),
+                        source: e.source.clone(),
+                        status: e.status.clone(),
+                        categories: cats,
+                        removed: e.prediction.remove.len(),
+                        kept: e.prediction.keep.len(),
+                        segments: e.prediction.remove_segments.clone(),
+                        lens_lost: e.prediction.lens_lost,
+                    }
+                })
+                .collect(),
+        };
+        *lock(&core.clean) = Some(plan);
+        Ok(dto)
+    })
+    .await
+    .map_err(ue)?
+}
+
+/// Every tag one copy loses and keeps (the File detail of the Clean Export Preview).
+#[tauri::command]
+pub fn clean_entry(core: CoreState, seq: u32) -> Res<mm_domain::clean::Prediction> {
+    let plan = lock(&core.clean);
+    let plan = plan.as_ref().ok_or("no Clean Export preview")?;
+    plan.entries
+        .iter()
+        .find(|e| e.seq == seq)
+        .map(|e| e.prediction.clone())
+        .ok_or_else(|| format!("plan has no entry {seq}"))
+}
+
+/// Export the current Clean Export plan into a folder the user picks (the backend's dialog,
+/// ARCHITECTURE §5.1). Returns None when the dialog was cancelled.
+#[tauri::command]
+pub async fn clean_export(
+    app: AppHandle,
+    number_taken: bool,
+) -> Res<Option<Vec<mm_core::clean_export::Exported>>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d =
+            rfd::FileDialog::new().set_title("Clean export: choose the folder for the copies");
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(dir) = d.pick_folder() else {
+            return Ok(None);
+        };
+        core.wait_launched();
+        let plan = lock(&core.clean).clone().ok_or("no Clean Export preview")?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        *lock(&core.exec_cancel) = Some(cancel.clone());
+        let _running = core.mark_running();
+        let throttle = Throttle::new();
+        let c2 = core.clone();
+        let progress = move |done: usize, total: usize| {
+            if throttle.ready(done == total) {
+                c2.emit(AppEvent::ExecProgress(ExecProgressDto {
+                    total,
+                    done,
+                    ..Default::default()
+                }));
+            }
+        };
+        let mut engines = lock(&core.engines);
+        let engine = engines.first_mut().ok_or("ExifTool is not available")?;
+        let on = if number_taken {
+            mm_core::clean_export::OnConflict::Number
+        } else {
+            mm_core::clean_export::OnConflict::Skip
+        };
+        let r = mm_core::clean_export::export(engine, &plan, &dir, on, &progress, Some(cancel))
+            .map_err(ue)?;
+        *lock(&core.exec_cancel) = None;
+        Ok(Some(r))
+    })
+    .await
+    .map_err(ue)?
+}
+
+// ---------------------------------------------------------------------------------------------
 // settings
 
 #[tauri::command]

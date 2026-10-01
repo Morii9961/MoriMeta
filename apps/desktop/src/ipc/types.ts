@@ -333,6 +333,57 @@ export interface OpDetail extends OpSummary {
   files_detail: FileDetail[]
 }
 
+// --- Clean Export (D-15 (c))
+
+export interface KeepSpec {
+  camera: boolean
+  lens: boolean
+  exposure: boolean
+  capture_time: boolean
+  author: boolean
+  descriptive: boolean
+}
+
+export interface RemovedSegment {
+  label: string
+  bytes: number
+  unidentified: boolean
+}
+
+export interface CleanEntry {
+  seq: number
+  name: string
+  source: string
+  status: { status: 'ready' } | { status: 'blocked'; reason: string }
+  categories: [string, number][]
+  removed: number
+  kept: number
+  segments: RemovedSegment[]
+  lens_lost: boolean
+}
+
+export interface CleanPlan {
+  id: string
+  entries: CleanEntry[]
+  /** The keep choices this plan was built with (kept by the UI). */
+  spec?: KeepSpec
+}
+
+export interface Prediction {
+  keep: string[]
+  remove: { key: string; category: string; value: string }[]
+  remove_segments: RemovedSegment[]
+  lens_lost: boolean
+}
+
+export interface Exported {
+  seq: number
+  source: string
+  output: string | null
+  status: 'exported' | 'skipped' | 'refused' | 'blocked' | 'failed' | 'cancelled'
+  reasons: string[]
+}
+
 export interface Setting {
   name: string
   value: string

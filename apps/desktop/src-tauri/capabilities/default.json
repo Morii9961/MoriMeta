@@ -44,6 +44,9 @@
     "allow-preset-delete",
     "allow-preset-import",
     "allow-preset-export",
-    "allow-plan-preset"
+    "allow-plan-preset",
+    "allow-clean-plan",
+    "allow-clean-entry",
+    "allow-clean-export"
   ]
 }

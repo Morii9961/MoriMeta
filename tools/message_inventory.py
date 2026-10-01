@@ -32,6 +32,8 @@ KINDS = [
     ("file.disk_full", "Result: paused, volume full", r"Outcome::DiskFull\("),
     ("file.cancelled", "Result: cancelled", r"Outcome::Cancelled\("),
     ("error.input", "Error dialog (input)", r"CoreError::Input\("),
+    ("plan.blocked", "Preview: not written", r"\bblocked\((format!\(|\")"),
+    ("check.reason", "Check result: why not written or exported", r"\b(why|reasons)\.push\((format!\(|\")"),
     ("error.domain", "Error / validation text", r"\bErr\((format!\(|\")"),
 ]
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')

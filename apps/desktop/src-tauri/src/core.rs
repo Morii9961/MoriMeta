@@ -39,6 +39,8 @@ pub struct Core {
     pub scan_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub plan_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub exec_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    /// The Clean Export Preview the user is looking at.
+    pub clean: Mutex<Option<mm_core::clean_export::CleanPlan>>,
     launched: (Mutex<bool>, Condvar),
     /// A write Operation (apply, undo, resume) is running: closing the window asks first.
     running: AtomicBool,
@@ -182,6 +184,7 @@ impl Core {
             scan_cancel: Mutex::new(None),
             plan_cancel: Mutex::new(None),
             exec_cancel: Mutex::new(None),
+            clean: Mutex::new(None),
             launched: (Mutex::new(false), Condvar::new()),
             running: AtomicBool::new(false),
         })

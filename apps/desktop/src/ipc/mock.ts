@@ -289,6 +289,14 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   preset_import: () => null,
   preset_export: () => null,
   plan_preset: (a) => planBatch(a.ids as number[], { copyright: { op: 'set', value: '© {creator} {year}' }, title: 'Copyright Template' }),
+  clean_plan: (a) => ({ id: 'clean-mock', entries: (a.ids as number[]).map((id, seq) => {
+    const as = assets.find((x) => x.id === id)!
+    return as.ext === 'JPG'
+      ? { seq, name: as.name, source: as.path, status: { status: 'ready' }, categories: [['gps', 9], ['maker_notes', 120], ['serial_numbers', 2]], removed: 131, kept: 24, segments: [{ label: 'APP2:MPF', bytes: 90, unidentified: false }], lens_lost: false }
+      : { seq, name: as.name, source: as.path, status: { status: 'blocked', reason: 'only JPEG files are exported in this version' }, categories: [], removed: 0, kept: 0, segments: [], lens_lost: false }
+  }) }),
+  clean_entry: () => ({ keep: ['EXIF:IFD0:Make', 'EXIF:IFD0:Model'], remove: [{ key: 'EXIF:GPS:GPSLatitude', category: 'gps', value: '43 deg 3\' 51.12" N' }, { key: 'EXIF:ExifIFD:SerialNumber', category: 'serial_numbers', value: '6001234' }], remove_segments: [{ label: 'APP2:MPF', bytes: 90, unidentified: false }], lens_lost: false }),
+  clean_export: () => [],
   recovery_status: () => [],
   recovery_dismiss: () => undefined,
   recovery_resume: () => undefined,

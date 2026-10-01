@@ -5,11 +5,13 @@
 //! and the `creator` field (provisional registry v0 until the S3 third-party checks).
 
 pub mod capture;
+pub mod clean;
 pub mod copyright;
 pub mod cp1252;
 pub mod creator;
 pub mod gps;
 pub mod iptc;
+pub mod jpeg;
 pub mod plan;
 pub mod risk;
 pub mod rules;

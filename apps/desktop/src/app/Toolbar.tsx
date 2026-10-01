@@ -73,7 +73,12 @@ export function Toolbar() {
       <button className="btn plain" disabled={locked} onClick={() => setModule('presets')}>
         {t('toolbar.apply_preset')} ▾
       </button>
-      <button className="btn plain" disabled title={t('toolbar.clean_export_soon')}>
+      <button
+        className="btn plain"
+        disabled={locked || selection.size === 0}
+        title={selection.size === 0 ? t('preview.need_selection') : t('toolbar.clean_export_tip')}
+        onClick={() => useApp.getState().setStage({ kind: 'clean' })}
+      >
         {t('toolbar.clean_export')}
       </button>
       {isLocked(stage) && <span className="toolbar-locked">{t('toolbar.locked')}</span>}

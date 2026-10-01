@@ -24,6 +24,7 @@ export type Stage =
   | { kind: 'preview'; plan: PlanView; origin: 'edit' | 'undo' | 'retry' }
   | { kind: 'applying'; plan: PlanView; progress: ExecProgress | null; started: number; cancelling: boolean }
   | { kind: 'done'; plan: PlanView; report: OpReport; started: number; finished: number }
+  | { kind: 'clean' }
 
 export interface SortKey {
   key: string
@@ -64,6 +65,8 @@ interface AppState {
   notices: Notice[]
   /** The window asked to close during an Operation (INTERACTION_SPEC §10). */
   closeAsked: boolean
+  /** Clean Export progress while it writes. */
+  cleanProgress: { done: number; total: number } | null
   /** The Preset the rule builder shows. */
   editPreset: string | null
   /** Close once the Operation has stopped. */
@@ -125,6 +128,7 @@ export const useApp = create<AppState>((set) => ({
   stage: { kind: 'library' },
   notices: [],
   closeAsked: false,
+  cleanProgress: null,
   editPreset: null,
   closeAfter: false,
 
