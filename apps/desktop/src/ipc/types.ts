@@ -112,6 +112,7 @@ export type AppEvent =
   | { kind: 'scan_done'; cancelled: boolean; error: string | null }
   | { kind: 'plan_progress'; stage: 'files' | 'metadata'; done: number; total: number }
   | ({ kind: 'exec_progress' } & ExecProgress)
+  | { kind: 'close_blocked' }
 
 export interface FieldView {
   field: FieldName

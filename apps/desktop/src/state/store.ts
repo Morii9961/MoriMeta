@@ -62,6 +62,10 @@ interface AppState {
   stagedGen: number
   stage: Stage
   notices: Notice[]
+  /** The window asked to close during an Operation (INTERACTION_SPEC §10). */
+  closeAsked: boolean
+  /** Close once the Operation has stopped. */
+  closeAfter: boolean
 
   setLang: (l: Lang) => void
   setInfo: (i: AppInfo) => void
@@ -118,6 +122,8 @@ export const useApp = create<AppState>((set) => ({
   stagedGen: 0,
   stage: { kind: 'library' },
   notices: [],
+  closeAsked: false,
+  closeAfter: false,
 
   setLang: (lang) => {
     try {

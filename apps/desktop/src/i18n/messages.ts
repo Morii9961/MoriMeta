@@ -389,6 +389,10 @@ export const messages = {
   'confirm.back': ['Back to preview', '返回预览'],
   'confirm.apply': ['Apply {n}', '写入 {n} 处'],
 
+  'close.title': ['An operation is running', '操作正在进行'],
+  'close.lead': ['Closing now would leave it unfinished. MoriMeta would recover it at the next launch, but stopping cleanly is better.', '现在关闭会使操作中断。下次启动时 MoriMeta 会恢复它，但正常停止更稳妥。'],
+  'close.stop': ['Stop after the current file, then close', '在当前文件后停止，然后关闭'],
+  'close.stopping': ['Stopping; the window closes when the current file is settled.', '正在停止；当前文件处理完毕后关闭窗口。'],
   'op.files': ['files', '个文件'],
   'op.queued': ['queued', '排队中'],
   'op.elapsed': ['elapsed {t}', '已用 {t}'],

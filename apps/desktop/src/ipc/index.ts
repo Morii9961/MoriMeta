@@ -106,6 +106,7 @@ export const api = {
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),
   recoveryResume: (opId: string) => call<OpReport>('recovery_resume', { opId }),
+  appClose: () => call<void>('app_close'),
   settingsList: () => call<Setting[]>('settings_list'),
   settingSet: (name: string, value: string) => call<void>('setting_set', { name, value }),
 }

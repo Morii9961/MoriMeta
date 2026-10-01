@@ -36,6 +36,7 @@
     "allow-settings-list",
     "allow-setting-set",
     "allow-export-log",
-    "allow-restore-to"
+    "allow-restore-to",
+    "allow-app-close"
   ]
 }

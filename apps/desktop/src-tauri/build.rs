@@ -33,6 +33,7 @@ const COMMANDS: &[&str] = &[
     "recovery_resume",
     "settings_list",
     "setting_set",
+    "app_close",
 ];
 
 /// The app icon is drawn here rather than committed (the repository keeps no binaries,

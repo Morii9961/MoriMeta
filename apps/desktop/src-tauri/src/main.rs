@@ -36,6 +36,15 @@ fn main() {
                 let core = window.state::<Arc<core::Core>>().inner().clone();
                 cmd::dropped(core, paths.clone());
             }
+            // INTERACTION_SPEC §10: closing during an Operation always asks (the frontend
+            // offers Keep going or Stop after the current file, then close)
+            WindowEvent::CloseRequested { api, .. } => {
+                let core = window.state::<Arc<core::Core>>();
+                if core.running() {
+                    api.prevent_close();
+                    core.emit(dto::AppEvent::CloseBlocked);
+                }
+            }
             WindowEvent::Destroyed => {
                 window.state::<Arc<core::Core>>().shutdown();
             }
@@ -73,6 +82,7 @@ fn main() {
             cmd::recovery_resume,
             cmd::settings_list,
             cmd::setting_set,
+            cmd::app_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MoriMeta");

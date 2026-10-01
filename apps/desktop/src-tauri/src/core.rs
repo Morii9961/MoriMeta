@@ -4,7 +4,7 @@
 //! Plans awaiting Preview. Everything that decides what is written lives in `mm-core`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use mm_core::engine::Engine;
@@ -40,6 +40,17 @@ pub struct Core {
     pub plan_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub exec_cancel: Mutex<Option<Arc<AtomicBool>>>,
     launched: (Mutex<bool>, Condvar),
+    /// A write Operation (apply, undo, resume) is running: closing the window asks first.
+    running: AtomicBool,
+}
+
+/// Marks a write Operation as running for as long as it lives.
+pub struct Running<'a>(&'a AtomicBool);
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -172,6 +183,7 @@ impl Core {
             plan_cancel: Mutex::new(None),
             exec_cancel: Mutex::new(None),
             launched: (Mutex::new(false), Condvar::new()),
+            running: AtomicBool::new(false),
         })
     }
 
@@ -275,6 +287,16 @@ impl Core {
             lock(&self.exiftool).integrity = Some(problem);
             self.emit(AppEvent::Status);
         }
+    }
+
+    /// INTERACTION_SPEC §10: closing during an Operation always asks.
+    pub fn running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+
+    pub fn mark_running(&self) -> Running<'_> {
+        self.running.store(true, Ordering::SeqCst);
+        Running(&self.running)
     }
 
     pub fn emit(&self, e: AppEvent) {

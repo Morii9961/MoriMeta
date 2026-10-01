@@ -618,6 +618,7 @@ pub async fn op_execute(
             cancel: Some(cancel),
             ..Default::default()
         };
+        let _running = core.mark_running();
         let mut engines = lock(&core.engines);
         let mut store = lock(&core.store);
         let mut book = lock(&core.book);
@@ -774,6 +775,7 @@ pub async fn recovery_resume(app: AppHandle, op_id: String) -> Res<OpReportDto> 
     tauri::async_runtime::spawn_blocking(move || {
         core.wait_launched();
         let _permit = core.gate.write().map_err(e)?;
+        let _running = core.mark_running();
         let mut engines = lock(&core.engines);
         let mut store = lock(&core.store);
         let rep = executor::resume(&mut store, &mut engines, &op_id, &ExecOptions::default())
@@ -782,6 +784,18 @@ pub async fn recovery_resume(app: AppHandle, op_id: String) -> Res<OpReportDto> 
     })
     .await
     .map_err(e)?
+}
+
+/// Close the window once nothing is running (after "Stop, then close").
+#[tauri::command]
+pub fn app_close(app: AppHandle, core: CoreState) -> Res<()> {
+    if core.running() {
+        return Err("an Operation is still running".into());
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        w.close().map_err(e)?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------

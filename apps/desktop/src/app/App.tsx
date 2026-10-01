@@ -20,6 +20,7 @@ import { SettingsView } from '../features/settings/SettingsView'
 import { PresetsView } from '../features/presets/PresetsView'
 import { RecoveryDialog } from '../features/recovery/RecoveryDialog'
 import { useGlobalKeys } from './keys'
+import { CloseDialog } from './CloseDialog'
 
 function onEvent(e: AppEvent) {
   const s = useApp.getState()
@@ -43,6 +44,9 @@ function onEvent(e: AppEvent) {
       break
     case 'plan_progress':
       if (s.stage.kind === 'planning') s.setStage({ kind: 'planning', done: e.done, total: e.total, stage: e.stage })
+      break
+    case 'close_blocked':
+      useApp.setState({ closeAsked: true })
       break
     case 'exec_progress': {
       const st = s.stage
@@ -96,6 +100,7 @@ export function App() {
       <StatusBar />
       <Notices />
       {info && <RecoveryDialog />}
+      <CloseDialog />
     </div>
   )
 }

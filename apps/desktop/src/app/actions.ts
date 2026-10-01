@@ -106,6 +106,7 @@ export async function apply(plan: PlanView, acks: string[]) {
     st().setStage({ kind: 'preview', plan, origin: 'edit' })
     st().notify('error', errorText(e))
   }
+  if (st().closeAfter) api.appClose().catch(() => {})
   api.appInfo().then(st().setInfo).catch(() => {})
 }
 

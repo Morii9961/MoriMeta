@@ -39,6 +39,8 @@ pub enum AppEvent {
         total: usize,
     },
     ExecProgress(ExecProgressDto),
+    /// The window was asked to close while an Operation runs; it stayed open.
+    CloseBlocked,
 }
 
 #[derive(Debug, Clone, Serialize)]
