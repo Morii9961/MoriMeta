@@ -1,0 +1,39 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The app's own commands only: no plugin permissions, no file system or shell access from the frontend (ARCHITECTURE \u00a75.1, SECURITY_MODEL \u00a76)",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-subscribe",
+    "allow-app-info",
+    "allow-import-dialog",
+    "allow-scan-cancel",
+    "allow-rescan",
+    "allow-session-clear",
+    "allow-asset-detail",
+    "allow-selection-aggregate",
+    "allow-attention",
+    "allow-clear-read-only",
+    "allow-plan-batch",
+    "allow-plan-cancel",
+    "allow-plan-view",
+    "allow-plan-page",
+    "allow-plan-exclude",
+    "allow-plan-exclude-field",
+    "allow-plan-preflight",
+    "allow-plan-confirm",
+    "allow-op-execute",
+    "allow-op-cancel",
+    "allow-history-list",
+    "allow-op-detail",
+    "allow-undo-plan",
+    "allow-retry-plan",
+    "allow-recovery-status",
+    "allow-recovery-dismiss",
+    "allow-recovery-resume",
+    "allow-settings-list",
+    "allow-setting-set"
+  ]
+}

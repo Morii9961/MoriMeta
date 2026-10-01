@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Design tokens: DESIGN_SYSTEM.md §1–7 (FROZEN v1.0, Direction A). Dark only in 1.0. */
+
+:root {
+  /* surfaces */
+  --bg-chrome: #111315;
+  --bg-panel: #15171a;
+  --bg-app: #17191c;
+  --bg-table: #191b1e;
+  --bg-row: #18191c;
+  --bg-row-alt: #1c1e21;
+  --bg-header: #1e2124;
+  --bg-section: #1b1d20;
+  --bg-input: #121416;
+  --bg-hover: #23292e;
+
+  /* text */
+  --text-strong: #eef1f4;
+  --text-primary: #d9dde2;
+  --text-secondary: #9aa0a7;
+  --text-muted: #7d848c;
+  --text-faint: #6b7178;
+  --text-section: #7c838b;
+  --text-empty: #4a4f55;
+  --text-disabled: #5d636a;
+
+  /* borders */
+  --border-subtle: #1f2225;
+  --border-pane: #26292d;
+  --border-cell: #2a2d31;
+  --border-control: #33373c;
+  --border-button: #3a3f45;
+  --border-strong: #4a4f55;
+  --border-disabled: #2c3035;
+
+  /* accent (single hue) */
+  --accent: #5ab4d0;
+  --accent-text: #bfe6f2;
+  --accent-soft: #1f4250;
+  --accent-input: #3d6f80;
+  --select-row: #203846;
+  --select-focus: #2a4a5c;
+  --focus-ring: #8fd3e8;
+  --banner-preview: #1a2b33;
+  --banner-preview-border: #2a4552;
+  --staged-bg: #1a2227;
+
+  /* change kinds */
+  --change-add: #6cc58a;
+  --change-mod: #7fa8ea;
+  --change-rem: #e8866f;
+  --change-warn: #e3b45c;
+  --change-uns: #8b9199;
+  --change-none: #5d636a;
+  --change-excluded: #7d848c;
+
+  /* outcomes */
+  --ok: #6cc58a;
+  --fail: #ef6a5e;
+  --skip: #8b9199;
+  --conflict: #e3b45c;
+  --info: #7fa8ea;
+
+  /* tone triplets: fg / text / bg / border */
+  --success-fg: #6cc58a; --success-text: #a9dcb8; --success-bg: #161d19; --success-border: #2e4a37;
+  --warn-fg: #e3b45c; --warn-text: #e8cf9c; --warn-bg: #1f1c16; --warn-border: #4a3d24;
+  --paused-fg: #e3b45c; --paused-text: #ecd9ae; --paused-bg: #2a2414; --paused-border: #5c4a24;
+  --error-fg: #ef6a5e; --error-text: #f0b3ab; --error-bg: #211816; --error-banner: #261a19; --error-border: #5a2e2a;
+  --info-fg: #7fa8ea; --info-text: #b9cdf0; --info-bg: #171c24; --info-border: #2e3a4c;
+  --neutral-fg: #8b9199; --neutral-text: #c3c8ce; --neutral-bg: #1b1d20; --neutral-border: #33373c;
+  --destructive-fill: #9c3329; --destructive-border: #c94a3f;
+  --row-warn: #1f1c16;
+  --row-error: #211816;
+  --warn-field-border: #6b5530;
+  --invalid-border: #8a3a33;
+  --invalid-bg: #1f1716;
+
+  /* typography */
+  --font-ui: 'IBM Plex Sans', 'Microsoft YaHei UI', 'Yu Gothic UI', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Microsoft YaHei UI', 'Yu Gothic UI', Consolas, monospace;
+
+  /* spacing (2 px base) */
+  --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 8px; --sp-5: 10px;
+  --sp-6: 12px; --sp-7: 14px; --sp-8: 16px; --sp-10: 20px;
+
+  /* radii */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  /* elevation */
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-dialog: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --scrim: rgba(8, 9, 10, 0.58);
+
+  /* dimensions */
+  --h-menubar: 28px;
+  --h-toolbar: 38px;
+  --h-statusbar: 24px;
+  --h-actionbar: 46px;
+  --h-table-header: 24px;
+  --h-table-toolbar: 30px;
+  --h-row: 22px;
+  --h-control: 24px;
+  --w-sidebar: 232px;
+  --w-inspector: 344px;
+  --w-time-tools: 440px;
+  --w-history: 300px;
+}
+
+@media (min-width: 2400px) {
+  :root {
+    --w-sidebar: 264px;
+    --w-inspector: 400px;
+    --w-time-tools: 500px;
+    --w-history: 360px;
+  }
+}

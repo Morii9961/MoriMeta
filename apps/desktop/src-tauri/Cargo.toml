@@ -1,0 +1,37 @@
+# MoriMeta desktop app: the Tauri adapter over mm-core (ARCHITECTURE §4.1 `src-tauri`).
+# Its own workspace: building it needs the frontend (`npm run build`), which the core workspace's
+# checks do not.
+[package]
+name = "morimeta"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+publish = false
+description = "MoriMeta: safe batch metadata editing for photographers"
+
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = { version = "0.17", default-features = false }
+mm-core = { path = "../../../crates/mm-core" }
+mm-domain = { path = "../../../crates/mm-domain" }
+mm-exiftool = { path = "../../../crates/mm-exiftool" }
+mm-fs = { path = "../../../crates/mm-fs" }
+mm-store = { path = "../../../crates/mm-store" }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

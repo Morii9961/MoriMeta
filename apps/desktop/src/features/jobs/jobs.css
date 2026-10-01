@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* ProgressPanel and OperationSummary (DESIGN_SYSTEM). */
+
+.op { flex: 1; display: flex; min-width: 0; }
+.op-main { flex: 1; min-width: 560px; display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; overflow: auto; background: var(--bg-table); }
+.op-tally { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.op-count { font-size: 15px; font-weight: 600; }
+.op-tally-item { display: inline-flex; gap: 5px; align-items: baseline; }
+.op-bar { height: 6px; background: var(--border-control); border-radius: 3px; overflow: hidden; display: flex; max-width: 720px; }
+.op-bar > div { height: 100%; background: var(--accent); }
+.op-bar.seg { height: 4px; }
+.seg-done { background: var(--ok) !important; }
+.seg-failed { background: var(--fail) !important; }
+.seg-skipped, .seg-cancelled { background: var(--skip) !important; }
+.seg-conflict { background: var(--conflict) !important; }
+.op-counts { display: flex; gap: 16px; }
+.op-meta { font-size: 11px; }
+.op-steps { display: flex; flex-direction: column; gap: 4px; max-width: 720px; }
+.op-step-list { display: flex; gap: 16px; color: var(--text-secondary); }
+.op-verified { font-size: 12px; }
+.op-issues { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border-pane); padding: 8px 10px; max-width: 980px; }
+.issue-row { display: grid; grid-template-columns: 14px 220px 90px 1fr; gap: 8px; align-items: baseline; min-height: 20px; }
+.issue-why { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; }
+.op-files-head { display: flex; gap: 8px; }
+.op-files { display: flex; flex-direction: column; border-top: 1px solid var(--border-pane); }
+.op-file { display: grid; grid-template-columns: 44px 14px 260px 100px 1fr; gap: 8px; height: 22px; align-items: center; border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
+.op-side .insp-section .btn { justify-content: flex-start; }

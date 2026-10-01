@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Settings (SCREEN_SPEC §12): page padding 20, rows `210 label | control + help`. */
+
+.settings { background: var(--bg-app); }
+.set-page { padding: 20px; }
+.set-title { font-size: 16px; line-height: 20px; font-weight: 600; margin: 0 0 12px; color: var(--text-strong); }
+.set-row { display: grid; grid-template-columns: 210px minmax(0, 560px); gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.set-label { color: var(--text-secondary); display: flex; gap: 6px; align-items: baseline; }
+.set-control { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.set-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; }
+.set-inline .input { flex: 1; min-width: 200px; height: 24px; }

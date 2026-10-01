@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* History (SCREEN_SPEC §10). */
+
+.history-journal { width: var(--w-history); }
+.journal-day { padding-bottom: 6px; }
+.journal-date { padding: 6px 12px 2px; font-size: 11px; }
+.journal-entry {
+  width: 100%; border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: 44px 12px 1fr; gap: 2px 6px; padding: 5px 10px 5px 12px; align-items: baseline;
+}
+.journal-entry:hover { background: var(--bg-hover); }
+.journal-entry.on { background: var(--select-row); }
+.journal-title { min-width: 0; }
+.journal-sub { grid-column: 3; font-size: 10.5px; }
+
+.history-head { flex: none; padding: 10px 12px; border-bottom: 1px solid var(--border-pane); background: var(--bg-app); display: flex; flex-direction: column; gap: 8px; }
+.history-title { display: flex; gap: 8px; align-items: baseline; }
+.history-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.history-files { background: var(--bg-table); }
+.hfile { display: grid; grid-template-columns: 44px 220px 90px 1fr 200px; gap: 8px; min-height: 24px; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
+.hchanges { display: flex; gap: 12px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.hchange { overflow: hidden; text-overflow: ellipsis; }
+.history-id { font-size: 10.5px; margin-top: 6px; }

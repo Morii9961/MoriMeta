@@ -100,6 +100,43 @@ jobs:
           MM_ALLOW_ELEVATED: "1"
         run: cargo test --workspace --locked
 
+  desktop:
+    name: desktop app (frontend build, adapter clippy)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            apps/desktop/src-tauri/target
+          key: desktop-${{ runner.os }}-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-${{ runner.os }}-
+
+      - name: Frontend (type check, build)
+        # Node comes with the runner image; npm ci installs exactly package-lock.json
+        working-directory: apps/desktop
+        run: |
+          node --version
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: Adapter (format, clippy)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked -- -D warnings
+
   msrv:
     name: minimum Rust version
     runs-on: windows-latest
