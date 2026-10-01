@@ -37,6 +37,13 @@
     "allow-setting-set",
     "allow-export-log",
     "allow-restore-to",
-    "allow-app-close"
+    "allow-app-close",
+    "allow-presets-list",
+    "allow-preset-save",
+    "allow-preset-duplicate",
+    "allow-preset-delete",
+    "allow-preset-import",
+    "allow-preset-export",
+    "allow-plan-preset"
   ]
 }

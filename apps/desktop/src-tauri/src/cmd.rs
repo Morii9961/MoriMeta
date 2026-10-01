@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use mm_core::executor::{self, ExecOptions, ExecProgress, ProgressSink};
 use mm_core::planner::{self, PlanCtl, PlanProgress, PlanStage, TimeTool};
 use mm_core::service::{AssetId, EntryFilter, PAGE_SIZE, ServiceError};
-use mm_core::{history, inspect, recovery, retention, settings, undo};
+use mm_core::{history, inspect, presets, recovery, retention, settings, undo};
 use mm_domain::rules::{Action, PRESET_SCHEMA_VERSION, Preset, Rule};
 use mm_domain::time::{self, SequenceOrder};
 use serde::Serialize;
@@ -796,6 +796,138 @@ pub fn app_close(app: AppHandle, core: CoreState) -> Res<()> {
         w.close().map_err(e)?;
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Presets and rules (PRODUCT_SPEC §6.10–6.11, SCREEN_SPEC §5–6)
+
+#[derive(Serialize)]
+pub struct PresetDto {
+    pub id: String,
+    pub name: String,
+    pub builtin: bool,
+    pub fields: Vec<&'static str>,
+    pub last_used_ms: Option<i64>,
+    /// Imported and not used yet: its first Plan notes every change (SECURITY_MODEL §9).
+    pub untrusted: bool,
+    pub preset: Preset,
+    /// A template variable reads a field another enabled rule changes (INTERACTION_SPEC §1).
+    pub lint: Vec<String>,
+}
+
+#[tauri::command]
+pub fn presets_list(core: CoreState) -> Res<Vec<PresetDto>> {
+    let store = lock(&core.store);
+    Ok(presets::list(&store)
+        .map_err(e)?
+        .into_iter()
+        .map(|p| PresetDto {
+            lint: p.preset.lint(),
+            id: p.id,
+            name: p.name,
+            builtin: p.builtin,
+            fields: p.fields.iter().map(|f| f.name()).collect(),
+            last_used_ms: p.last_used_ms,
+            untrusted: p.untrusted,
+            preset: p.preset,
+        })
+        .collect())
+}
+
+/// Save a Preset (new when `id` is None); it is validated first. Returns its id.
+#[tauri::command]
+pub fn preset_save(core: CoreState, id: Option<String>, preset: Preset) -> Res<String> {
+    presets::save(&mut lock(&core.store), id.as_deref(), &preset).map_err(e)
+}
+
+#[tauri::command]
+pub fn preset_duplicate(core: CoreState, id: String) -> Res<String> {
+    presets::duplicate(&mut lock(&core.store), &id).map_err(e)
+}
+
+#[tauri::command]
+pub fn preset_delete(core: CoreState, id: String) -> Res<()> {
+    presets::delete(&mut lock(&core.store), &id).map_err(e)
+}
+
+/// Import… : a Preset file the user picks, checked (size, schema, limits) and kept as untrusted
+/// until first used. Returns its id, or None when the dialog was cancelled.
+#[tauri::command]
+pub async fn preset_import(app: AppHandle) -> Res<Option<String>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = rfd::FileDialog::new()
+            .set_title("Import preset")
+            .add_filter("MoriMeta preset", &["json"]);
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(path) = d.pick_file() else {
+            return Ok(None);
+        };
+        let size = std::fs::metadata(&path).map_err(e)?.len();
+        if size > mm_domain::rules::MAX_PRESET_BYTES as u64 {
+            return Err(format!(
+                "a preset file is at most {} KB (this one is {} KB)",
+                mm_domain::rules::MAX_PRESET_BYTES >> 10,
+                size >> 10
+            ));
+        }
+        let json = std::fs::read_to_string(&path).map_err(e)?;
+        presets::import(&mut lock(&core.store), &json)
+            .map(Some)
+            .map_err(e)
+    })
+    .await
+    .map_err(e)?
+}
+
+/// Export… : the Preset as JSON to a file the user names.
+#[tauri::command]
+pub async fn preset_export(app: AppHandle, id: String) -> Res<Option<String>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = presets::get(&lock(&core.store), &id).map_err(e)?;
+        let mut d = rfd::FileDialog::new()
+            .set_title("Export preset")
+            .set_file_name(format!("{}.json", p.name.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_")))
+            .add_filter("MoriMeta preset", &["json"]);
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(out) = d.save_file() else {
+            return Ok(None);
+        };
+        std::fs::write(&out, p.preset.to_json()).map_err(e)?;
+        Ok(Some(out.display().to_string()))
+    })
+    .await
+    .map_err(e)?
+}
+
+/// Apply a Preset to files: a Plan that opens in Preview (SCREEN_SPEC 3#p-apply).
+#[tauri::command]
+pub async fn plan_preset(app: AppHandle, ids: Vec<u64>, preset_id: String) -> Res<PlanView> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let paths = paths_of(&core, &ids)?;
+        let info = presets::get(&lock(&core.store), &preset_id).map_err(e)?;
+        let ctl = plan_ctl(&core);
+        let mut plan = with_planner(&core, |engine| {
+            planner::plan_preset(engine, &paths, &info.preset, &ctl).map_err(e)
+        })?;
+        if info.untrusted {
+            presets::mark_untrusted(&mut plan);
+        }
+        presets::used(&mut lock(&core.store), &preset_id).map_err(e)?;
+        let view = PlanView::of(&plan);
+        lock(&core.book).insert(plan);
+        Ok(view)
+    })
+    .await
+    .map_err(e)?
 }
 
 // ---------------------------------------------------------------------------------------------

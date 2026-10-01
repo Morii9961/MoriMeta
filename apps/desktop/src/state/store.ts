@@ -64,6 +64,8 @@ interface AppState {
   notices: Notice[]
   /** The window asked to close during an Operation (INTERACTION_SPEC §10). */
   closeAsked: boolean
+  /** The Preset the rule builder shows. */
+  editPreset: string | null
   /** Close once the Operation has stopped. */
   closeAfter: boolean
 
@@ -123,6 +125,7 @@ export const useApp = create<AppState>((set) => ({
   stage: { kind: 'library' },
   notices: [],
   closeAsked: false,
+  editPreset: null,
   closeAfter: false,
 
   setLang: (lang) => {

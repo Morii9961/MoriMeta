@@ -83,6 +83,13 @@ fn main() {
             cmd::settings_list,
             cmd::setting_set,
             cmd::app_close,
+            cmd::presets_list,
+            cmd::preset_save,
+            cmd::preset_duplicate,
+            cmd::preset_delete,
+            cmd::preset_import,
+            cmd::preset_export,
+            cmd::plan_preset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MoriMeta");

@@ -34,6 +34,13 @@ const COMMANDS: &[&str] = &[
     "settings_list",
     "setting_set",
     "app_close",
+    "presets_list",
+    "preset_save",
+    "preset_duplicate",
+    "preset_delete",
+    "preset_import",
+    "preset_export",
+    "plan_preset",
 ];
 
 /// The app icon is drawn here rather than committed (the repository keeps no binaries,

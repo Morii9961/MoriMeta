@@ -3,6 +3,7 @@
 // in a plain browser (no Tauri), a mock backend stands in so the UI can be looked at; it is
 // never part of a production build.
 
+import type { Preset, PresetInfo } from '../features/presets/model'
 import type {
   AppEvent,
   AppInfo,
@@ -106,6 +107,13 @@ export const api = {
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),
   recoveryResume: (opId: string) => call<OpReport>('recovery_resume', { opId }),
+  presetsList: () => call<PresetInfo[]>('presets_list'),
+  presetSave: (id: string | null, preset: Preset) => call<string>('preset_save', { id, preset }),
+  presetDuplicate: (id: string) => call<string>('preset_duplicate', { id }),
+  presetDelete: (id: string) => call<void>('preset_delete', { id }),
+  presetImport: () => call<string | null>('preset_import'),
+  presetExport: (id: string) => call<string | null>('preset_export', { id }),
+  planPreset: (ids: number[], presetId: string) => call<PlanView>('plan_preset', { ids, presetId }),
   appClose: () => call<void>('app_close'),
   settingsList: () => call<Setting[]>('settings_list'),
   settingSet: (name: string, value: string) => call<void>('setting_set', { name, value }),

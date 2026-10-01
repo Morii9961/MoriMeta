@@ -18,6 +18,7 @@ import { OperationView } from '../features/jobs/OperationView'
 import { HistoryView } from '../features/history/HistoryView'
 import { SettingsView } from '../features/settings/SettingsView'
 import { PresetsView } from '../features/presets/PresetsView'
+import { RulesView } from '../features/presets/RulesView'
 import { RecoveryDialog } from '../features/recovery/RecoveryDialog'
 import { useGlobalKeys } from './keys'
 import { CloseDialog } from './CloseDialog'
@@ -88,7 +89,8 @@ export function App() {
   else if (operation) body = <OperationView />
   else if (preview) body = <PreviewView />
   else if (module === 'history') body = <HistoryView />
-  else if (module === 'presets' || module === 'rules') body = <PresetsView />
+  else if (module === 'presets') body = <PresetsView />
+  else if (module === 'rules') body = <RulesView />
   else body = <LibraryView />
 
   return (
