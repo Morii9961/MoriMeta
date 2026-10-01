@@ -13,7 +13,7 @@
 
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, utimesSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -162,6 +162,18 @@ await shot('3b-preview-zh')
 const untranslated = await js(`[...document.querySelectorAll('.dnote')].map(n => n.innerText).filter(t => /[a-z]{4,} [a-z]{3,} [a-z]{3,}/.test(t))`)
 if (untranslated.length) console.log(`untranslated notes: ${JSON.stringify(untranslated)}`)
 await lang('English')
+
+// a file changed while the Preview is open: RESCAN, Apply blocked, Plan again (INTERACTION_SPEC §3)
+const touched = join(photos, 'Writer.jpg')
+const later = new Date(Date.now() + 60000)
+utimesSync(touched, later, later)
+await js(`window.dispatchEvent(new Event('focus')); true`)
+await until('rescan flag', `/RESCAN/.test(document.querySelector('.dtable').innerText) && /Plan again/.test(document.querySelector('.action-bar').innerText)`)
+await shot('3c-rescan')
+if (!(await js(`[...document.querySelectorAll('.action-bar button')].pop().disabled`))) fail('Apply was not blocked by a changed file')
+await js(`__t.click('Plan again'); true`)
+await until('preview again', `!!document.querySelector('.preview') && /Pre-flight/i.test(document.body.innerText) && !/Checking/.test(document.querySelector('.action-bar').innerText) && !/RESCAN/.test(document.querySelector('.dtable').innerText)`, 120000)
+console.log('a file changed during the Preview was flagged; planned again')
 
 // review every category the checklist asks for, then Apply
 await js(`document.querySelectorAll('.review-item').forEach(b => b.click()); true`)

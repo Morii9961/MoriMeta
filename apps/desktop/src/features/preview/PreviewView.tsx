@@ -8,7 +8,7 @@ import { api, errorText } from '../../ipc'
 import type { PlanEntry, PlanView, Preflight } from '../../ipc/types'
 import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
-import { apply, backToEdit, discardPlan } from '../../app/actions'
+import { apply, backToEdit, discardPlan, planAgain } from '../../app/actions'
 import { counts, GLYPH, GLYPH_CLASS, KINDS, kindsOf, REVIEW, type Kind } from './model'
 import { DiffTable } from './DiffTable'
 import { ConfirmApply } from './ConfirmApply'
@@ -61,6 +61,21 @@ export function PreviewView() {
       alive = false
     }
   }, [plan?.id, plan?.version, notify, plan])
+
+  useEffect(() => {
+    if (!plan) return
+    const again = () =>
+      api
+        .planPreflight(plan.id, plan.version)
+        .then(setPreflight)
+        .catch(() => {})
+    const timer = window.setInterval(again, 15000)
+    window.addEventListener('focus', again)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', again)
+    }
+  }, [plan?.id, plan?.version, plan])
 
   const replace = useCallback(
     (next: PlanView) => {
@@ -271,6 +286,7 @@ export function PreviewView() {
               filter={filter}
               focus={focus}
               busy={busy || plan.kind === 'undo'}
+              rescan={preflight?.rescan ?? []}
               onFocus={(seq) => {
                 setFocus(seq)
                 setPane('detail')
@@ -308,6 +324,11 @@ export function PreviewView() {
         ))}
         <div className="toolbar-spacer" />
         {blocked && <span className="action-note">{blocked}</span>}
+        {(preflight?.rescan.length ?? 0) > 0 && (
+          <button className="btn accent" onClick={() => planAgain(stage.kind === 'preview' ? stage.origin : 'edit', plan)}>
+            {t('preview.plan_again')}
+          </button>
+        )}
         <button className="btn" onClick={discardPlan}>
           {t('preview.discard')}
         </button>

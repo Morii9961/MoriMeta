@@ -322,6 +322,8 @@ export const messages = {
   'preview.excluded': ['Excluded', '已排除'],
   'preview.excluded_files': ['Files', '文件'],
   'preview.excluded_edits': ['Edits', '修改'],
+  'preview.plan_again': ['Plan again', '重新计划'],
+  'preview.plan_again_history': ['Files changed: build the undo or retry again from History.', '文件已改动：请在历史中重新生成撤销或重试计划。'],
   'preview.restore_all': ['Restore all', '全部恢复'],
   'preview.files': ['{n} files', '{n} 个文件'],
   'preview.changes': ['{n} changes', '{n} 处修改'],

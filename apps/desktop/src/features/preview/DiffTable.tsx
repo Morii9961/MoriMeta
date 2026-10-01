@@ -16,6 +16,8 @@ interface Props {
   filter: Kind | 'all'
   focus: number | null
   busy: boolean
+  /** Entries whose file changed since the Preview (INTERACTION_SPEC §3). */
+  rescan: number[]
   onFocus: (seq: number) => void
   onExcludeFile: (seq: number, excluded: boolean) => void
   onExcludeChange: (seq: number, field: string, excluded: boolean) => void
@@ -157,7 +159,7 @@ export function DiffTable(p: Props) {
                   />
                 </span>
                 <span className="mono ellipsis dname" title={e.path}>
-                  {e.name}
+                  {p.rescan.includes(e.seq) && <span className="flag warn">RESCAN</span>} {e.name}
                 </span>
                 <span className="secondary ellipsis">{t(`writes.${e.target}` as MessageKey)}</span>
                 {fields.map((f) => {

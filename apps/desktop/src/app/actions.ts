@@ -123,6 +123,18 @@ function refreshAfterOperation(paths: string[]) {
   if (ids.length) api.rescan(ids).catch(() => {})
 }
 
+/** Files changed while the Preview was open: the same edit is planned again from a fresh read. */
+export async function planAgain(origin: 'edit' | 'undo' | 'retry', plan: PlanView) {
+  if (origin === 'edit' && plan.kind !== 'undo') {
+    st().setStage({ kind: 'library' })
+    await openPreview()
+    return
+  }
+  st().setStage({ kind: 'library' })
+  st().setModule('history')
+  st().notify('info', tr('preview.plan_again_history'))
+}
+
 export function cancelOperation() {
   const s = st()
   if (s.stage.kind !== 'applying') return
