@@ -163,7 +163,7 @@ impl Core {
     pub fn open() -> Result<Core, String> {
         let data = data_dir();
         std::fs::create_dir_all(&data).map_err(|e| format!("{}: {e}", data.display()))?;
-        let (lock, store) = service::open_data(&data).map_err(|e| e.to_string())?;
+        let (lock, store) = service::open_data(&data).map_err(crate::errors::ue)?;
         Ok(Core {
             data,
             _lock: lock,
@@ -229,7 +229,7 @@ impl Core {
                     error: None,
                 },
                 Err(e) => StartupInfo {
-                    error: Some(e.to_string()),
+                    error: Some(crate::errors::ue(e)),
                     ..Default::default()
                 },
             };
@@ -250,10 +250,10 @@ impl Core {
         }
         let started = engine_config(&self.data, &pkg).and_then(|cfg| {
             let workers = settings_workers(&self.store);
-            let r = Engine::start(cfg.clone()).map_err(|e| e.to_string())?;
+            let r = Engine::start(cfg.clone()).map_err(crate::errors::ue)?;
             let mut pool = Vec::with_capacity(workers);
             for _ in 0..workers {
-                pool.push(Engine::start(cfg.clone()).map_err(|e| e.to_string())?);
+                pool.push(Engine::start(cfg.clone()).map_err(crate::errors::ue)?);
             }
             Ok((r, pool))
         });

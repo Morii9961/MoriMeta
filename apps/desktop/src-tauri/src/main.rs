@@ -6,6 +6,7 @@
 mod cmd;
 mod core;
 mod dto;
+mod errors;
 
 use std::sync::Arc;
 

@@ -20,13 +20,10 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::core::{Core, ExifToolState, StartupInfo, lock};
 use crate::dto::*;
+use crate::errors::ue;
 
 type Res<T> = Result<T, String>;
 type CoreState<'a> = State<'a, Arc<Core>>;
-
-fn e(x: impl std::fmt::Display) -> String {
-    x.to_string()
-}
 
 /// At most about four progress events a second (ARCHITECTURE §5.3), and always the last one.
 struct Throttle(Mutex<Instant>);
@@ -83,7 +80,7 @@ pub fn app_info(core: CoreState) -> AppInfo {
     let exiftool = lock(&core.exiftool).clone();
     let writes_refused = match core.gate.write() {
         Ok(_) | Err(ServiceError::Busy(_)) => None,
-        Err(x) => Some(x.to_string()),
+        Err(x) => Some(ue(x)),
     };
     AppInfo {
         version: env!("CARGO_PKG_VERSION"),
@@ -100,9 +97,7 @@ pub fn app_info(core: CoreState) -> AppInfo {
 fn backup_dto(core: &Core) -> BackupDto {
     let store = lock(&core.store);
     let root = store.backup_root().to_path_buf();
-    let problem = executor::check_backup_location(&store)
-        .err()
-        .map(|x| x.to_string());
+    let problem = executor::check_backup_location(&store).err().map(ue);
     let usage = retention::Policy::from_settings(&store)
         .ok()
         .and_then(|p| retention::usage(&store, &p).ok());
@@ -143,7 +138,7 @@ pub async fn import_dialog(app: AppHandle, kind: String) -> Res<()> {
         }
     })
     .await
-    .map_err(e)?;
+    .map_err(ue)?;
     if let Some((paths, folders)) = picked {
         let core = app.state::<Arc<Core>>().inner().clone();
         std::thread::spawn(move || import(&core, paths, folders));
@@ -212,7 +207,7 @@ fn scan(core: Arc<Core>, ids: Vec<AssetId>) {
             Err(x) => {
                 core.emit(AppEvent::ScanDone {
                     cancelled: false,
-                    error: Some(x.to_string()),
+                    error: Some(ue(x)),
                 });
                 return;
             }
@@ -240,7 +235,7 @@ fn scan(core: Arc<Core>, ids: Vec<AssetId>) {
                 let rows = rows.iter().map(|r| RowDto::of(ids[r.index].0, r)).collect();
                 core.emit(AppEvent::Rows { rows });
             })
-            .map_err(e),
+            .map_err(ue),
         };
         drop(reader);
         core.emit(AppEvent::ScanProgress {
@@ -279,7 +274,7 @@ pub fn session_clear(core: CoreState) {
 
 fn paths_of(core: &Core, ids: &[u64]) -> Res<Vec<PathBuf>> {
     let ids: Vec<AssetId> = ids.iter().copied().map(AssetId).collect();
-    lock(&core.session).paths(&ids).map_err(e)
+    lock(&core.session).paths(&ids).map_err(ue)
 }
 
 fn with_reader<T>(core: &Core, f: impl FnOnce(&mut mm_core::engine::Engine) -> Res<T>) -> Res<T> {
@@ -297,11 +292,11 @@ pub async fn asset_detail(app: AppHandle, id: u64) -> Res<inspect::AssetDetail> 
     tauri::async_runtime::spawn_blocking(move || {
         let path = paths_of(&core, &[id])?.remove(0);
         with_reader(&core, |engine| {
-            inspect::asset_detail(engine, &path).map_err(e)
+            inspect::asset_detail(engine, &path).map_err(ue)
         })
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 #[tauri::command]
@@ -313,11 +308,11 @@ pub async fn selection_aggregate(
     tauri::async_runtime::spawn_blocking(move || {
         let paths = paths_of(&core, &ids)?;
         with_reader(&core, |engine| {
-            inspect::selection_aggregate(engine, &paths, &PlanCtl::default()).map_err(e)
+            inspect::selection_aggregate(engine, &paths, &PlanCtl::default()).map_err(ue)
         })
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 #[tauri::command]
@@ -326,7 +321,7 @@ pub async fn attention(app: AppHandle, ids: Vec<u64>) -> Res<AttentionDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let paths = paths_of(&core, &ids)?;
         let a = with_reader(&core, |engine| {
-            inspect::attention(engine, &paths, &PlanCtl::default()).map_err(e)
+            inspect::attention(engine, &paths, &PlanCtl::default()).map_err(ue)
         })?;
         let to_ids = |v: Vec<usize>| v.into_iter().filter_map(|i| ids.get(i).copied()).collect();
         let changed: Vec<u64> = lock(&core.session)
@@ -352,14 +347,14 @@ pub async fn attention(app: AppHandle, ids: Vec<u64>) -> Res<AttentionDto> {
         })
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 /// "Clear read-only attribute…" (INTERACTION_SPEC §7): only as the user's explicit action.
 #[tauri::command]
 pub fn clear_read_only(core: CoreState, id: u64) -> Res<bool> {
     let path = paths_of(&core, &[id])?.remove(0);
-    mm_core::service::clear_read_only(&core.gate, &path).map_err(e)
+    mm_core::service::clear_read_only(&core.gate, &path).map_err(ue)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -480,14 +475,14 @@ pub async fn plan_batch(app: AppHandle, ids: Vec<u64>, edit: BatchEditDto) -> Re
                 &title,
                 &ctl,
             )
-            .map_err(e)
+            .map_err(ue)
         })?;
         let view = PlanView::of(&plan);
         lock(&core.book).insert(plan);
         Ok(view)
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 #[tauri::command]
@@ -500,7 +495,7 @@ pub fn plan_cancel(core: CoreState) {
 #[tauri::command]
 pub fn plan_view(core: CoreState, id: String, version: u32) -> Res<PlanView> {
     let book = lock(&core.book);
-    Ok(PlanView::of(book.version(&id, version).map_err(e)?))
+    Ok(PlanView::of(book.version(&id, version).map_err(ue)?))
 }
 
 fn filter_of(f: &str) -> EntryFilter {
@@ -525,13 +520,13 @@ pub fn plan_page(
     let book = lock(&core.book);
     let p = book
         .page(&id, version, filter_of(&filter), page, PAGE_SIZE)
-        .map_err(e)?;
+        .map_err(ue)?;
     serde_json::to_value(PageDto {
         version: p.version,
         matching: p.matching,
         entries: p.entries.iter().map(|e| EntryDto::of(e)).collect(),
     })
-    .map_err(e)
+    .map_err(ue)
 }
 
 #[tauri::command]
@@ -543,8 +538,8 @@ pub fn plan_exclude(
     excluded: bool,
 ) -> Res<PlanView> {
     let mut book = lock(&core.book);
-    let v = book.exclude(&id, version, &seqs, excluded).map_err(e)?;
-    Ok(PlanView::of(book.version(&id, v).map_err(e)?))
+    let v = book.exclude(&id, version, &seqs, excluded).map_err(ue)?;
+    Ok(PlanView::of(book.version(&id, v).map_err(ue)?))
 }
 
 #[tauri::command]
@@ -559,8 +554,8 @@ pub fn plan_exclude_field(
     let mut book = lock(&core.book);
     let v = book
         .exclude_field(&id, version, seqs.as_deref(), &field, excluded)
-        .map_err(e)?;
-    Ok(PlanView::of(book.version(&id, v).map_err(e)?))
+        .map_err(ue)?;
+    Ok(PlanView::of(book.version(&id, v).map_err(ue)?))
 }
 
 #[tauri::command]
@@ -568,7 +563,7 @@ pub fn plan_preflight(core: CoreState, id: String, version: u32) -> Res<Value> {
     let book = lock(&core.book);
     let store = lock(&core.store);
     let mut pf =
-        serde_json::to_value(book.preflight(&store, &id, version).map_err(e)?).map_err(e)?;
+        serde_json::to_value(book.preflight(&store, &id, version).map_err(ue)?).map_err(ue)?;
     // ExifTool must be running and the package intact (INTERACTION_SPEC §4)
     let et = lock(&core.exiftool).clone();
     if let Some(problem) = et.error.or(et.integrity) {
@@ -584,7 +579,7 @@ pub fn plan_preflight(core: CoreState, id: String, version: u32) -> Res<Value> {
 pub fn plan_confirm(core: CoreState, id: String, version: u32, acks: Vec<String>) -> Res<String> {
     lock(&core.book)
         .confirm_with(&id, version, &acks)
-        .map_err(e)
+        .map_err(ue)
 }
 
 #[tauri::command]
@@ -632,12 +627,12 @@ pub async fn op_execute(
                 &token,
                 &opts,
             )
-            .map_err(e)?;
+            .map_err(ue)?;
         *lock(&core.exec_cancel) = None;
         Ok(OpReportDto::from(&rep))
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 /// Cancel… (INTERACTION_SPEC §10): no new files; a file not yet committed is abandoned.
@@ -653,12 +648,12 @@ pub fn op_cancel(core: CoreState) {
 
 #[tauri::command]
 pub fn history_list(core: CoreState, page: usize) -> Res<Vec<history::OpSummary>> {
-    history::list(&lock(&core.store), page, 100).map_err(e)
+    history::list(&lock(&core.store), page, 100).map_err(ue)
 }
 
 #[tauri::command]
 pub fn op_detail(core: CoreState, op_id: String) -> Res<history::OpDetail> {
-    history::detail(&lock(&core.store), &op_id).map_err(e)
+    history::detail(&lock(&core.store), &op_id).map_err(ue)
 }
 
 fn exiftool_version(core: &Core) -> Res<String> {
@@ -672,7 +667,7 @@ fn exiftool_version(core: &Core) -> Res<String> {
 #[tauri::command]
 pub fn undo_plan(core: CoreState, op_id: String) -> Res<PlanView> {
     let v = exiftool_version(&core)?;
-    let plan = undo::plan_undo(&lock(&core.store), &op_id, &v).map_err(e)?;
+    let plan = undo::plan_undo(&lock(&core.store), &op_id, &v).map_err(ue)?;
     let view = PlanView::of(&plan);
     lock(&core.book).insert(plan);
     Ok(view)
@@ -682,7 +677,7 @@ pub fn undo_plan(core: CoreState, op_id: String) -> Res<PlanView> {
 #[tauri::command]
 pub fn retry_plan(core: CoreState, op_id: String) -> Res<PlanView> {
     let v = exiftool_version(&core)?;
-    let plan = history::retry_plan(&lock(&core.store), &op_id, &v).map_err(e)?;
+    let plan = history::retry_plan(&lock(&core.store), &op_id, &v).map_err(ue)?;
     let view = PlanView::of(&plan);
     lock(&core.book).insert(plan);
     Ok(view)
@@ -715,11 +710,11 @@ pub async fn export_log(
             include_paths,
             include_values,
         };
-        history::export_log(&lock(&core.store), &op_id, &out, opts).map_err(e)?;
+        history::export_log(&lock(&core.store), &op_id, &out, opts).map_err(ue)?;
         Ok(Some(out.display().to_string()))
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 #[derive(Serialize)]
@@ -744,8 +739,8 @@ pub async fn restore_to(app: AppHandle, op_id: String) -> Res<Option<RestoreRepo
         let Some(dir) = d.pick_folder() else {
             return Ok(None);
         };
-        let _permit = core.gate.write().map_err(e)?;
-        let done = history::restore_backups_to(&lock(&core.store), &op_id, &dir).map_err(e)?;
+        let _permit = core.gate.write().map_err(ue)?;
+        let done = history::restore_backups_to(&lock(&core.store), &op_id, &dir).map_err(ue)?;
         Ok(Some(RestoreReport {
             folder: dir.display().to_string(),
             restored: done.iter().filter(|r| r.to.is_some()).count(),
@@ -754,18 +749,18 @@ pub async fn restore_to(app: AppHandle, op_id: String) -> Res<Option<RestoreRepo
         }))
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 #[tauri::command]
 pub fn recovery_status(core: CoreState) -> Res<Vec<recovery::RecoverySummary>> {
-    recovery::summary(&lock(&core.store)).map_err(e)
+    recovery::summary(&lock(&core.store)).map_err(ue)
 }
 
 /// "Keep as is and close".
 #[tauri::command]
 pub fn recovery_dismiss(core: CoreState, op_id: String) -> Res<()> {
-    recovery::dismiss(&mut lock(&core.store), &op_id).map_err(e)
+    recovery::dismiss(&mut lock(&core.store), &op_id).map_err(ue)
 }
 
 /// "Continue remaining".
@@ -774,16 +769,16 @@ pub async fn recovery_resume(app: AppHandle, op_id: String) -> Res<OpReportDto> 
     let core = app.state::<Arc<Core>>().inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         core.wait_launched();
-        let _permit = core.gate.write().map_err(e)?;
+        let _permit = core.gate.write().map_err(ue)?;
         let _running = core.mark_running();
         let mut engines = lock(&core.engines);
         let mut store = lock(&core.store);
         let rep = executor::resume(&mut store, &mut engines, &op_id, &ExecOptions::default())
-            .map_err(e)?;
+            .map_err(ue)?;
         Ok(OpReportDto::from(&rep))
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 /// Close the window once nothing is running (after "Stop, then close").
@@ -793,7 +788,7 @@ pub fn app_close(app: AppHandle, core: CoreState) -> Res<()> {
         return Err("an Operation is still running".into());
     }
     if let Some(w) = app.get_webview_window("main") {
-        w.close().map_err(e)?;
+        w.close().map_err(ue)?;
     }
     Ok(())
 }
@@ -819,7 +814,7 @@ pub struct PresetDto {
 pub fn presets_list(core: CoreState) -> Res<Vec<PresetDto>> {
     let store = lock(&core.store);
     Ok(presets::list(&store)
-        .map_err(e)?
+        .map_err(ue)?
         .into_iter()
         .map(|p| PresetDto {
             lint: p.preset.lint(),
@@ -837,17 +832,17 @@ pub fn presets_list(core: CoreState) -> Res<Vec<PresetDto>> {
 /// Save a Preset (new when `id` is None); it is validated first. Returns its id.
 #[tauri::command]
 pub fn preset_save(core: CoreState, id: Option<String>, preset: Preset) -> Res<String> {
-    presets::save(&mut lock(&core.store), id.as_deref(), &preset).map_err(e)
+    presets::save(&mut lock(&core.store), id.as_deref(), &preset).map_err(ue)
 }
 
 #[tauri::command]
 pub fn preset_duplicate(core: CoreState, id: String) -> Res<String> {
-    presets::duplicate(&mut lock(&core.store), &id).map_err(e)
+    presets::duplicate(&mut lock(&core.store), &id).map_err(ue)
 }
 
 #[tauri::command]
 pub fn preset_delete(core: CoreState, id: String) -> Res<()> {
-    presets::delete(&mut lock(&core.store), &id).map_err(e)
+    presets::delete(&mut lock(&core.store), &id).map_err(ue)
 }
 
 /// Import… : a Preset file the user picks, checked (size, schema, limits) and kept as untrusted
@@ -866,7 +861,7 @@ pub async fn preset_import(app: AppHandle) -> Res<Option<String>> {
         let Some(path) = d.pick_file() else {
             return Ok(None);
         };
-        let size = std::fs::metadata(&path).map_err(e)?.len();
+        let size = std::fs::metadata(&path).map_err(ue)?.len();
         if size > mm_domain::rules::MAX_PRESET_BYTES as u64 {
             return Err(format!(
                 "a preset file is at most {} KB (this one is {} KB)",
@@ -874,13 +869,13 @@ pub async fn preset_import(app: AppHandle) -> Res<Option<String>> {
                 size >> 10
             ));
         }
-        let json = std::fs::read_to_string(&path).map_err(e)?;
+        let json = std::fs::read_to_string(&path).map_err(ue)?;
         presets::import(&mut lock(&core.store), &json)
             .map(Some)
-            .map_err(e)
+            .map_err(ue)
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 /// Export… : the Preset as JSON to a file the user names.
@@ -889,10 +884,14 @@ pub async fn preset_export(app: AppHandle, id: String) -> Res<Option<String>> {
     let window = app.get_webview_window("main");
     let core = app.state::<Arc<Core>>().inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let p = presets::get(&lock(&core.store), &id).map_err(e)?;
+        let p = presets::get(&lock(&core.store), &id).map_err(ue)?;
         let mut d = rfd::FileDialog::new()
             .set_title("Export preset")
-            .set_file_name(format!("{}.json", p.name.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_")))
+            .set_file_name(format!(
+                "{}.json",
+                p.name
+                    .replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_")
+            ))
             .add_filter("MoriMeta preset", &["json"]);
         if let Some(w) = &window {
             d = d.set_parent(w);
@@ -900,11 +899,11 @@ pub async fn preset_export(app: AppHandle, id: String) -> Res<Option<String>> {
         let Some(out) = d.save_file() else {
             return Ok(None);
         };
-        std::fs::write(&out, p.preset.to_json()).map_err(e)?;
+        std::fs::write(&out, p.preset.to_json()).map_err(ue)?;
         Ok(Some(out.display().to_string()))
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 /// Apply a Preset to files: a Plan that opens in Preview (SCREEN_SPEC 3#p-apply).
@@ -913,21 +912,21 @@ pub async fn plan_preset(app: AppHandle, ids: Vec<u64>, preset_id: String) -> Re
     let core = app.state::<Arc<Core>>().inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let paths = paths_of(&core, &ids)?;
-        let info = presets::get(&lock(&core.store), &preset_id).map_err(e)?;
+        let info = presets::get(&lock(&core.store), &preset_id).map_err(ue)?;
         let ctl = plan_ctl(&core);
         let mut plan = with_planner(&core, |engine| {
-            planner::plan_preset(engine, &paths, &info.preset, &ctl).map_err(e)
+            planner::plan_preset(engine, &paths, &info.preset, &ctl).map_err(ue)
         })?;
         if info.untrusted {
             presets::mark_untrusted(&mut plan);
         }
-        presets::used(&mut lock(&core.store), &preset_id).map_err(e)?;
+        presets::used(&mut lock(&core.store), &preset_id).map_err(ue)?;
         let view = PlanView::of(&plan);
         lock(&core.book).insert(plan);
         Ok(view)
     })
     .await
-    .map_err(e)?
+    .map_err(ue)?
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -941,7 +940,7 @@ pub fn settings_list(core: CoreState) -> Res<Vec<SettingDto>> {
         .map(|k| {
             Ok(SettingDto {
                 name: k.name,
-                value: settings::get(&store, k.name).map_err(e)?,
+                value: settings::get(&store, k.name).map_err(ue)?,
                 default: k.default,
                 about: k.about,
             })
@@ -952,7 +951,7 @@ pub fn settings_list(core: CoreState) -> Res<Vec<SettingDto>> {
 #[tauri::command]
 pub fn setting_set(core: CoreState, name: String, value: String) -> Res<()> {
     let mut store = lock(&core.store);
-    settings::set(&mut store, &name, &value).map_err(e)?;
+    settings::set(&mut store, &name, &value).map_err(ue)?;
     if name == "backup.root" && !value.is_empty() {
         store.set_backup_root(PathBuf::from(value));
     }
