@@ -66,6 +66,8 @@ fn main() {
             cmd::op_detail,
             cmd::undo_plan,
             cmd::retry_plan,
+            cmd::export_log,
+            cmd::restore_to,
             cmd::recovery_status,
             cmd::recovery_dismiss,
             cmd::recovery_resume,

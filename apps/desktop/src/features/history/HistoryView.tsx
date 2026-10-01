@@ -7,9 +7,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, errorText } from '../../ipc'
 import type { OpDetail, OpSummary } from '../../ipc/types'
 import { useApp } from '../../state/store'
-import { useT, fieldLabel, type MessageKey } from '../../i18n'
+import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
 import { planRetry, planUndo } from '../../app/actions'
 import { valueText } from '../preview/model'
+import { Dialog } from '../../components/Dialog'
 import './history.css'
 
 const STATUS: Record<string, { glyph: string; cls: string }> = {
@@ -24,12 +25,14 @@ const STATUS: Record<string, { glyph: string; cls: string }> = {
 
 export function HistoryView() {
   const t = useT()
+  const bt = useBT()
   const lang = useApp((s) => s.lang)
   const notify = useApp((s) => s.notify)
   const [ops, setOps] = useState<OpSummary[] | null>(null)
   const [sel, setSel] = useState<string | null>(null)
   const [detail, setDetail] = useState<OpDetail | null>(null)
   const [tab, setTab] = useState<string>('all')
+  const [dialog, setDialog] = useState<'export' | 'restore' | null>(null)
 
   useEffect(() => {
     api
@@ -113,10 +116,10 @@ export function HistoryView() {
                 <button className={`btn${failed ? ' accent' : ''}`} disabled={!failed || detail.kind === 'undo'} onClick={() => planRetry(detail.id)}>
                   {t('op.retry')}
                 </button>
-                <button className="btn" disabled title={t('history.soon')}>
+                <button className="btn" disabled={detail.backups_pruned || detail.backups_unavailable} onClick={() => setDialog('restore')}>
                   {t('history.restore_to')}…
                 </button>
-                <button className="btn" disabled title={t('history.soon')}>
+                <button className="btn" onClick={() => setDialog('export')}>
                   {t('history.export_log')}…
                 </button>
               </div>
@@ -153,7 +156,7 @@ export function HistoryView() {
                     ))}
                   </span>
                   <span className="faint ellipsis selectable" title={f.error ?? ''}>
-                    {f.error ?? ''}
+                    {bt(f.error)}
                   </span>
                 </div>
               ))}
@@ -201,6 +204,91 @@ export function HistoryView() {
           </div>
         </div>
       </aside>
+      {dialog === 'export' && detail && <ExportDialog opId={detail.id} onClose={() => setDialog(null)} />}
+      {dialog === 'restore' && detail && <RestoreDialog opId={detail.id} files={detail.files} onClose={() => setDialog(null)} />}
     </>
+  )
+}
+
+function ExportDialog({ opId, onClose }: { opId: string; onClose: () => void }) {
+  const t = useT()
+  const notify = useApp((s) => s.notify)
+  const [paths, setPaths] = useState(false)
+  const [values, setValues] = useState(false)
+  return (
+    <Dialog
+      title={t('export.title')}
+      onCancel={onClose}
+      footer={
+        <>
+          <span className="note">{t('export.note')}</span>
+          <button className="btn dlg" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            className="btn dlg primary"
+            onClick={() =>
+              api
+                .exportLog(opId, paths, values)
+                .then((p) => {
+                  onClose()
+                  if (p) notify('success', t('export.done', { path: p }))
+                })
+                .catch((e) => notify('error', errorText(e)))
+            }
+          >
+            {t('export.choose')}
+          </button>
+        </>
+      }
+    >
+      <p className="note">{t('export.lead')}</p>
+      <label className="ack">
+        <input type="checkbox" className="checkbox dlg" checked={paths} onChange={(e) => setPaths(e.target.checked)} />
+        <span>{t('export.paths')}</span>
+      </label>
+      <label className="ack">
+        <input type="checkbox" className="checkbox dlg" checked={values} onChange={(e) => setValues(e.target.checked)} />
+        <span>{t('export.values')}</span>
+      </label>
+    </Dialog>
+  )
+}
+
+function RestoreDialog({ opId, files, onClose }: { opId: string; files: number; onClose: () => void }) {
+  const t = useT()
+  const notify = useApp((s) => s.notify)
+  return (
+    <Dialog
+      title={t('restore.title', { n: files })}
+      onCancel={onClose}
+      footer={
+        <>
+          <span className="note" />
+          <button className="btn dlg" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            className="btn dlg primary"
+            onClick={() =>
+              api
+                .restoreTo(opId)
+                .then((r) => {
+                  onClose()
+                  if (r) notify('success', t('restore.done', { n: r.restored, folder: r.folder }))
+                  r?.notes.forEach((n) => notify('warn', n))
+                })
+                .catch((e) => notify('error', errorText(e)))
+            }
+          >
+            {t('restore.choose')}
+          </button>
+        </>
+      }
+    >
+      <p className="note">✓ {t('restore.line1')}</p>
+      <p className="note">✓ {t('restore.line2')}</p>
+      <p className="note">✓ {t('restore.line3')}</p>
+    </Dialog>
   )
 }

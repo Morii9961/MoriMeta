@@ -26,6 +26,8 @@ const COMMANDS: &[&str] = &[
     "op_detail",
     "undo_plan",
     "retry_plan",
+    "export_log",
+    "restore_to",
     "recovery_status",
     "recovery_dismiss",
     "recovery_resume",

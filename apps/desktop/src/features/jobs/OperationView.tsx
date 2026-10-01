@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FileOutcome } from '../../ipc/types'
 import { useApp } from '../../state/store'
-import { useT, type MessageKey } from '../../i18n'
+import { useT, useBT, type MessageKey } from '../../i18n'
 import { cancelOperation, finishOperation, planRetry, planUndo } from '../../app/actions'
 import { Dialog } from '../../components/Dialog'
 import './jobs.css'
@@ -31,6 +31,7 @@ function elapsed(ms: number): string {
 
 export function OperationView() {
   const t = useT()
+  const bt = useBT()
   const stage = useApp((s) => s.stage)
   const [asking, setAsking] = useState(false)
   const [now, setNow] = useState(Date.now())
@@ -168,7 +169,7 @@ export function OperationView() {
             tally[s] ? <div key={s} className={`seg-${s}`} style={{ width: `${(100 * tally[s]) / total}%` }} /> : null,
           )}
         </div>
-        {r.note && <div className="tone warn selectable">{r.note}</div>}
+        {r.note && <div className="tone warn selectable">{bt(r.note)}</div>}
         {stage.plan.kinds.unsupported + stage.plan.kinds.blocked > 0 && (
           <div className="glyph-uns">
             ⊘ {t('op.not_in_operation', { n: stage.plan.kinds.unsupported + stage.plan.kinds.blocked })}
@@ -188,7 +189,7 @@ export function OperationView() {
                 </span>
                 <span className="secondary">{t(stateOf(f.state).label)}</span>
                 <span className="issue-why selectable" title={f.reason ?? ''}>
-                  {f.reason ?? ''} <span className="faint">{t('op.file_safe')}</span>
+                  {bt(f.reason)} <span className="faint">{t('op.file_safe')}</span>
                 </span>
               </div>
             ))}
@@ -214,7 +215,7 @@ export function OperationView() {
               </span>
               <span className="secondary">{t(stateOf(f.state).label)}</span>
               <span className="faint ellipsis" title={f.reason ?? ''}>
-                {f.reason ?? ''}
+                {bt(f.reason)}
               </span>
             </div>
           ))}

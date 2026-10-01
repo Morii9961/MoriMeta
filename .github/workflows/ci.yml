@@ -35,6 +35,9 @@ jobs:
       - name: Repository inclusion check (all tracked files)
         run: git ls-files -z | xargs -0 python tools/check_repo.py
 
+      - name: Every backend text has a Chinese translation (apps/desktop/src/i18n/backend.zh.json)
+        run: python tools/message_inventory.py --check apps/desktop/src/i18n/backend.zh.json
+
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
@@ -130,6 +133,7 @@ jobs:
           node --version
           npm ci --no-fund --no-audit
           npm run build
+          npm test
 
       - name: Adapter (format, clippy)
         working-directory: apps/desktop/src-tauri

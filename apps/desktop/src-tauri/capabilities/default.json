@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The app's own commands only: no plugin permissions, no file system or shell access from the frontend (ARCHITECTURE \u00a75.1, SECURITY_MODEL \u00a76)",
+  "description": "The app's own commands only: no plugin permissions, no file system or shell access from the frontend (ARCHITECTURE §5.1, SECURITY_MODEL §6)",
   "windows": [
     "main"
   ],
@@ -34,6 +34,8 @@
     "allow-recovery-dismiss",
     "allow-recovery-resume",
     "allow-settings-list",
-    "allow-setting-set"
+    "allow-setting-set",
+    "allow-export-log",
+    "allow-restore-to"
   ]
 }

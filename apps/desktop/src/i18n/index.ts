@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // UI text in English and 简体中文 (DESIGN.md §6 Localisation). Every key carries both languages in
-// one place so neither can fall behind. Backend texts (Preview notes, reasons) arrive in English
-// until the message codes (DECISIONS §3 item 8) are in place.
+// one place so neither can fall behind. Backend texts (Preview notes, reasons, errors) are matched
+// against their templates and translated by ./backend.ts.
 
 import { useApp } from '../state/store'
 import { messages } from './messages'
+import { backendText } from './backend'
 
 export type Lang = 'en' | 'zh'
 export type MessageKey = keyof typeof messages
@@ -51,4 +52,10 @@ export function fieldLabel(t: T, field: string): string {
     default:
       return field
   }
+}
+
+/** Backend texts (Preview notes, reasons, errors) in the UI language. */
+export function useBT(): (text: string | null | undefined) => string {
+  const lang = useApp((s) => s.lang)
+  return (text) => backendText(lang, text)
 }

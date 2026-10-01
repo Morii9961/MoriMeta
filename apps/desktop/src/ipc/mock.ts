@@ -275,6 +275,8 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   retry_plan: () => {
     throw 'nothing failed'
   },
+  export_log: () => 'D:\MoriMeta-op.json',
+  restore_to: () => ({ folder: 'D:\restored', restored: 3, without_backup: 0, notes: [] }),
   recovery_status: () => [],
   recovery_dismiss: () => undefined,
   recovery_resume: () => undefined,

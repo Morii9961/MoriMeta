@@ -6,7 +6,7 @@
 import { useRef, type KeyboardEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { FieldChange, PlanEntry, PlanView } from '../../ipc/types'
-import { useT, fieldLabel, type MessageKey } from '../../i18n'
+import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
 import { GLYPH, GLYPH_CLASS, kindsOf, valueText, type Kind } from './model'
 
 interface Props {
@@ -53,6 +53,7 @@ function ChangeCell({ c, excluded, dim, onToggle, disabled }: { c: FieldChange; 
 
 export function DiffTable(p: Props) {
   const t = useT()
+  const bt = useBT()
   const scroller = useRef<HTMLDivElement>(null)
   const fields = p.plan.fields
 
@@ -92,8 +93,8 @@ export function DiffTable(p: Props) {
 
   const statusText = (e: PlanEntry): { text: string; cls: string } => {
     if (e.status.status === 'no_change') return { text: `= ${t('kind.no_change')}`, cls: 'glyph-none' }
-    if (e.status.status === 'blocked') return { text: `× ${e.status.reason}`, cls: 'glyph-fail' }
-    if (e.status.status === 'unsupported') return { text: `⊘ ${e.status.reason}`, cls: 'glyph-uns' }
+    if (e.status.status === 'blocked') return { text: `× ${bt(e.status.reason)}`, cls: 'glyph-fail' }
+    if (e.status.status === 'unsupported') return { text: `⊘ ${bt(e.status.reason)}`, cls: 'glyph-uns' }
     return { text: '', cls: '' }
   }
 
@@ -132,7 +133,7 @@ export function DiffTable(p: Props) {
             const e = p.entries[vr.index]
             const kinds = kindsOf(e)
             const st = statusText(e)
-            const notes = [...e.warnings.map((w) => `! ${w}`), ...e.notes.filter((n) => !n.startsWith('warning: '))]
+            const notes = [...e.warnings.map((w) => `! ${bt(w)}`), ...e.notes.filter((n) => !n.startsWith('warning: ')).map(bt)]
             const toggleable = e.status.status === 'ready' || e.excluded
             return (
               <div
@@ -240,8 +241,8 @@ export function DiffTable(p: Props) {
                 {r.c ? (r.c.kind === 'remove' ? t('preview.removed') : valueText(r.c.after)) : ''}
               </span>
               <span className="secondary ellipsis">{r.first ? t(`writes.${r.e.target}` as MessageKey) : ''}</span>
-              <span className={`ellipsis dnote ${st.cls}`} title={st.text || r.e.notes.join('\n')}>
-                {r.first ? st.text || r.e.warnings[0] || r.e.notes[0] || '' : ''}
+              <span className={`ellipsis dnote ${st.cls}`} title={st.text || r.e.notes.map(bt).join('\n')}>
+                {r.first ? st.text || bt(r.e.warnings[0]) || bt(r.e.notes[0]) || '' : ''}
               </span>
             </div>
           )

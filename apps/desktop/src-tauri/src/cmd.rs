@@ -687,6 +687,75 @@ pub fn retry_plan(core: CoreState, op_id: String) -> Res<PlanView> {
     Ok(view)
 }
 
+/// Export log… (ARCHITECTURE §12): the Operation as JSON in a new file the user names; paths
+/// become `asset#n.ext` and values are left out unless included. Returns the file written, or
+/// None when the dialog was cancelled.
+#[tauri::command]
+pub async fn export_log(
+    app: AppHandle,
+    op_id: String,
+    include_paths: bool,
+    include_values: bool,
+) -> Res<Option<String>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = rfd::FileDialog::new()
+            .set_title("Export log")
+            .set_file_name(format!("MoriMeta-{op_id}.json"))
+            .add_filter("JSON", &["json"]);
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(out) = d.save_file() else {
+            return Ok(None);
+        };
+        let opts = history::ExportOptions {
+            include_paths,
+            include_values,
+        };
+        history::export_log(&lock(&core.store), &op_id, &out, opts).map_err(e)?;
+        Ok(Some(out.display().to_string()))
+    })
+    .await
+    .map_err(e)?
+}
+
+#[derive(Serialize)]
+pub struct RestoreReport {
+    pub folder: String,
+    pub restored: usize,
+    pub without_backup: usize,
+    pub notes: Vec<String>,
+}
+
+/// Restore backup to folder… (SCREEN_SPEC History): copies of the files as they were before the
+/// Operation, as new files in a folder the user picks; the originals are not touched.
+#[tauri::command]
+pub async fn restore_to(app: AppHandle, op_id: String) -> Res<Option<RestoreReport>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = rfd::FileDialog::new().set_title("Restore backup to folder");
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(dir) = d.pick_folder() else {
+            return Ok(None);
+        };
+        let _permit = core.gate.write().map_err(e)?;
+        let done = history::restore_backups_to(&lock(&core.store), &op_id, &dir).map_err(e)?;
+        Ok(Some(RestoreReport {
+            folder: dir.display().to_string(),
+            restored: done.iter().filter(|r| r.to.is_some()).count(),
+            without_backup: done.iter().filter(|r| r.to.is_none()).count(),
+            notes: done.into_iter().filter_map(|r| r.note).collect(),
+        }))
+    })
+    .await
+    .map_err(e)?
+}
+
 #[tauri::command]
 pub fn recovery_status(core: CoreState) -> Res<Vec<recovery::RecoverySummary>> {
     recovery::summary(&lock(&core.store)).map_err(e)

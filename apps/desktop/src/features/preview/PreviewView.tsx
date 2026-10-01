@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, errorText } from '../../ipc'
 import type { PlanEntry, PlanView, Preflight } from '../../ipc/types'
 import { useApp } from '../../state/store'
-import { useT, fieldLabel, type MessageKey } from '../../i18n'
+import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
 import { apply, backToEdit, discardPlan } from '../../app/actions'
 import { counts, GLYPH, GLYPH_CLASS, KINDS, kindsOf, REVIEW, type Kind } from './model'
 import { DiffTable } from './DiffTable'
@@ -338,6 +338,7 @@ export function PreviewView() {
 
 function Checks({ preflight, plan }: { preflight: Preflight | null; plan: PlanView }) {
   const t = useT()
+  const bt = useBT()
   const info = useApp((s) => s.info)
   if (!preflight) return <p className="note insp-section">{t('preview.checking')}</p>
   const row = (ok: boolean, label: string, detail: string | null) => (
@@ -351,11 +352,11 @@ function Checks({ preflight, plan }: { preflight: Preflight | null; plan: PlanVi
     <>
       <div className="insp-section">
         <div className="section-label">{t('preview.preflight')}</div>
-        {row(!preflight.backup, t('preview.pf_backup'), preflight.backup ?? info?.backup.root ?? null)}
-        {row(!preflight.space, t('preview.pf_space'), preflight.space)}
+        {row(!preflight.backup, t('preview.pf_backup'), preflight.backup ? bt(preflight.backup) : (info?.backup.root ?? null))}
+        {row(!preflight.space, t('preview.pf_space'), preflight.space ? bt(preflight.space) : null)}
         {row(!preflight.exiftool, t('preview.pf_exiftool'), preflight.exiftool ?? (info?.exiftool.version ? `ExifTool ${info.exiftool.version}` : null))}
         {row(preflight.rescan.length === 0, t('preview.pf_rescan'), preflight.rescan.length ? t('preview.pf_rescan_n', { n: preflight.rescan.length }) : null)}
-        {preflight.backup_warning && <div className="tone warn">{preflight.backup_warning}</div>}
+        {preflight.backup_warning && <div className="tone warn">{bt(preflight.backup_warning)}</div>}
       </div>
       <div className="insp-section">
         <div className="section-label">{t('preview.raw_safety')}</div>
@@ -375,6 +376,7 @@ function Checks({ preflight, plan }: { preflight: Preflight | null; plan: PlanVi
 
 function FileDetail({ entry }: { entry: PlanEntry | null }) {
   const t = useT()
+  const bt = useBT()
   if (!entry) return <p className="note insp-section">{t('preview.pick_file')}</p>
   const ops = entry.action && 'ops' in entry.action ? entry.action.ops : []
   return (
@@ -390,7 +392,7 @@ function FileDetail({ entry }: { entry: PlanEntry | null }) {
         {entry.status.status !== 'ready' && entry.status.status !== 'no_change' && (
           <div className="tone neutral">
             <b>{entry.status.status === 'blocked' ? t('preview.blocked') : t('kind.unsupported')}</b>
-            <div className="selectable">{entry.status.reason}</div>
+            <div className="selectable">{bt(entry.status.reason)}</div>
           </div>
         )}
       </div>
@@ -417,7 +419,7 @@ function FileDetail({ entry }: { entry: PlanEntry | null }) {
             const warn = n.startsWith('warning: ')
             return (
               <p key={i} className={`note selectable${warn ? ' glyph-warn' : ''}`}>
-                {warn ? `! ${n.slice(9)}` : n}
+                {warn ? `! ${bt(n.slice(9))}` : bt(n)}
               </p>
             )
           })}

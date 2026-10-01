@@ -5,6 +5,9 @@ translated UI needs them as "message code + parameters" (docs/DESIGN_REVIEW_ENGI
 the codes are to be agreed with the design session. This script only inventories what exists.
 
 Usage: python tools/message_inventory.py   (writes docs/MESSAGE_INVENTORY.md, UTF-8)
+       python tools/message_inventory.py --templates        (the texts as JSON)
+       python tools/message_inventory.py --check CATALOG    (the UI's translation catalog covers
+                                                            every text, DECISIONS §3 item 8)
 """
 
 from __future__ import annotations
@@ -96,7 +99,51 @@ def flags(text: str) -> str:
     return ", ".join(out)
 
 
+def normalize(text: str) -> str:
+    """The text as the program builds it: line continuations joined, escapes resolved."""
+    text = re.sub(r"\\\s+", "", text)
+    return text.replace('\\"', '"').replace("\\n", " ").replace("\\\\", "\\")
+
+
+def templates() -> list[str]:
+    """Every distinct text, in source order: the keys of the UI's translation catalog."""
+    out: list[str] = []
+    for _, _, _, _, text in scan():
+        t = normalize(text)
+        if t not in out:
+            out.append(t)
+    return out
+
+
+def check(catalog_path: str) -> int:
+    """The UI's catalog (DECISIONS §3 item 8) must translate every text, and nothing else, in
+    its `inventory` section; `extra` holds texts the scan cannot find and must not repeat one."""
+    import json
+
+    cat = json.loads((ROOT / catalog_path).read_text(encoding="utf-8"))
+    have = set(cat.get("inventory", {}))
+    want = templates()
+    missing = [t for t in want if t not in have]
+    stale = sorted(have - set(want))
+    doubled = sorted(set(cat.get("extra", {})) & set(want))
+    empty = [k for sec in ("inventory", "extra") for k, v in cat.get(sec, {}).items() if not v.strip()]
+    for title, items in (("missing", missing), ("stale", stale), ("in extra and inventory", doubled), ("empty", empty)):
+        for t in items:
+            print(f"{title}: {t}")
+    ok = not (missing or stale or doubled or empty)
+    print(f"{catalog_path}: {len(want)} texts, {'ok' if ok else 'NOT ok'}")
+    return 0 if ok else 1
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--check":
+        sys.exit(check(sys.argv[2]))
+    if len(sys.argv) == 2 and sys.argv[1] == "--templates":
+        import json
+
+        sys.stdout.reconfigure(encoding="utf-8")
+        print(json.dumps(templates(), ensure_ascii=False, indent=1))
+        return
     out = io.StringIO()
     sys.stdout, real = out, sys.stdout
     try:

@@ -3,12 +3,13 @@
 
 import { useEffect } from 'react'
 import { useApp } from '../state/store'
-import { useT } from '../i18n'
+import { useT, useBT } from '../i18n'
 
 const GLYPH = { info: 'i', warn: '!', error: '×', success: '✓' } as const
 
 export function Notices() {
   const t = useT()
+  const bt = useBT()
   const notices = useApp((s) => s.notices)
   const dismiss = useApp((s) => s.dismiss)
   useEffect(() => {
@@ -24,7 +25,7 @@ export function Notices() {
       {notices.map((n) => (
         <div key={n.id} className={`tone ${n.tone} notice`} role={n.tone === 'error' ? 'alert' : 'status'}>
           <span className="notice-glyph">{GLYPH[n.tone]}</span>
-          <span className="notice-text selectable">{n.text}</span>
+          <span className="notice-text selectable">{bt(n.text)}</span>
           <button className="link notice-close" onClick={() => dismiss(n.id)} aria-label={t('common.close')}>
             ×
           </button>

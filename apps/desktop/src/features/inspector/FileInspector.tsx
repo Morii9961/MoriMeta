@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, errorText } from '../../ipc'
 import type { AssetDetail, FieldView } from '../../ipc/types'
 import { useApp } from '../../state/store'
-import { useT, fieldLabel, type MessageKey, type T } from '../../i18n'
+import { useT, useBT, fieldLabel, type MessageKey, type T } from '../../i18n'
 import { sizeText } from '../library/data'
 import { BatchFields } from './BatchPanel'
 
@@ -61,6 +61,7 @@ function Line({ label, value, k, lock, t }: { label: string; value: string | nul
 }
 
 function FieldBlock({ f, t }: { f: FieldView; t: T }) {
+  const bt = useBT()
   return (
     <div className={`field-block${f.conflicting ? ' conflict' : ''}`}>
       <div className="field-line">
@@ -73,7 +74,7 @@ function FieldBlock({ f, t }: { f: FieldView; t: T }) {
           <Provenance k={f.sources[0]?.[0] ?? null} />
         </span>
       </div>
-      {f.error && <div className="field-note glyph-fail">{f.error}</div>}
+      {f.error && <div className="field-note glyph-fail">{bt(f.error)}</div>}
       {f.sources.length > 1 && (
         <div className="sources">
           {f.sources.map(([k, v]) => (
@@ -95,6 +96,7 @@ function FieldBlock({ f, t }: { f: FieldView; t: T }) {
 
 export function FileInspector({ id }: { id: number }) {
   const t = useT()
+  const bt = useBT()
   const assets = useApp((s) => s.assets)
   const rows = useApp((s) => s.rows)
   const asset = assets.find((a) => a.id === id)
@@ -177,7 +179,7 @@ export function FileInspector({ id }: { id: number }) {
         {error && (
           <div className="tone error insp-error">
             <b>× {t('insp.cannot_read')}</b>
-            <div className="selectable">{error}</div>
+            <div className="selectable">{bt(error)}</div>
             <div className="muted">{t('insp.files_safe')}</div>
           </div>
         )}

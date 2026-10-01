@@ -145,6 +145,18 @@ await js(`__t.key(document.body, 'Enter', { ctrlKey: true }); true`)
 await until('preview', `!!document.querySelector('.preview') && !/Loading the plan/.test(document.body.innerText) && /Pre-flight/i.test(document.body.innerText) && !/Checking/.test(document.querySelector('.action-bar').innerText)`, 120000)
 await shot('3-preview')
 console.log('preview open')
+// the same Preview in Chinese: UI texts and the backend's notes and reasons
+const lang = async (label) => {
+  await js(`document.querySelectorAll('.menubar-item > button')[2].dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`)
+  await sleep(200)
+  await js(`[...document.querySelectorAll('.menu-popup button')].find(b => b.innerText.includes('${label}')).click(); true`)
+  await sleep(300)
+}
+await lang('简体中文')
+await shot('3b-preview-zh')
+const untranslated = await js(`[...document.querySelectorAll('.dnote')].map(n => n.innerText).filter(t => /[a-z]{4,} [a-z]{3,} [a-z]{3,}/.test(t))`)
+if (untranslated.length) console.log(`untranslated notes: ${JSON.stringify(untranslated)}`)
+await lang('English')
 
 // review every category the checklist asks for, then Apply
 await js(`document.querySelectorAll('.review-item').forEach(b => b.click()); true`)

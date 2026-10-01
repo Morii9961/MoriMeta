@@ -99,6 +99,10 @@ export const api = {
   opDetail: (opId: string) => call<OpDetail>('op_detail', { opId }),
   undoPlan: (opId: string) => call<PlanView>('undo_plan', { opId }),
   retryPlan: (opId: string) => call<PlanView>('retry_plan', { opId }),
+  exportLog: (opId: string, includePaths: boolean, includeValues: boolean) =>
+    call<string | null>('export_log', { opId, includePaths, includeValues }),
+  restoreTo: (opId: string) =>
+    call<{ folder: string; restored: number; without_backup: number; notes: string[] } | null>('restore_to', { opId }),
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),
   recoveryResume: (opId: string) => call<OpReport>('recovery_resume', { opId }),
