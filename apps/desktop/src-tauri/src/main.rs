@@ -84,6 +84,7 @@ fn main() {
             cmd::settings_list,
             cmd::setting_set,
             cmd::app_close,
+            cmd::choose_backup_folder,
             cmd::clean_plan,
             cmd::clean_entry,
             cmd::clean_export,

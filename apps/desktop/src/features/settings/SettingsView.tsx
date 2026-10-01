@@ -180,8 +180,25 @@ export function SettingsView() {
           {page === 'backup' && (
             <>
               <Row label={t('set.backup_location')} help={t('set.backup_location_help')}>
-                <TextSetting s={get('backup.root')} onSaved={() => { load(); refreshInfo() }} />
-                <div className="mono faint">{t('set.current', { path: info?.backup.root ?? '' })}</div>
+                <div className="set-inline">
+                  <span className="mono ellipsis selectable">{info?.backup.root}</span>
+                  <button
+                    className="btn small"
+                    onClick={() =>
+                      api
+                        .chooseBackupFolder()
+                        .then((b) => {
+                          if (b) {
+                            load()
+                            refreshInfo()
+                          }
+                        })
+                        .catch((e) => notify('error', errorText(e)))
+                    }
+                  >
+                    {t('setup.change')}…
+                  </button>
+                </div>
                 {info?.backup.problem && <div className="tone error">{info.backup.problem}</div>}
                 {info?.backup.sync_warning && <div className="tone warn">{info.backup.sync_warning}</div>}
               </Row>
@@ -219,7 +236,18 @@ export function SettingsView() {
             </>
           )}
           {page === 'updates' && (
-            <Row label={t('set.update_check')} tag="1.0" help={t('set.update_help')}>
+            <Row label={t('set.update_check')} help={t('set.update_help')}>
+              <div className="segmented small">
+                {(['weekly', 'never'] as const).map((v) => (
+                  <button
+                    key={v}
+                    aria-pressed={get('updates.check')?.value === v}
+                    onClick={() => api.settingSet('updates.check', v).then(load).catch((e) => notify('error', errorText(e)))}
+                  >
+                    {v === 'weekly' ? t('setup.updates_weekly') : t('setup.updates_never')}
+                  </button>
+                ))}
+              </div>
               <span className="muted">{t('set.update_none')}</span>
             </Row>
           )}

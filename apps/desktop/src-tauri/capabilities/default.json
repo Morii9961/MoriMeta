@@ -47,6 +47,7 @@
     "allow-plan-preset",
     "allow-clean-plan",
     "allow-clean-entry",
-    "allow-clean-export"
+    "allow-clean-export",
+    "allow-choose-backup-folder"
   ]
 }

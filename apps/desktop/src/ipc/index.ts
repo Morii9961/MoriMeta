@@ -121,6 +121,7 @@ export const api = {
   cleanPlan: (ids: number[], spec: KeepSpec) => call<CleanPlan>('clean_plan', { ids, spec }),
   cleanEntry: (seq: number) => call<Prediction>('clean_entry', { seq }),
   cleanExport: (numberTaken: boolean) => call<Exported[] | null>('clean_export', { numberTaken }),
+  chooseBackupFolder: () => call<AppInfo['backup'] | null>('choose_backup_folder'),
   appClose: () => call<void>('app_close'),
   settingsList: () => call<Setting[]>('settings_list'),
   settingSet: (name: string, value: string) => call<void>('setting_set', { name, value }),

@@ -125,6 +125,11 @@ await js(`[...document.querySelectorAll('.menu-popup button')].find(b => b.inner
 const n = Object.keys(before).length
 await until('ExifTool', `/ExifTool \\d/.test(document.querySelector('.statusbar')?.innerText ?? '')`)
 console.log('app launched; ExifTool running')
+// a fresh data folder shows the first-launch setup: it is checked, then skipped
+await until('first launch', `/Skip setup|跳过设置/.test(document.body.innerText)`, 10000)
+await shot('0-first-launch')
+await js(`[...document.querySelectorAll('.dialog button')].find(b => /Skip setup|跳过设置/.test(b.innerText)).click(); true`)
+await until('setup closed', `!document.querySelector('.dialog-scrim')`)
 await until('import', `document.querySelectorAll('.mrow').length > 0 || /Add photos/.test(document.body.innerText)`)
 if (await js(`/Add photos/.test(document.body.innerText)`)) {
   await until('import', `document.querySelectorAll('.mrow').length > 0`)

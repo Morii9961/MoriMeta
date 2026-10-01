@@ -1063,6 +1063,38 @@ pub async fn clean_export(
     .map_err(ue)?
 }
 
+/// Backup location… (First Launch step 2, Settings › Backup): a folder the user picks in the
+/// backend's dialog. It must be local and writable (INTERACTION_SPEC §15); it applies to later
+/// Operations. Returns the backup state, or None when the dialog was cancelled.
+#[tauri::command]
+pub async fn choose_backup_folder(app: AppHandle) -> Res<Option<BackupDto>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = rfd::FileDialog::new().set_title("Backup location");
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(dir) = d.pick_folder() else {
+            return Ok(None);
+        };
+        {
+            let mut store = lock(&core.store);
+            let previous = store.backup_root().to_path_buf();
+            store.set_backup_root(dir.clone());
+            // refuse a location writes could not use (network, removable, not writable)
+            if let Err(why) = executor::check_backup_location(&store) {
+                store.set_backup_root(previous);
+                return Err(ue(why));
+            }
+            settings::set(&mut store, "backup.root", &dir.display().to_string()).map_err(ue)?;
+        }
+        Ok(Some(backup_dto(&core)))
+    })
+    .await
+    .map_err(ue)?
+}
+
 // ---------------------------------------------------------------------------------------------
 // settings
 

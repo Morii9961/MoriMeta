@@ -23,6 +23,7 @@ import { CleanExportView } from '../features/clean/CleanExportView'
 import { RecoveryDialog } from '../features/recovery/RecoveryDialog'
 import { useGlobalKeys } from './keys'
 import { CloseDialog } from './CloseDialog'
+import { FirstLaunch } from '../features/launch/FirstLaunch'
 
 function onEvent(e: AppEvent) {
   const s = useApp.getState()
@@ -105,6 +106,7 @@ export function App() {
       <StatusBar />
       <Notices />
       {info && <RecoveryDialog />}
+      <FirstLaunch />
       <CloseDialog />
     </div>
   )

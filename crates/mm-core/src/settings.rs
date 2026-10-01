@@ -77,6 +77,12 @@ fn check_creator(v: &str) -> Result<(), String> {
     mm_domain::creator::validate(&names)
 }
 
+fn check_update_check(v: &str) -> Result<(), String> {
+    matches!(v, "ask" | "weekly" | "never")
+        .then_some(())
+        .ok_or_else(|| "ask, weekly or never".into())
+}
+
 fn check_copyright(v: &str) -> Result<(), String> {
     let t = mm_domain::template::Template::parse(v)?;
     if t.is_literal() {
@@ -133,6 +139,18 @@ pub const KEYS: &[Key] = &[
         default: "",
         about: "files written side by side (empty: half the cores, at most 4)",
         check: check_workers,
+    },
+    Key {
+        name: "ui.setup_done",
+        default: "false",
+        about: "the first-launch setup was completed or skipped (SCREEN_SPEC §13)",
+        check: check_bool,
+    },
+    Key {
+        name: "updates.check",
+        default: "ask",
+        about: "whether to look for updates: asked at first launch, nothing chosen in advance (D-4)",
+        check: check_update_check,
     },
     Key {
         name: crate::log::SETTING_DEBUG_SINCE,
