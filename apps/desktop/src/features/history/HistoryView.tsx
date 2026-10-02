@@ -33,6 +33,7 @@ export function HistoryView() {
   const [detail, setDetail] = useState<OpDetail | null>(null)
   const [tab, setTab] = useState<string>('all')
   const [dialog, setDialog] = useState<'export' | 'restore' | null>(null)
+  const [now, setNow] = useState<Map<number, string>>(new Map())
 
   useEffect(() => {
     api
@@ -64,6 +65,21 @@ export function HistoryView() {
   }, [ops, lang])
 
   const files = detail?.files_detail.filter((f) => tab === 'all' || f.state === tab) ?? []
+
+  // Now vs. after operation, for the first 200 files shown (each is read to hash it)
+  useEffect(() => {
+    setNow(new Map())
+    if (!detail || detail.backups_unavailable) return
+    let alive = true
+    const seqs = detail.files_detail.slice(0, 200).map((f) => f.seq)
+    api
+      .nowVsAfter(detail.id, seqs)
+      .then((r) => alive && setNow(new Map(r)))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [detail])
   const states = detail ? Object.entries(detail.states).filter(([, n]) => n > 0) : []
   const failed = detail ? (detail.states.failed ?? 0) + (detail.states.skipped ?? 0) : 0
 
@@ -144,6 +160,9 @@ export function HistoryView() {
                     {f.path.split(/[\\/]/).pop()}
                   </span>
                   <span className="secondary">{t(`state.${f.state}` as MessageKey)}</span>
+                  <span className={`mono now-${now.get(f.seq) ?? 'unknown'}`} title={now.has(f.seq) ? t(`now.${now.get(f.seq)}_tip` as MessageKey) : ''}>
+                    {now.has(f.seq) ? t(`now.${now.get(f.seq)}` as MessageKey) : '…'}
+                  </span>
                   <span className="hchanges">
                     {f.changes.map((c, i) => (
                       <span key={i} className="hchange" title={`${valueText(c.before)} → ${valueText(c.after)}`}>

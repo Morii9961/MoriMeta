@@ -656,6 +656,21 @@ pub fn op_detail(core: CoreState, op_id: String) -> Res<history::OpDetail> {
     history::detail(&lock(&core.store), &op_id).map_err(ue)
 }
 
+/// History "Now vs. after operation" for the files on screen (hashing reads each file).
+#[tauri::command]
+pub async fn now_vs_after(
+    app: AppHandle,
+    op_id: String,
+    seqs: Vec<u32>,
+) -> Res<Vec<(u32, history::NowState)>> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        history::now_vs_after(&lock(&core.store), &op_id, &seqs).map_err(ue)
+    })
+    .await
+    .map_err(ue)?
+}
+
 fn exiftool_version(core: &Core) -> Res<String> {
     core.wait_launched();
     lock(&core.exiftool)

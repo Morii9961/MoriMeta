@@ -17,7 +17,10 @@
 .history-title { display: flex; gap: 8px; align-items: baseline; }
 .history-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .history-files { background: var(--bg-table); }
-.hfile { display: grid; grid-template-columns: 44px 220px 90px 1fr 200px; gap: 8px; min-height: 24px; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
+.hfile { display: grid; grid-template-columns: 44px 220px 90px 110px 1fr 200px; gap: 8px; min-height: 24px; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
 .hchanges { display: flex; gap: 12px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .hchange { overflow: hidden; text-overflow: ellipsis; }
+.now-as_written { color: var(--ok); }
+.now-changed, .now-missing { color: var(--conflict); }
+.now-original, .now-not_downloaded, .now-unknown { color: var(--text-muted); }
 .history-id { font-size: 10.5px; margin-top: 6px; }

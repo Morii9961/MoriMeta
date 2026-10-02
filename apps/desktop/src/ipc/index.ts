@@ -122,6 +122,7 @@ export const api = {
   cleanEntry: (seq: number) => call<Prediction>('clean_entry', { seq }),
   cleanExport: (numberTaken: boolean) => call<Exported[] | null>('clean_export', { numberTaken }),
   chooseBackupFolder: () => call<AppInfo['backup'] | null>('choose_backup_folder'),
+  nowVsAfter: (opId: string, seqs: number[]) => call<[number, string][]>('now_vs_after', { opId, seqs }),
   appClose: () => call<void>('app_close'),
   settingsList: () => call<Setting[]>('settings_list'),
   settingSet: (name: string, value: string) => call<void>('setting_set', { name, value }),

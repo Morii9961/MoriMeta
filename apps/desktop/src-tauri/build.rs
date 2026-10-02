@@ -34,6 +34,7 @@ const COMMANDS: &[&str] = &[
     "settings_list",
     "setting_set",
     "app_close",
+    "now_vs_after",
     "choose_backup_folder",
     "clean_plan",
     "clean_entry",

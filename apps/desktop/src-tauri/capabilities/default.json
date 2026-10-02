@@ -48,6 +48,7 @@
     "allow-clean-plan",
     "allow-clean-entry",
     "allow-clean-export",
-    "allow-choose-backup-folder"
+    "allow-choose-backup-folder",
+    "allow-now-vs-after"
   ]
 }

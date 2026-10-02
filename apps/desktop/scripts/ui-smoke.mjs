@@ -238,6 +238,10 @@ await js(`[...document.querySelectorAll('.toolbar [role=tab]')].find(b => b.inne
 await until('history', `document.querySelectorAll('.journal-entry').length >= 2`)
 await shot('8-history')
 console.log('history lists both operations')
+// Now vs. after operation: the undo is the newest Operation and its files are as it wrote them
+await until('now vs after', `document.querySelectorAll('.now-as_written').length > 0`)
+if (await js(`document.querySelectorAll('.now-changed, .now-missing').length`)) fail('a file reads as changed after the undo')
+console.log(`now vs after: ${await js(`document.querySelectorAll('.now-as_written').length`)} files as written`)
 
 // a built-in Preset on the same selection: a Plan in Preview, then discarded
 await js(`[...document.querySelectorAll('.toolbar [role=tab]')].find(b => b.innerText === 'Presets').click(); true`)

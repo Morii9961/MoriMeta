@@ -298,6 +298,7 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   clean_entry: () => ({ keep: ['EXIF:IFD0:Make', 'EXIF:IFD0:Model'], remove: [{ key: 'EXIF:GPS:GPSLatitude', category: 'gps', value: '43 deg 3\' 51.12" N' }, { key: 'EXIF:ExifIFD:SerialNumber', category: 'serial_numbers', value: '6001234' }], remove_segments: [{ label: 'APP2:MPF', bytes: 90, unidentified: false }], lens_lost: false }),
   clean_export: () => [],
   choose_backup_folder: () => null,
+  now_vs_after: (a) => (a.seqs as number[]).map((s) => [s, s % 5 ? 'as_written' : 'changed']),
   recovery_status: () => [],
   recovery_dismiss: () => undefined,
   recovery_resume: () => undefined,
