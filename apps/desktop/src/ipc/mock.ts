@@ -26,7 +26,7 @@ let listener: (e: AppEvent) => void = () => {}
 const assets: Asset[] = []
 const rows = new Map<number, Row>()
 const plans = new Map<string, { versions: PlanEntry[][]; view: PlanView }>()
-const history: OpSummary[] = []
+const history: OpSummary[] = [{ id: 'op-preview-history', kind: 'apply', title: 'Preview: copyright edit', status: 'completed_with_errors', created_ms: Date.now() - 86_400_000, finished_ms: Date.now() - 86_390_000, undo_of: null, undone_by: [], files: 3, states: { done: 2, failed: 1 }, changes: 3, keep: false, backups_pruned: false, backups_unavailable: false, undoable: true, rolled_back: 0, warnings: 0 }]
 
 const CAMERAS = [
   ['NIKON CORPORATION', 'NIKON Z 8', 'NIKKOR Z 24-120mm f/4 S'],
@@ -276,12 +276,12 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   history_list: () => history,
   op_detail: (a) => {
     const o = history.find((h) => h.id === a.opId)!
-    return { ...o, app_version: '0.1.0', exiftool_version: '13.59', acks: [], files_detail: [] }
+    return { ...o, app_version: '0.1.0', exiftool_version: '13.59', acks: [], files_detail: Array.from({ length: o.files }, (_, seq) => ({ seq, path: `preview-${seq + 1}.jpg`, state: seq === 2 ? 'failed' : 'done', error: seq === 2 ? 'Preview: simulated failure' : null, h0: null, h1: null, changes: [] })) }
   },
   undo_plan: (a) => {
     const o = history.find((h) => h.id === a.opId)!
     const id = `plan-mock-${plans.size + 1}`
-    const entries: PlanEntry[] = Array.from({ length: o.files }, (_, seq) => ({ seq, path: `file ${seq}`, name: `file ${seq}`, notes: [], warnings: [], excluded: false, target: 'in_file', changes: [], status: { status: 'ready' } }))
+    const entries: PlanEntry[] = Array.from({ length: o.id === 'op-preview-history' ? 2 : o.files }, (_, seq) => ({ seq, path: `preview-${seq + 1}.jpg`, name: `preview-${seq + 1}.jpg`, notes: [], warnings: [], excluded: seq === 1, forced_undo: seq === 1, target: 'in_file', changes: [], status: { status: 'ready' } }))
     const view = { ...viewOf(id, 1, entries, `Undo: ${o.title}`, 'undo') }
     view.summary.changes = o.files
     plans.set(id, { versions: [entries], view })
@@ -289,6 +289,13 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   },
   retry_plan: () => {
     throw 'nothing failed'
+  },
+  plan_again: () => {
+    const id = `plan-mock-${plans.size + 1}`
+    const entries: PlanEntry[] = [{ seq: 0, path: 'preview-3.jpg', name: 'preview-3.jpg', notes: [], warnings: [], excluded: false, target: 'in_file', changes: [{ field: 'copyright', before: null, after: ['Preview copyright'], kind: 'add' }], status: { status: 'ready' } }]
+    const view = viewOf(id, 1, entries, 'Preview: re-read failed file')
+    plans.set(id, { versions: [entries], view })
+    return view
   },
   export_log: () => 'D:\MoriMeta-op.json',
   restore_to: () => ({ folder: 'D:\restored', restored: 3, without_backup: 0, notes: [] }),

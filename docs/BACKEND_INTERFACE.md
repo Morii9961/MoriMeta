@@ -49,9 +49,9 @@
 | `history_list(page)` | `history::list` | `history` | 文件数、修改数、状态计数、撤销链接、保留/已清理、可撤销、回滚数、警告数；备份文件夹不在（硬盘未连接）时 `backups_unavailable`，不可撤销 |
 | `op_detail(id)` | `history::detail`、`now_vs_after` | `show`、`now` | 逐文件前后值；当前 vs 执行后（按页请求；未下载占位符为 `not_downloaded`，不读取） |
 | 导出日志 | `history::export_view`、`export_log` | `export-log` | 默认脱敏 |
-| `op_undo_plan(id, scope)` | `undo::plan_undo`（`is_forced`） | `plan-undo` | 冲突文件默认排除，可强制恢复；选定文件 = `PlanBook::exclude` |
+| `op_undo_plan(id, scope)` | `undo::plan_undo`（`is_forced`） | `plan-undo` | 冲突文件默认排除，可强制恢复；选定文件 = `PlanBook::exclude`。历史界面先读取完整撤销计划，再选择文件；`forced_undo` 来自核心判断，纳入冲突需额外确认，选择绑定同一计划版本。撤销预览禁用“全部恢复”，所有撤销均显示最终确认 |
 | 重试失败 | `history::retry_plan` | `plan-retry` | 仍为只读的文件保持排除 |
-| 重新规划 | `history::replan` | `plan-again` | 按 Plan 来源对失败、跳过、冲突的文件重新读取 |
+| 重新规划 | `history::replan` | `plan-again` | 按 Plan 来源对失败、跳过、冲突的文件重新读取；历史界面已接入，并显示新预览 |
 | 恢复备份到文件夹 | `history::restore_backups_to` | `restore-to` | 新文件，不覆盖，核对哈希；先写入 `…​.mmrestore-N`，完整且核对后才以不覆盖的改名取得照片的名字，中断不会留下看似完整的原片 |
 | 启动 | `service::open_data`（单实例锁 + Journal）、`service::startup` | —（`recover`） | 先取单实例锁（另一个 MoriMeta 或 `mm-cli` 占用同一数据目录时 `AnotherInstance`），再打开 Journal 并应用备份位置、程序日志与调试日志设置（适配层不必重复）；崩溃恢复（备份文件夹不在的 Operation 列在 `recovery_waiting`，暂不恢复、不阻止启动）、完成中断的清理（无法完成的列在 `prunes_left`，不阻止启动）、恢复摘要、提权状态与备份位置问题；提权运行时不做恢复（它也会写入） |
 | 重建 Journal（数据库丢失或损坏） | `Store::import_from_backups`、`import_from_backups_in(extra)`，随后 `service::startup` | `rebuild-journal [--from DIR]` | 扫描默认、当前与 `<data>/backup-locations.txt` 中登记过的每个备份位置；数据文件夹整个丢失时由用户指定文件夹 |

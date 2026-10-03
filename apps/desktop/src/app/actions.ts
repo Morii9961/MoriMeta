@@ -88,6 +88,7 @@ export function showPreview(plan: PlanView, origin: 'edit' | 'undo' | 'retry') {
 /** Confirmed in Preview (with the acknowledgements the dialog collected): run it. */
 export async function apply(plan: PlanView, acks: string[]) {
   const s = st()
+  const origin = s.stage.kind === 'preview' ? s.stage.origin : plan.kind === 'undo' ? 'undo' : 'edit'
   let token: string
   try {
     token = await api.planConfirm(plan.id, plan.version, acks)
@@ -103,7 +104,7 @@ export async function apply(plan: PlanView, acks: string[]) {
     if (plan.kind !== 'undo' && st().stage.kind === 'done') st().discardStaged()
     refreshAfterOperation(report.files.map((f) => f.path))
   } catch (e) {
-    st().setStage({ kind: 'preview', plan, origin: 'edit' })
+    st().setStage({ kind: 'preview', plan, origin })
     st().notify('error', errorText(e))
   }
   if (st().closeAfter) api.appClose().catch(() => {})
@@ -156,6 +157,12 @@ export async function planRetry(opId: string) {
   } catch (e) {
     st().notify('error', errorText(e))
   }
+}
+
+/** Read failed, skipped and conflicting files again from the recorded edit source. */
+export async function replanOperation(opId: string) {
+  try { showPreview(await api.planAgain(opId), 'retry') }
+  catch (e) { st().notify('error', errorText(e)) }
 }
 
 /** Done in the completion summary. */

@@ -36,7 +36,7 @@ export function ConfirmApply({
   const s = plan.summary
   return (
     <Dialog
-      title={t('confirm.title', { n: s.changes, files: s.ready })}
+      title={plan.kind === 'undo' ? t('confirm.undo_title', { n: s.ready }) : t('confirm.title', { n: s.changes, files: s.ready })}
       glyph="!"
       onCancel={onCancel}
       footer={
@@ -46,11 +46,12 @@ export function ConfirmApply({
             {t('confirm.back')}
           </button>
           <button className={`btn dlg${all ? ' primary' : ''}`} disabled={!all} onClick={() => onConfirm(plan.required_acks)}>
-            {t('confirm.apply', { n: s.changes })}
+            {plan.kind === 'undo' ? t('preview.apply_undo', { n: s.ready }) : t('confirm.apply', { n: s.changes })}
           </button>
         </>
       }
     >
+      {plan.kind === 'undo' && <p>{t('confirm.undo_note')}</p>}
       <div className="consequence">
         <span className="glyph-add">+</span>
         <span>{t('kind.add')}</span>

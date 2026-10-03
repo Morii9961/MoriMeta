@@ -348,6 +348,8 @@ pub struct EntryDto<'a> {
     /// `in_file`, `sidecar`, `new_sidecar` (SCREEN_SPEC: Writes to).
     pub target: &'static str,
     pub warnings: Vec<String>,
+    /// A restorable undo conflict, excluded until explicitly chosen.
+    pub forced_undo: bool,
     /// The name the user knows the file by (the RAW for a sidecar).
     pub name: String,
 }
@@ -363,6 +365,7 @@ impl<'a> EntryDto<'a> {
         let shown = e.raw.as_deref().unwrap_or(&e.path);
         EntryDto {
             entry: e,
+            forced_undo: mm_core::undo::is_forced(e),
             target,
             warnings: e.warnings().map(str::to_owned).collect(),
             name: Path::new(shown)

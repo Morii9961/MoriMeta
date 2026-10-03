@@ -8,7 +8,8 @@ import { api, errorText } from '../../ipc'
 import type { OpDetail, OpSummary } from '../../ipc/types'
 import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
-import { planRetry, planUndo } from '../../app/actions'
+import { planRetry, replanOperation } from '../../app/actions'
+import { UndoDialog } from './UndoDialog'
 import { valueText } from '../preview/model'
 import { Dialog } from '../../components/Dialog'
 import './history.css'
@@ -32,27 +33,33 @@ export function HistoryView() {
   const [sel, setSel] = useState<string | null>(null)
   const [detail, setDetail] = useState<OpDetail | null>(null)
   const [tab, setTab] = useState<string>('all')
-  const [dialog, setDialog] = useState<'export' | 'restore' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'restore' | 'undo' | null>(null)
   const [now, setNow] = useState<Map<number, string>>(new Map())
 
   useEffect(() => {
+    let alive = true
     api
       .historyList(0)
       .then((o) => {
+        if (!alive) return
         setOps(o)
         if (o.length) setSel((s) => s ?? o[0].id)
       })
-      .catch((e) => notify('error', errorText(e)))
+      .catch((e) => { if (alive) notify('error', errorText(e)) })
+    return () => { alive = false }
   }, [notify])
 
   useEffect(() => {
     if (!sel) return
+    let alive = true
     setDetail(null)
+    setDialog(null)
     setTab('all')
     api
       .opDetail(sel)
-      .then(setDetail)
-      .catch((e) => notify('error', errorText(e)))
+      .then((value) => { if (alive) setDetail(value) })
+      .catch((e) => { if (alive) notify('error', errorText(e)) })
+    return () => { alive = false }
   }, [sel, notify])
 
   const days = useMemo(() => {
@@ -82,6 +89,7 @@ export function HistoryView() {
   }, [detail])
   const states = detail ? Object.entries(detail.states).filter(([, n]) => n > 0) : []
   const failed = detail ? (detail.states.failed ?? 0) + (detail.states.skipped ?? 0) : 0
+  const replannable = failed + (detail?.states.conflict ?? 0)
 
   return (
     <>
@@ -126,12 +134,13 @@ export function HistoryView() {
                 <span className="mono faint">{new Date(detail.created_ms).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')}</span>
               </div>
               <div className="history-actions">
-                <button className="btn" disabled={!detail.undoable} onClick={() => planUndo(detail.id)} title={detail.undoable ? undefined : t('history.not_undoable')}>
+                <button className="btn" disabled={!detail.undoable} onClick={() => setDialog('undo')} title={detail.undoable ? undefined : t('history.not_undoable')}>
                   {t('history.undo')}…
                 </button>
                 <button className={`btn${failed ? ' accent' : ''}`} disabled={!failed || detail.kind === 'undo'} onClick={() => planRetry(detail.id)}>
                   {t('op.retry')}
                 </button>
+                <button className="btn" disabled={!replannable || detail.status === 'running' || detail.status === 'interrupted'} onClick={() => replanOperation(detail.id)}>{t('history.replan')}</button>
                 <button className="btn" disabled={detail.backups_pruned || detail.backups_unavailable} onClick={() => setDialog('restore')}>
                   {t('history.restore_to')}…
                 </button>
@@ -225,6 +234,7 @@ export function HistoryView() {
       </aside>
       {dialog === 'export' && detail && <ExportDialog opId={detail.id} onClose={() => setDialog(null)} />}
       {dialog === 'restore' && detail && <RestoreDialog opId={detail.id} files={detail.files} onClose={() => setDialog(null)} />}
+      {dialog === 'undo' && detail && <UndoDialog key={detail.id} opId={detail.id} onClose={() => setDialog(null)} />}
     </>
   )
 }

@@ -260,6 +260,7 @@ export interface PlanEntry {
   target: 'in_file' | 'sidecar' | 'new_sidecar'
   warnings: string[]
   name: string
+  forced_undo?: boolean
 }
 
 export interface PlanPage {

@@ -24,3 +24,7 @@
 .now-changed, .now-missing { color: var(--conflict); }
 .now-original, .now-not_downloaded, .now-unknown { color: var(--text-muted); }
 .history-id { font-size: 10.5px; margin-top: 6px; }
+.undo-choices { list-style: none; margin: 12px 0; padding: 0; max-height: 300px; overflow: auto; }
+.undo-choices li { padding: 6px 0; border-bottom: 1px solid var(--border-subtle); }
+.undo-choices label { display: flex; gap: 8px; align-items: center; }
+.undo-choices p { margin: 4px 0 0 22px; }

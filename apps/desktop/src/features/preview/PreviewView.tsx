@@ -118,7 +118,7 @@ export function PreviewView() {
   else if (!pfOk) blocked = preflight.backup ? t('preview.blocked_backup') : preflight.rescan.length ? t('preview.blocked_rescan') : t('preview.blocked_checks')
   else if (unreviewed.length) blocked = t('preview.review_first', { what: unreviewed.map((k) => t(KIND_LABEL[k])).join(', ') })
   const canApply = blocked === null && !busy
-  const highRisk = plan.required_acks.length > 0
+  const highRisk = plan.kind === 'undo' || plan.required_acks.length > 0
 
   const onFilter = (k: Kind | 'all') => {
     setFilter(k)
@@ -234,7 +234,7 @@ export function PreviewView() {
             {(plan.summary.excluded > 0 || (c?.excluded ?? 0) > 0) && entries && (
               <button
                 className="link side-restore"
-                disabled={busy}
+                disabled={busy || plan.kind === 'undo'}
                 onClick={() =>
                   run(async () => {
                     let p = plan
