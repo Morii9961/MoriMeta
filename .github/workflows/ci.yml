@@ -104,7 +104,7 @@ jobs:
         run: cargo test --workspace --locked
 
   desktop:
-    name: desktop app (frontend build, adapter clippy)
+    name: desktop app (frontend build, adapter tests)
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -135,11 +135,12 @@ jobs:
           npm run build
           npm test
 
-      - name: Adapter (format, clippy)
+      - name: Adapter and release helper (format, clippy, tests)
         working-directory: apps/desktop/src-tauri
         run: |
           cargo fmt -- --check
-          cargo clippy --locked -- -D warnings
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
 
   msrv:
     name: minimum Rust version
