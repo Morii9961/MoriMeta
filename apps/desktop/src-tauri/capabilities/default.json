@@ -30,11 +30,19 @@
     "allow-op-detail",
     "allow-undo-plan",
     "allow-retry-plan",
+    "allow-plan-again",
+    "allow-recovery-keep",
     "allow-recovery-status",
     "allow-recovery-dismiss",
     "allow-recovery-resume",
     "allow-settings-list",
     "allow-setting-set",
+    "allow-settings-reset",
+    "allow-settings-migrations",
+    "allow-backup-usage",
+    "allow-backup-keep",
+    "allow-prune-preview",
+    "allow-prune-execute",
     "allow-export-log",
     "allow-restore-to",
     "allow-app-close",
@@ -49,6 +57,11 @@
     "allow-clean-entry",
     "allow-clean-export",
     "allow-choose-backup-folder",
-    "allow-now-vs-after"
+    "allow-now-vs-after",
+    "allow-update-status",
+    "allow-update-check",
+    "allow-update-download",
+    "allow-update-cancel",
+    "allow-update-install"
   ]
 }

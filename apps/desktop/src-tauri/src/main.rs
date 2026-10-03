@@ -7,6 +7,7 @@ mod cmd;
 mod core;
 mod dto;
 mod errors;
+mod updater;
 
 use std::sync::Arc;
 
@@ -27,9 +28,11 @@ fn main() {
     };
     let for_setup = core.clone();
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(core)
         .setup(move |app| {
             for_setup.launch(app.path().resource_dir().ok());
+            updater::auto_checks(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -76,6 +79,8 @@ fn main() {
             cmd::op_detail,
             cmd::undo_plan,
             cmd::retry_plan,
+            cmd::plan_again,
+            cmd::recovery_keep,
             cmd::export_log,
             cmd::restore_to,
             cmd::recovery_status,
@@ -83,6 +88,12 @@ fn main() {
             cmd::recovery_resume,
             cmd::settings_list,
             cmd::setting_set,
+            cmd::settings_reset,
+            cmd::settings_migrations,
+            cmd::backup_usage,
+            cmd::backup_keep,
+            cmd::prune_preview,
+            cmd::prune_execute,
             cmd::app_close,
             cmd::now_vs_after,
             cmd::choose_backup_folder,
@@ -96,6 +107,11 @@ fn main() {
             cmd::preset_import,
             cmd::preset_export,
             cmd::plan_preset,
+            updater::update_status,
+            updater::update_check,
+            updater::update_download,
+            updater::update_cancel,
+            updater::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MoriMeta");

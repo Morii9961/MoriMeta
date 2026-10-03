@@ -69,7 +69,18 @@ macro_rules! plain {
     )*};
 }
 
-plain!(std::io::Error, tauri::Error, serde_json::Error, String);
+plain!(
+    std::io::Error,
+    tauri::Error,
+    serde_json::Error,
+    String,
+    tauri_plugin_updater::Error,
+    base64::DecodeError,
+    std::string::FromUtf8Error,
+    minisign_verify::Error,
+    semver::Error,
+    tokio::task::JoinError
+);
 
 impl UserText for mm_store::StoreError {
     fn user_text(&self) -> String {

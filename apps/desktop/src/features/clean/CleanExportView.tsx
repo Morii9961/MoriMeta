@@ -76,10 +76,11 @@ export function CleanExportView() {
   const specChanged = plan !== null && JSON.stringify(spec) !== JSON.stringify(plan.spec ?? spec)
 
   const doExport = async () => {
+    if (!plan) return
     setExporting(true)
     useApp.setState({ cleanProgress: null })
     try {
-      const r = await api.cleanExport(numberTaken)
+      const r = await api.cleanExport(plan.id, numberTaken)
       if (r) setResults(r)
     } catch (e) {
       notify('error', errorText(e))

@@ -26,6 +26,8 @@ const COMMANDS: &[&str] = &[
     "op_detail",
     "undo_plan",
     "retry_plan",
+    "plan_again",
+    "recovery_keep",
     "export_log",
     "restore_to",
     "recovery_status",
@@ -33,6 +35,12 @@ const COMMANDS: &[&str] = &[
     "recovery_resume",
     "settings_list",
     "setting_set",
+    "settings_reset",
+    "settings_migrations",
+    "backup_usage",
+    "backup_keep",
+    "prune_preview",
+    "prune_execute",
     "app_close",
     "now_vs_after",
     "choose_backup_folder",
@@ -46,6 +54,11 @@ const COMMANDS: &[&str] = &[
     "preset_import",
     "preset_export",
     "plan_preset",
+    "update_status",
+    "update_check",
+    "update_download",
+    "update_cancel",
+    "update_install",
 ];
 
 /// The app icon is drawn here rather than committed (the repository keeps no binaries,
@@ -155,6 +168,7 @@ fn bitmap(s: u32) -> Vec<u8> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=MORIMETA_UPDATER_PUBLIC_KEY");
     ensure_icon();
     tauri_build::try_build(
         tauri_build::Attributes::new()

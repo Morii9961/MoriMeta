@@ -582,6 +582,28 @@ pub fn plan_confirm(core: CoreState, id: String, version: u32, acks: Vec<String>
         .map_err(ue)
 }
 
+fn execution_options(core: &Arc<Core>, cancel: Arc<std::sync::atomic::AtomicBool>) -> ExecOptions {
+    let throttle = Throttle::new();
+    let c2 = core.clone();
+    ExecOptions {
+        progress: Some(ProgressSink(Arc::new(move |p: &ExecProgress| {
+            if throttle.ready(p.done == p.total) {
+                c2.emit(AppEvent::ExecProgress(ExecProgressDto {
+                    total: p.total,
+                    done: p.done,
+                    ok: p.ok,
+                    failed: p.failed,
+                    skipped: p.skipped,
+                    last_seq: p.last.map(|l| l.0),
+                    last_state: p.last.map(|l| l.1.as_str().to_owned()),
+                }));
+            }
+        }))),
+        cancel: Some(cancel),
+        ..Default::default()
+    }
+}
+
 #[tauri::command]
 pub async fn op_execute(
     app: AppHandle,
@@ -592,34 +614,15 @@ pub async fn op_execute(
     let core = app.state::<Arc<Core>>().inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         core.wait_launched();
-        let cancel = Arc::new(AtomicBool::new(false));
-        *lock(&core.exec_cancel) = Some(cancel.clone());
-        let throttle = Throttle::new();
-        let c2 = core.clone();
-        let opts = ExecOptions {
-            progress: Some(ProgressSink(Arc::new(move |p: &ExecProgress| {
-                if throttle.ready(p.done == p.total) {
-                    c2.emit(AppEvent::ExecProgress(ExecProgressDto {
-                        total: p.total,
-                        done: p.done,
-                        ok: p.ok,
-                        failed: p.failed,
-                        skipped: p.skipped,
-                        last_seq: p.last.map(|l| l.0),
-                        last_state: p.last.map(|l| l.1.as_str().to_owned()),
-                    }));
-                }
-            }))),
-            cancel: Some(cancel),
-            ..Default::default()
-        };
-        let _running = core.mark_running();
+        let active = core.begin_write()?;
+        let opts = execution_options(&core, active.cancel.clone());
         let mut engines = lock(&core.engines);
         let mut store = lock(&core.store);
+        core.sync_workers(&active.permit, &mut engines, &store)?;
         let mut book = lock(&core.book);
         let rep = book
-            .execute(
-                &core.gate,
+            .execute_permitted(
+                &active.permit,
                 &mut store,
                 &mut engines,
                 &id,
@@ -628,7 +631,6 @@ pub async fn op_execute(
                 &opts,
             )
             .map_err(ue)?;
-        *lock(&core.exec_cancel) = None;
         Ok(OpReportDto::from(&rep))
     })
     .await
@@ -680,9 +682,22 @@ fn exiftool_version(core: &Core) -> Res<String> {
 }
 
 #[tauri::command]
-pub fn undo_plan(core: CoreState, op_id: String) -> Res<PlanView> {
+pub fn undo_plan(core: CoreState, op_id: String, force_seqs: Option<Vec<u32>>) -> Res<PlanView> {
     let v = exiftool_version(&core)?;
-    let plan = undo::plan_undo(&lock(&core.store), &op_id, &v).map_err(ue)?;
+    let mut plan = undo::plan_undo(&lock(&core.store), &op_id, &v).map_err(ue)?;
+    if let Some(seqs) = force_seqs {
+        for seq in seqs {
+            let e = plan
+                .entries
+                .iter_mut()
+                .find(|e| e.seq == seq)
+                .ok_or_else(|| format!("plan has no entry {seq}"))?;
+            if !undo::is_forced(e) {
+                return Err("only conflicting undo entries can be forced".into());
+            }
+            e.excluded = false;
+        }
+    }
     let view = PlanView::of(&plan);
     lock(&core.book).insert(plan);
     Ok(view)
@@ -696,6 +711,36 @@ pub fn retry_plan(core: CoreState, op_id: String) -> Res<PlanView> {
     let view = PlanView::of(&plan);
     lock(&core.book).insert(plan);
     Ok(view)
+}
+
+/// Failed/skipped/conflicting files are read again, rather than replaying their stale Preview.
+#[tauri::command]
+pub async fn plan_again(app: AppHandle, op_id: String) -> Res<PlanView> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ctl = plan_ctl(&core);
+        let plan = with_planner(&core, |engine| {
+            history::replan(engine, &lock(&core.store), &op_id, &ctl).map_err(ue)
+        })?;
+        let view = PlanView::of(&plan);
+        lock(&core.book).insert(plan);
+        Ok(view)
+    })
+    .await
+    .map_err(ue)?
+}
+
+/// Resolve selected attention files by keeping their current content; no photo is written.
+#[tauri::command]
+pub async fn recovery_keep(app: AppHandle, op_id: String, seqs: Vec<u32>) -> Res<()> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.wait_launched();
+        let _active = core.begin_write()?;
+        recovery::resolve_keep(&mut lock(&core.store), &op_id, &seqs).map_err(ue)
+    })
+    .await
+    .map_err(ue)?
 }
 
 /// Export log… (ARCHITECTURE §12): the Operation as JSON in a new file the user names; paths
@@ -754,7 +799,8 @@ pub async fn restore_to(app: AppHandle, op_id: String) -> Res<Option<RestoreRepo
         let Some(dir) = d.pick_folder() else {
             return Ok(None);
         };
-        let _permit = core.gate.write().map_err(ue)?;
+        core.wait_launched();
+        let _active = core.begin_write()?;
         let done = history::restore_backups_to(&lock(&core.store), &op_id, &dir).map_err(ue)?;
         Ok(Some(RestoreReport {
             folder: dir.display().to_string(),
@@ -784,12 +830,12 @@ pub async fn recovery_resume(app: AppHandle, op_id: String) -> Res<OpReportDto> 
     let core = app.state::<Arc<Core>>().inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         core.wait_launched();
-        let _permit = core.gate.write().map_err(ue)?;
-        let _running = core.mark_running();
+        let active = core.begin_write()?;
         let mut engines = lock(&core.engines);
         let mut store = lock(&core.store);
-        let rep = executor::resume(&mut store, &mut engines, &op_id, &ExecOptions::default())
-            .map_err(ue)?;
+        core.sync_workers(&active.permit, &mut engines, &store)?;
+        let opts = execution_options(&core, active.cancel.clone());
+        let rep = executor::resume(&mut store, &mut engines, &op_id, &opts).map_err(ue)?;
         Ok(OpReportDto::from(&rep))
     })
     .await
@@ -1033,6 +1079,7 @@ pub fn clean_entry(core: CoreState, seq: u32) -> Res<mm_domain::clean::Predictio
 #[tauri::command]
 pub async fn clean_export(
     app: AppHandle,
+    plan_id: String,
     number_taken: bool,
 ) -> Res<Option<Vec<mm_core::clean_export::Exported>>> {
     let window = app.get_webview_window("main");
@@ -1046,36 +1093,61 @@ pub async fn clean_export(
         let Some(dir) = d.pick_folder() else {
             return Ok(None);
         };
-        core.wait_launched();
-        let plan = lock(&core.clean).clone().ok_or("no Clean Export preview")?;
-        let cancel = Arc::new(AtomicBool::new(false));
-        *lock(&core.exec_cancel) = Some(cancel.clone());
-        let _running = core.mark_running();
-        let throttle = Throttle::new();
-        let c2 = core.clone();
-        let progress = move |done: usize, total: usize| {
-            if throttle.ready(done == total) {
-                c2.emit(AppEvent::ExecProgress(ExecProgressDto {
-                    total,
-                    done,
-                    ..Default::default()
-                }));
-            }
-        };
-        let mut engines = lock(&core.engines);
-        let engine = engines.first_mut().ok_or("ExifTool is not available")?;
-        let on = if number_taken {
-            mm_core::clean_export::OnConflict::Number
-        } else {
-            mm_core::clean_export::OnConflict::Skip
-        };
-        let r = mm_core::clean_export::export(engine, &plan, &dir, on, &progress, Some(cancel))
-            .map_err(ue)?;
-        *lock(&core.exec_cancel) = None;
-        Ok(Some(r))
+        export_clean(&core, &plan_id, &dir, number_taken).map(Some)
     })
     .await
     .map_err(ue)?
+}
+
+/// The dialog and this helper use the same write gate as Apply and Restore to folder.
+fn export_clean(
+    core: &Arc<Core>,
+    plan_id: &str,
+    dir: &std::path::Path,
+    number_taken: bool,
+) -> Res<Vec<mm_core::clean_export::Exported>> {
+    // Refuse a busy/disabled request immediately; reserve the actual slot after launch has
+    // completed its integrity and recovery checks.
+    drop(core.gate.write().map_err(ue)?);
+    core.wait_launched();
+    let active = core.begin_write()?;
+    executor::require_no_pending_recovery(&lock(&core.store)).map_err(ue)?;
+    let plan = clean_preview(core, plan_id)?;
+    let mut engines = lock(&core.engines);
+    let engine = engines.first_mut().ok_or("ExifTool is not available")?;
+    let throttle = Throttle::new();
+    let c2 = core.clone();
+    let progress = move |done: usize, total: usize| {
+        if throttle.ready(done == total) {
+            c2.emit(AppEvent::ExecProgress(ExecProgressDto {
+                total,
+                done,
+                ..Default::default()
+            }));
+        }
+    };
+    let on = if number_taken {
+        mm_core::clean_export::OnConflict::Number
+    } else {
+        mm_core::clean_export::OnConflict::Skip
+    };
+    mm_core::clean_export::export(
+        engine,
+        &plan,
+        dir,
+        on,
+        &progress,
+        Some(active.cancel.clone()),
+    )
+    .map_err(ue)
+}
+
+fn clean_preview(core: &Core, id: &str) -> Res<mm_core::clean_export::CleanPlan> {
+    let plan = lock(&core.clean).clone().ok_or("no Clean Export preview")?;
+    if plan.id != id {
+        return Err("the Clean Export preview changed; preview it again".into());
+    }
+    Ok(plan)
 }
 
 /// Backup location… (First Launch step 2, Settings › Backup): a folder the user picks in the
@@ -1102,6 +1174,8 @@ pub async fn choose_backup_folder(app: AppHandle) -> Res<Option<BackupDto>> {
                 store.set_backup_root(previous);
                 return Err(ue(why));
             }
+            // Validation used the proposed root; restore it until persistence succeeds.
+            store.set_backup_root(previous);
             settings::set(&mut store, "backup.root", &dir.display().to_string()).map_err(ue)?;
         }
         Ok(Some(backup_dto(&core)))
@@ -1133,8 +1207,147 @@ pub fn settings_list(core: CoreState) -> Res<Vec<SettingDto>> {
 pub fn setting_set(core: CoreState, name: String, value: String) -> Res<()> {
     let mut store = lock(&core.store);
     settings::set(&mut store, &name, &value).map_err(ue)?;
-    if name == "backup.root" && !value.is_empty() {
-        store.set_backup_root(PathBuf::from(value));
-    }
     Ok(())
+}
+
+/// Backup management uses opaque Operation ids; no deletion path comes from the frontend.
+#[tauri::command]
+pub async fn backup_usage(app: AppHandle) -> Res<retention::Usage> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.wait_launched();
+        let store = lock(&core.store);
+        let policy = retention::Policy::from_settings(&store).map_err(ue)?;
+        retention::usage(&store, &policy).map_err(ue)
+    })
+    .await
+    .map_err(ue)?
+}
+
+/// None selects policy candidates; Some selects the backups the user explicitly chose.
+#[tauri::command]
+pub async fn prune_preview(
+    app: AppHandle,
+    op_ids: Option<Vec<String>>,
+) -> Res<mm_core::backups::PrunePreview> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.wait_launched();
+        let store = lock(&core.store);
+        lock(&core.prunes)
+            .preview(&store, op_ids.as_deref())
+            .map_err(ue)
+    })
+    .await
+    .map_err(ue)?
+}
+
+/// Executes exactly the previewed selection; changed policy/protection requires another preview.
+#[tauri::command]
+pub async fn prune_execute(app: AppHandle, token: String) -> Res<Vec<String>> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.wait_launched();
+        let active = core.begin_write()?;
+        let mut store = lock(&core.store);
+        lock(&core.prunes)
+            .execute_permitted(&active.permit, &mut store, &token)
+            .map_err(ue)
+    })
+    .await
+    .map_err(ue)?
+}
+
+#[tauri::command]
+pub fn backup_keep(core: CoreState, op_id: String, keep: bool) -> Res<()> {
+    mm_core::backups::keep(&core.gate, &mut lock(&core.store), &op_id, keep).map_err(ue)
+}
+
+#[tauri::command]
+pub fn settings_reset(core: CoreState) -> Res<()> {
+    let _permit = core.gate.write().map_err(ue)?;
+    settings::reset_all(&mut lock(&core.store)).map_err(ue)
+}
+
+#[tauri::command]
+pub fn settings_migrations(core: CoreState) -> Vec<(i64, String)> {
+    lock(&core.store).migrations()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_export_checks_the_gate_before_waiting_or_changing_cancel_state() {
+        let dir = std::env::temp_dir().join(format!("mm-app-clean-gate-{}", std::process::id()));
+        let core = Arc::new(Core::open_at(dir.clone()).unwrap());
+        let active_cancel = Arc::new(AtomicBool::new(false));
+        *lock(&core.exec_cancel) = Some(active_cancel.clone());
+        // No launch, plan or engine: gate refusal must occur before any of those are accessed.
+        match core.gate.write() {
+            Ok(_permit) => {
+                assert_eq!(
+                    export_clean(&core, "unused", &dir, false).unwrap_err(),
+                    "an Operation is already running"
+                );
+            }
+            Err(ServiceError::Elevated) => {
+                assert!(
+                    export_clean(&core, "unused", &dir, false)
+                        .unwrap_err()
+                        .contains("administrator rights")
+                );
+            }
+            Err(e) => panic!("unexpected gate error: {e:?}"),
+        }
+        assert!(Arc::ptr_eq(
+            lock(&core.exec_cancel).as_ref().unwrap(),
+            &active_cancel
+        ));
+        assert!(!core.running());
+        let first = core.mark_running();
+        let second = core.mark_running();
+        drop(second);
+        assert!(
+            core.running(),
+            "one command finishing must not hide the other"
+        );
+        drop(first);
+        assert!(!core.running());
+        if let Ok(active) = core.begin_write() {
+            let cancel = active.cancel.clone();
+            assert!(core.running());
+            assert!(core.begin_write().is_err());
+            assert!(Arc::ptr_eq(
+                lock(&core.exec_cancel).as_ref().unwrap(),
+                &cancel
+            ));
+            cancel.store(true, Ordering::SeqCst);
+            assert!(
+                lock(&core.exec_cancel)
+                    .as_ref()
+                    .unwrap()
+                    .load(Ordering::SeqCst)
+            );
+            drop(active);
+            assert!(lock(&core.exec_cancel).is_none());
+            assert!(!core.running());
+        }
+        core.gate.refuse_writes("test integrity failure");
+        let err = export_clean(&core, "unused", &dir, false).unwrap_err();
+        assert!(
+            err.contains("writing is disabled") || err.contains("administrator rights"),
+            "{err}"
+        );
+        *lock(&core.clean) = Some(mm_core::clean_export::CleanPlan {
+            id: "current".into(),
+            spec: Default::default(),
+            entries: vec![],
+        });
+        assert!(clean_preview(&core, "old").is_err());
+        assert_eq!(clean_preview(&core, "current").unwrap().id, "current");
+        drop(core);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

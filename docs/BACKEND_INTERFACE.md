@@ -1,6 +1,6 @@
 # 后端接口对照（给 Tauri 适配层）
 
-> 2026-09-28 · 工程文档。ARCHITECTURE §5.2 列出了界面需要的命令；本文把每个命令对应到已实现的 `mm-core` 函数、开发用 `mm-cli` 命令与测试，并标出尚缺的部分。适配层（`src-tauri`，尚未开始）只做转发、文件对话框与拖放、进度 Channel；业务逻辑都在下列函数中。所有写操作都经过 `service::OperationGate`（提权运行时拒绝）。
+> 2026-10-02 · 工程文档。ARCHITECTURE §5.2 列出了界面需要的命令；本文把每个命令对应到已实现的 `mm-core` 函数、开发用 `mm-cli` 命令与测试，并标出尚缺的部分。适配层已在 `apps/desktop/src-tauri` 实施，负责转发、文件对话框与拖放、进度 Channel；业务逻辑在下列核心函数中。产品写操作经过 `service::OperationGate`（提权运行时拒绝）。
 
 ## 0. 启动顺序
 
@@ -63,16 +63,17 @@
 | 命令 | mm-core | mm-cli | 说明 |
 |---|---|---|---|
 | `presets_*` | `presets::list`、`get`、`save`、`import`、`duplicate`、`delete`；`Preset::lint` | `presets`、`preset-*` | 内置 Preset 只读；导入受大小与数量限制，首次使用标为未信任 |
-| `settings_*` | `settings::KEYS`、`get`、`set` | `settings`、`setting` | 已知键、默认值与校验；未知键拒绝；`settings::reset_all`（设置 › 高级"重置"）；`Store::migrations()`（迁移记录，每次迁移前的数据库副本） |
-| `backup_usage` / `prune_plan` | `retention::usage`、`prune_plan`、`prune` | `backups`、`prune`、`keep` | 保留策略来自设置；未完成的 Operation 从不清理；备份位置在同步目录中时 `Usage::sync_warning` |
+| `settings_list` / `setting_set` / `settings_reset` / `settings_migrations` | `settings::KEYS`、`get`、`set`、`reset_all`、`Store::migrations()` | `settings`、`setting`、`migrations` | 已知键、默认值与校验；未知键拒绝；设置或清空备份路径立即更新 Store；调试日志立即生效；重置恢复默认路径，早期 Operation 仍用其登记的备份位置；迁移记录为 `(time_ms, description)` |
+| `backup_usage` / `backup_keep` / `prune_preview` / `prune_execute` | `retention::usage`、`backups::keep`、`backups::PruneBook` | `backups`、`prune`、`keep` | 逐 Operation 的大小、保护原因、总占用与同步目录警告；清理先预览，返回一次性 token，执行前重查选中项与策略；新预览使旧 token 失效；未完成的 Operation 从不清理。仅接口与前端类型已就绪，清理管理界面待接入 |
 | 清除只读属性 | `service::clear_read_only` | `clear-readonly` | 仅用户显式操作，写入日志 |
 | ExifTool 完整性 | `service::verify_exiftool`（`Scope::Key` 启动前、`Scope::All` 之后在后台；不一致或缺少清单时自行 `OperationGate::refuse_writes`） | `exiftool-check`、`exiftool-manifest` | SECURITY_MODEL §5；不一致时禁止写入并提示重新安装 |
 | 日志 | `log::init`、`log::set_debug_since` | `debug-log` | 每日文件，7 天 / 50 MB；调试日志 24 小时 |
 
 ## 6. 尚缺
 
-- 更新（`update_check` / `update_download` / `update_install`）：依赖 D-2 / D-4 与 S6；`OperationGate::exclusive` 已就绪。
+- 更新后端（`update_status` / `update_check` / `update_download` / `update_cancel` / `update_install`）：已接入 Tauri updater 2.10.1。未配置构建环境变量 `MORIMETA_UPDATER_PUBLIC_KEY` 时不联网；每周自动检查仅在选择 weekly 后启用，失败尝试也登记时间。下载限定本项目 GitHub HTTPS 的 exe，限制 128 MiB；验签后要求 trusted comment 中唯一的 `version:` 字段与清单一致且比当前版本新。安装必须显式调用，通过独占门禁、无待恢复操作、Journal checkpoint 后才能交给安装器。公钥、带签名版本的发布产物、设置界面和 S6 真实更新验证仍待完成。测试签名来自临时密钥，与正式发布无关。
 - 界面语言：已实施（DECISIONS §3 第 8 项）：后端英文模板即消息码，界面翻译表 `apps/desktop/src/i18n/backend.zh.json`，CI 检查覆盖。
-- Clean Export：已实施（`mm-core::clean_export`，`clean_plan` / `clean_entry` / `clean_export` 命令）。
-- 时区修正与"从参考同步"：依赖 D-18。
+- Clean Export：已实施（`mm-core::clean_export`，`clean_plan` / `clean_entry` / `clean_export` 命令）；`clean_export(plan_id, number_taken)` 校验界面显示的预览 id，已被替换的预览拒绝。2026-10-02 接入写入门禁，完整性失败、提权或已有写操作时拒绝；启动恢复未处理完时拒绝。
+- 时区修正与"从参考同步"：按 DECISIONS D-18 属后续版本，不是 MVP 未完成项。
 - 适配层：`apps/desktop/src-tauri`（命令见 `src/cmd.rs`，前端镜像类型 `src/ipc/types.ts`，手工维护）。
+- `exec.workers` 在下一次执行或恢复前调整会话池；拒绝并行写入时保留当前操作的取消句柄，结束时自动清理。`undo_plan(op_id, force_seqs)` 显式指定冲突项，仍须预览与确认；`plan_again` 重新读取并规划；`recovery_keep` 保留所选文件现状。执行和恢复共用进度事件。Journal 重建已在核心与开发 CLI 支持，桌面损坏修复入口尚未接入。

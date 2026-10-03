@@ -4,12 +4,12 @@
 //! Plans awaiting Preview. Everything that decides what is written lives in `mm-core`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use mm_core::engine::Engine;
 use mm_core::integrity::Scope;
-use mm_core::service::{self, InstanceLock, OperationGate, PlanBook, Session};
+use mm_core::service::{self, InstanceLock, OperationGate, PlanBook, Session, WritePermit};
 use mm_exiftool::EngineConfig;
 use mm_store::Store;
 use serde::Serialize;
@@ -33,6 +33,8 @@ pub struct Core {
     pub exiftool: Mutex<ExifToolState>,
     pub session: Mutex<Session>,
     pub book: Mutex<PlanBook>,
+    pub prunes: Mutex<mm_core::backups::PruneBook>,
+    pub updates: crate::updater::Updates,
     pub startup: Mutex<StartupInfo>,
     /// The frontend's event channel (`subscribe`).
     pub events: Mutex<Option<Channel<AppEvent>>>,
@@ -43,15 +45,36 @@ pub struct Core {
     pub clean: Mutex<Option<mm_core::clean_export::CleanPlan>>,
     launched: (Mutex<bool>, Condvar),
     /// A write Operation (apply, undo, resume) is running: closing the window asks first.
-    running: AtomicBool,
+    running: AtomicUsize,
 }
 
 /// Marks a write Operation as running for as long as it lives.
-pub struct Running<'a>(&'a AtomicBool);
+pub struct Running<'a>(&'a AtomicUsize);
+
+/// Owns a write slot and its cancellation handle. A rejected request never changes the current
+/// operation's handle, and every exit path (including errors) clears its own handle.
+pub struct ActiveWrite<'a> {
+    pub permit: WritePermit<'a>,
+    pub cancel: Arc<AtomicBool>,
+    _running: Running<'a>,
+    core: &'a Core,
+}
+
+impl Drop for ActiveWrite<'_> {
+    fn drop(&mut self) {
+        let mut current = lock(&self.core.exec_cancel);
+        if current
+            .as_ref()
+            .is_some_and(|c| Arc::ptr_eq(c, &self.cancel))
+        {
+            *current = None;
+        }
+    }
+}
 
 impl Drop for Running<'_> {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -163,7 +186,10 @@ fn engine_config(data: &Path, pkg: &Path) -> Result<EngineConfig, String> {
 impl Core {
     /// Instance lock, Journal and settings. Fails when another MoriMeta uses the data folder.
     pub fn open() -> Result<Core, String> {
-        let data = data_dir();
+        Self::open_at(data_dir())
+    }
+
+    pub(crate) fn open_at(data: PathBuf) -> Result<Core, String> {
         std::fs::create_dir_all(&data).map_err(|e| format!("{}: {e}", data.display()))?;
         let (lock, store) = service::open_data(&data).map_err(crate::errors::ue)?;
         Ok(Core {
@@ -179,6 +205,8 @@ impl Core {
             }),
             session: Mutex::new(Session::default()),
             book: Mutex::new(PlanBook::default()),
+            prunes: Mutex::new(mm_core::backups::PruneBook::default()),
+            updates: crate::updater::Updates::default(),
             startup: Mutex::new(StartupInfo::default()),
             events: Mutex::new(None),
             scan_cancel: Mutex::new(None),
@@ -186,7 +214,7 @@ impl Core {
             exec_cancel: Mutex::new(None),
             clean: Mutex::new(None),
             launched: (Mutex::new(false), Condvar::new()),
-            running: AtomicBool::new(false),
+            running: AtomicUsize::new(0),
         })
     }
 
@@ -294,12 +322,49 @@ impl Core {
 
     /// INTERACTION_SPEC §10: closing during an Operation always asks.
     pub fn running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::SeqCst) > 0
     }
 
     pub fn mark_running(&self) -> Running<'_> {
-        self.running.store(true, Ordering::SeqCst);
+        self.running.fetch_add(1, Ordering::SeqCst);
         Running(&self.running)
+    }
+
+    pub fn begin_write(&self) -> Result<ActiveWrite<'_>, String> {
+        let permit = self.gate.write().map_err(crate::errors::ue)?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        *lock(&self.exec_cancel) = Some(cancel.clone());
+        Ok(ActiveWrite {
+            permit,
+            cancel,
+            _running: self.mark_running(),
+            core: self,
+        })
+    }
+
+    /// Apply the configured worker count before the next operation. The permit prevents writes
+    /// during resizing; existing sessions are preserved if starting any additional session fails.
+    pub fn sync_workers(
+        &self,
+        _permit: &WritePermit<'_>,
+        engines: &mut Vec<Engine>,
+        store: &Store,
+    ) -> Result<(), String> {
+        let wanted = mm_core::settings::workers(store);
+        let mut extra = Vec::new();
+        if wanted > engines.len() {
+            let peer = engines.first().ok_or("ExifTool is not available")?;
+            for _ in engines.len()..wanted {
+                extra.push(peer.spawn_peer().map_err(crate::errors::ue)?);
+            }
+        }
+        engines.extend(extra);
+        if wanted < engines.len() {
+            for engine in engines.drain(wanted..) {
+                engine.close();
+            }
+        }
+        Ok(())
     }
 
     pub fn emit(&self, e: AppEvent) {
@@ -321,4 +386,58 @@ impl Core {
 
 fn settings_workers(store: &Mutex<Store>) -> usize {
     mm_core::settings::workers(&lock(store)).max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_count_is_applied_before_the_next_operation_without_restarting_the_app() {
+        if package_dir(None).is_none() {
+            eprintln!("SKIP: pinned ExifTool not fetched");
+            return;
+        }
+        let data = std::env::temp_dir().join(format!("mm-app-workers-{}", std::process::id()));
+        let core = Arc::new(Core::open_at(data.clone()).unwrap());
+        core.launch(None);
+        core.wait_launched();
+        // The background whole-package check also owns `core`; wait by performing that same
+        // deterministic check before touching the pool. No installation or user data is changed.
+        let Some(pkg) = package_dir(None) else {
+            return;
+        };
+        mm_core::integrity::check_package(&pkg, &manifest_for(&pkg), Scope::All).unwrap();
+        let active = match core.begin_write() {
+            Ok(active) => active,
+            Err(why) if mm_fs::is_elevated().unwrap_or(true) => {
+                eprintln!("SKIP: elevated process: {why}");
+                return;
+            }
+            Err(why) => panic!("{why}"),
+        };
+        {
+            let mut engines = lock(&core.engines);
+            let mut store = lock(&core.store);
+            for wanted in [1, 3, 2] {
+                mm_core::settings::set(&mut store, "exec.workers", &wanted.to_string()).unwrap();
+                core.sync_workers(&active.permit, &mut engines, &store)
+                    .unwrap();
+                assert_eq!(engines.len(), wanted);
+                assert!(
+                    engines
+                        .iter()
+                        .all(|e| e.version() == mm_core::engine::EXIFTOOL_VERSION)
+                );
+            }
+            assert!(mm_core::settings::set(&mut store, "exec.workers", "64").is_err());
+            core.sync_workers(&active.permit, &mut engines, &store)
+                .unwrap();
+            assert_eq!(engines.len(), 2);
+        }
+        drop(active);
+        core.shutdown();
+        // launch's background Arc is allowed to finish naturally; artifacts stay in the
+        // temporary test directory, outside the repository.
+    }
 }

@@ -182,7 +182,9 @@
     "{} standard XMP segments": "{1} 个标准 XMP 数据段",
     "{} bytes after the end of the image": "图像结束后还有 {1} 字节",
     "{to:?} is not a time": "{1} 不是有效的时间",
-    "{by:?} is not a shift": "{1} 不是有效的平移量"
+    "{by:?} is not a shift": "{1} 不是有效的平移量",
+    "nothing to prune": "没有可清理的备份",
+    "the backup selection changed; preview it again": "所选备份或保留策略已改变，请重新预览"
   },
   "extra": {
     "written to the XMP sidecar; the RAW file is not modified": "写入 XMP sidecar；RAW 文件不会被修改",
@@ -222,6 +224,19 @@
     "not a JPEG file": "不是 JPEG 文件",
     "the JPEG structure is truncated at byte {}": "JPEG 结构在第 {1} 字节处被截断",
     "invalid JPEG marker at byte {}": "第 {1} 字节处的 JPEG 标记无效",
-    "no Clean Export preview": "没有干净导出的预览"
+    "no Clean Export preview": "没有干净导出的预览",
+    "only conflicting undo entries can be forced": "只有存在冲突的撤销项目可以强制恢复",
+    "the Clean Export preview changed; preview it again": "干净导出的预览已改变，请重新预览",
+    "an update request is already running": "更新请求正在进行",
+    "the update offer changed; check for updates again": "更新信息已改变，请重新检查更新",
+    "no update is available": "没有可用更新",
+    "update check cancelled": "已取消检查更新",
+    "the update artifact is not a MoriMeta HTTPS installer": "更新文件不是 MoriMeta 的 HTTPS 安装包",
+    "update download cancelled or too large": "已取消更新下载，或安装包过大",
+    "the update installer is too large": "更新安装包过大",
+    "download and verify the update first": "请先下载并验证更新",
+    "the update signature has no signed version": "更新签名缺少签名版本",
+    "the update signature has several signed versions": "更新签名包含多个签名版本",
+    "the signed installer version does not match a newer update": "签名的安装包版本与新版本信息不一致"
   }
 }

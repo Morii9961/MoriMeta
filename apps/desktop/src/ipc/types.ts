@@ -390,3 +390,36 @@ export interface Setting {
   default: string
   about: string
 }
+
+export interface OperationBackup {
+  op_id: string
+  title: string
+  created_ms: number
+  bytes: number
+  pruned: boolean
+  protection: 'unfinished' | 'kept' | 'recent' | null
+}
+
+export interface BackupUsage {
+  ops: OperationBackup[]
+  total_bytes: number
+  volume_bytes: number
+  sync_warning: string | null
+}
+
+export interface PrunePreview {
+  token: string
+  operations: OperationBackup[]
+  bytes: number
+  requested: boolean
+}
+export interface UpdateInfo {
+  configured: boolean
+  busy: boolean
+  phase: string
+  offer: { id: string; version: string; notes: string | null; date: string | null } | null
+  downloaded: boolean
+  bytes: number
+  total: number | null
+  error: string | null
+}

@@ -7,6 +7,8 @@ import type { Preset, PresetInfo } from '../features/presets/model'
 import type {
   AppEvent,
   AppInfo,
+  BackupUsage,
+  PrunePreview,
   AssetDetail,
   Attention,
   BatchEdit,
@@ -24,6 +26,7 @@ import type {
   Preflight,
   RecoverySummary,
   Setting,
+  UpdateInfo,
 } from './types'
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
@@ -70,6 +73,11 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export const isMock = !inTauri
 
 export const api = {
+  updateStatus: () => call<UpdateInfo>('update_status'),
+  updateCheck: (manual = true) => call<UpdateInfo>('update_check', { manual }),
+  updateDownload: (id: string) => call<UpdateInfo>('update_download', { id }),
+  updateCancel: () => call<void>('update_cancel'),
+  updateInstall: (id: string) => call<void>('update_install', { id }),
   subscribe: async (on: (e: AppEvent) => void) => (await getTransport()).subscribe(on),
   appInfo: () => call<AppInfo>('app_info'),
   importDialog: (kind: 'files' | 'folder') => call<void>('import_dialog', { kind }),
@@ -102,8 +110,10 @@ export const api = {
   opCancel: () => call<void>('op_cancel'),
   historyList: (page: number) => call<OpSummary[]>('history_list', { page }),
   opDetail: (opId: string) => call<OpDetail>('op_detail', { opId }),
-  undoPlan: (opId: string) => call<PlanView>('undo_plan', { opId }),
+  undoPlan: (opId: string, forceSeqs: number[] | null = null) => call<PlanView>('undo_plan', { opId, forceSeqs }),
   retryPlan: (opId: string) => call<PlanView>('retry_plan', { opId }),
+  planAgain: (opId: string) => call<PlanView>('plan_again', { opId }),
+  recoveryKeep: (opId: string, seqs: number[]) => call<void>('recovery_keep', { opId, seqs }),
   exportLog: (opId: string, includePaths: boolean, includeValues: boolean) =>
     call<string | null>('export_log', { opId, includePaths, includeValues }),
   restoreTo: (opId: string) =>
@@ -120,12 +130,18 @@ export const api = {
   planPreset: (ids: number[], presetId: string) => call<PlanView>('plan_preset', { ids, presetId }),
   cleanPlan: (ids: number[], spec: KeepSpec) => call<CleanPlan>('clean_plan', { ids, spec }),
   cleanEntry: (seq: number) => call<Prediction>('clean_entry', { seq }),
-  cleanExport: (numberTaken: boolean) => call<Exported[] | null>('clean_export', { numberTaken }),
+  cleanExport: (planId: string, numberTaken: boolean) => call<Exported[] | null>('clean_export', { planId, numberTaken }),
   chooseBackupFolder: () => call<AppInfo['backup'] | null>('choose_backup_folder'),
   nowVsAfter: (opId: string, seqs: number[]) => call<[number, string][]>('now_vs_after', { opId, seqs }),
   appClose: () => call<void>('app_close'),
   settingsList: () => call<Setting[]>('settings_list'),
   settingSet: (name: string, value: string) => call<void>('setting_set', { name, value }),
+  settingsReset: () => call<void>('settings_reset'),
+  settingsMigrations: () => call<[number, string][]>('settings_migrations'),
+  backupUsage: () => call<BackupUsage>('backup_usage'),
+  backupKeep: (opId: string, keep: boolean) => call<void>('backup_keep', { opId, keep }),
+  prunePreview: (opIds: string[] | null) => call<PrunePreview>('prune_preview', { opIds }),
+  pruneExecute: (token: string) => call<string[]>('prune_execute', { token }),
 }
 
 /** A command's error as text (commands reject with the backend's message). */
