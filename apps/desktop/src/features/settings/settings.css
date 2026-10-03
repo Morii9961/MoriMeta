@@ -9,3 +9,7 @@
 .set-control { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .set-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; }
 .set-inline .input { flex: 1; min-width: 200px; height: 24px; }
+.set-update { width: 100%; }
+.set-update-offer { margin-top: 12px; }
+.set-release-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
+.set-update progress { width: 180px; accent-color: var(--text-strong); }

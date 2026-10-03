@@ -15,6 +15,8 @@ import type {
   PlanView,
   Row,
 } from './types'
+import { createMockUpdates } from './mockUpdates'
+const mockUpdates = createMockUpdates()
 
 let listener: (e: AppEvent) => void = () => {}
 const assets: Asset[] = []
@@ -186,6 +188,11 @@ function bump(id: string, f: (e: PlanEntry[]) => PlanEntry[]): PlanView {
 }
 
 const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
+  update_status: () => mockUpdates.status(),
+  update_check: () => mockUpdates.check(),
+  update_download: (a) => mockUpdates.download(a.id as string),
+  update_cancel: () => mockUpdates.cancel(),
+  update_install: (a) => mockUpdates.install(a.id as string),
   app_info: () => info(),
   import_dialog: (a) => makeSession(a.kind === 'folder' ? 240 : 12),
   scan_cancel: () => undefined,

@@ -1,8 +1,10 @@
-# Progress (2026-10-02)
+# Progress (2026-10-03)
 
 Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 specifications are approved and every open decision is taken (`docs/DECISIONS.md`, 2026-09-30, on Morii's delegation); design v1.0 is frozen. Evidence: `docs/SPIKE_REPORT.md`, `docs/PHASE1_REPORT.md`.
 
 ## Done
+
+- **Update settings interface (2026-10-03)**: explicit check, release notes, download progress/cancel/retry, verified-download status and separate install confirmation. Builds without configured update distribution display availability honestly. Commands remain behind Rust consent, signature/version checks and exclusive installation gates. A clearly labelled development simulation exercised check/download/cancel/retry, cancel-install and simulated installation in the browser; no production server, installer or network acceptance is claimed. Frontend build/type check and 9 existing tests pass. Existing validated backend changes are now committed in five local commits; each subsequent completed feature is committed separately per Morii’s instruction.
 
 - **Continuation (2026-10-02)**: write permits are reserved before cancellation state, rejected concurrent requests preserve the active cancellation handle, and RAII clears it on exit. `exec.workers` resizes ExifTool sessions before the next execution/resume; resume shares the same progress events. Desktop interfaces now expose explicit conflicting undo selections, replan, and recovery keep. Rust-only update check/download/cancel/install commands use opt-in weekly scheduling, fixed project HTTPS endpoint, a 128 MiB download limit, minisign artifact plus trusted-version verification, and exclusive install with Journal checkpoint. Builds without `MORIMETA_UPDATER_PUBLIC_KEY` make no updater requests. Synthetic signature tests refuse payload/comment tampering, inflated manifest versions, old/equal versions and legacy signatures without signed versions. The update settings screen, production key/release signing, actual installer/update acceptance (S6), backup management screen and damaged-Journal repair entry remain unfinished.
 

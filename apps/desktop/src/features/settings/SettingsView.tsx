@@ -9,6 +9,7 @@ import { useApp } from '../../state/store'
 import { useT, type MessageKey } from '../../i18n'
 import { sizeText } from '../library/data'
 import './settings.css'
+import { UpdatesPanel } from './UpdatesPanel'
 
 type Page = 'general' | 'metadata' | 'raw' | 'backup' | 'privacy' | 'updates' | 'advanced'
 const PAGES: { key: Page; label: MessageKey }[] = [
@@ -248,7 +249,7 @@ export function SettingsView() {
                   </button>
                 ))}
               </div>
-              <span className="muted">{t('set.update_none')}</span>
+              <UpdatesPanel />
             </Row>
           )}
           {page === 'advanced' && (

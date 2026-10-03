@@ -71,7 +71,7 @@
 
 ## 6. 尚缺
 
-- 更新后端（`update_status` / `update_check` / `update_download` / `update_cancel` / `update_install`）：已接入 Tauri updater 2.10.1。未配置构建环境变量 `MORIMETA_UPDATER_PUBLIC_KEY` 时不联网；每周自动检查仅在选择 weekly 后启用，失败尝试也登记时间。下载限定本项目 GitHub HTTPS 的 exe，限制 128 MiB；验签后要求 trusted comment 中唯一的 `version:` 字段与清单一致且比当前版本新。安装必须显式调用，通过独占门禁、无待恢复操作、Journal checkpoint 后才能交给安装器。公钥、带签名版本的发布产物、设置界面和 S6 真实更新验证仍待完成。测试签名来自临时密钥，与正式发布无关。
+- 更新后端（`update_status` / `update_check` / `update_download` / `update_cancel` / `update_install`）：已接入 Tauri updater 2.10.1。未配置构建环境变量 `MORIMETA_UPDATER_PUBLIC_KEY` 时不联网；每周自动检查仅在选择 weekly 后启用，失败尝试也登记时间。下载限定本项目 GitHub HTTPS 的 exe，限制 128 MiB；验签后要求 trusted comment 中唯一的 `version:` 字段与清单一致且比当前版本新。安装必须显式调用，通过独占门禁、无待恢复操作、Journal checkpoint 后才能交给安装器。设置界面已接入手动检查、下载进度、取消和安装确认。公钥、带签名版本的发布产物和 S6 真实更新验证仍待完成。测试签名来自临时密钥，与正式发布无关。
 - 界面语言：已实施（DECISIONS §3 第 8 项）：后端英文模板即消息码，界面翻译表 `apps/desktop/src/i18n/backend.zh.json`，CI 检查覆盖。
 - Clean Export：已实施（`mm-core::clean_export`，`clean_plan` / `clean_entry` / `clean_export` 命令）；`clean_export(plan_id, number_taken)` 校验界面显示的预览 id，已被替换的预览拒绝。2026-10-02 接入写入门禁，完整性失败、提权或已有写操作时拒绝；启动恢复未处理完时拒绝。
 - 时区修正与"从参考同步"：按 DECISIONS D-18 属后续版本，不是 MVP 未完成项。
