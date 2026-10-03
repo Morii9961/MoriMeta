@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use mm_store::{FileState, Store};
+use serde::Serialize;
 
 use crate::CoreError;
 
@@ -60,7 +61,8 @@ impl Policy {
 }
 
 /// Why an Operation's backups are not pruned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Protection {
     /// Running, interrupted, a file that needs attention, or files that can still be resumed:
     /// never pruned, not even on request.
@@ -71,14 +73,15 @@ pub enum Protection {
     Recent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Reason {
     Age,
     Size,
     Requested,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpBackup {
     pub op_id: String,
     pub title: String,
@@ -88,7 +91,7 @@ pub struct OpBackup {
     pub protection: Option<Protection>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Usage {
     /// Oldest first.
     pub ops: Vec<OpBackup>,
@@ -203,9 +206,30 @@ pub fn prune(
     requested: bool,
 ) -> Result<Vec<String>, CoreError> {
     let u = usage(store, policy)?;
+    // Validate the entire selection before deleting anything: a bad or unfinished id later
+    // in the list must not cause a partly executed request.
+    selection(&u, op_ids, requested)?;
     let mut done = Vec::new();
     for id in op_ids {
-        let o = u
+        let dir = owned_backup_dir(store, id)?;
+        // the database first: an interrupted prune is finished next time, never taken for an
+        // undoable Operation
+        store.mark_pruned(id)?;
+        remove_backup_dir(&dir)?;
+        done.push(id.clone());
+    }
+    Ok(done)
+}
+
+/// Validate a whole cleanup selection without touching backups.
+pub(crate) fn selection(
+    usage: &Usage,
+    op_ids: &[String],
+    requested: bool,
+) -> Result<Vec<OpBackup>, CoreError> {
+    let mut selected = Vec::new();
+    for id in op_ids {
+        let o = usage
             .ops
             .iter()
             .find(|o| &o.op_id == id)
@@ -221,14 +245,9 @@ pub fn prune(
             }
             _ => {}
         }
-        let dir = owned_backup_dir(store, id)?;
-        // the database first: an interrupted prune is finished next time, never taken for an
-        // undoable Operation
-        store.mark_pruned(id)?;
-        remove_backup_dir(&dir)?;
-        done.push(id.clone());
+        selected.push(o.clone());
     }
-    Ok(done)
+    Ok(selected)
 }
 
 /// The folder recorded for an Operation, accepted for deletion only if it is named after the

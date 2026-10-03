@@ -4,6 +4,7 @@
 //!
 //! Phase 1b scope: Embedded JPEG targets and the `creator` field.
 
+pub mod backups;
 pub mod clean_export;
 pub mod engine;
 pub mod engine_clean;
