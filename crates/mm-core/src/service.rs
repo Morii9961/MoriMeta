@@ -521,7 +521,23 @@ impl PlanBook {
         token: &str,
         opts: &ExecOptions,
     ) -> Result<OpReport, ServiceError> {
-        let _permit = gate.write()?;
+        let permit = gate.write()?;
+        self.execute_permitted(&permit, store, engines, id, version, token, opts)
+    }
+
+    /// The adapter may reserve the gate before locking sessions or publishing cancellation
+    /// state. The opaque permit must stay alive throughout execution; confirmation still applies.
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_permitted(
+        &mut self,
+        _permit: &WritePermit<'_>,
+        store: &mut Store,
+        engines: &mut [Engine],
+        id: &str,
+        version: u32,
+        token: &str,
+        opts: &ExecOptions,
+    ) -> Result<OpReport, ServiceError> {
         let (plan, acks) = self.take(id, version, token)?;
         let opts = ExecOptions {
             acks,

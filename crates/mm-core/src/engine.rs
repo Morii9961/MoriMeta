@@ -191,6 +191,11 @@ impl Engine {
         &self.version
     }
 
+    /// A session configured exactly like this one (same checked package and scratch paths).
+    pub fn spawn_peer(&self) -> Result<Engine, CoreError> {
+        Engine::start(self.cfg.clone())
+    }
+
     pub fn restarts(&self) -> u32 {
         self.restarts
     }
