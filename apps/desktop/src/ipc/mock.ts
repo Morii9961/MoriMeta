@@ -17,6 +17,8 @@ import type {
 } from './types'
 import { createMockUpdates } from './mockUpdates'
 const mockUpdates = createMockUpdates()
+import { createMockBackups } from './mockBackups'
+const mockBackups = createMockBackups()
 
 let listener: (e: AppEvent) => void = () => {}
 const assets: Asset[] = []
@@ -188,6 +190,10 @@ function bump(id: string, f: (e: PlanEntry[]) => PlanEntry[]): PlanView {
 }
 
 const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
+  backup_usage: () => mockBackups.usage(),
+  backup_keep: (a) => mockBackups.keep(a.opId as string, a.keep as boolean),
+  prune_preview: (a) => mockBackups.preview(a.opIds as string[] | null),
+  prune_execute: (a) => mockBackups.execute(a.token as string),
   update_status: () => mockUpdates.status(),
   update_check: () => mockUpdates.check(),
   update_download: (a) => mockUpdates.download(a.id as string),

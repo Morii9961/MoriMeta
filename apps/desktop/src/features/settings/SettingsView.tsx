@@ -10,6 +10,7 @@ import { useT, type MessageKey } from '../../i18n'
 import { sizeText } from '../library/data'
 import './settings.css'
 import { UpdatesPanel } from './UpdatesPanel'
+import { BackupsPanel } from './BackupsPanel'
 
 type Page = 'general' | 'metadata' | 'raw' | 'backup' | 'privacy' | 'updates' | 'advanced'
 const PAGES: { key: Page; label: MessageKey }[] = [
@@ -221,6 +222,7 @@ export function SettingsView() {
               <Row label={t('set.backups_off')} tag="LOCKED" help={t('set.backups_off_help')}>
                 <span className="muted">{t('set.cannot_switch_off')}</span>
               </Row>
+              <BackupsPanel />
             </>
           )}
           {page === 'privacy' && (

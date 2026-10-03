@@ -397,6 +397,7 @@ export interface OperationBackup {
   created_ms: number
   bytes: number
   pruned: boolean
+  keep: boolean
   protection: 'unfinished' | 'kept' | 'recent' | null
 }
 

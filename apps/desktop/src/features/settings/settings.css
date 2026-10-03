@@ -13,3 +13,11 @@
 .set-update-offer { margin-top: 12px; }
 .set-release-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
 .set-update progress { width: 180px; accent-color: var(--text-strong); }
+.set-backups { max-width: 850px; padding-top: 16px; }
+.set-backup-scroll { overflow: auto; max-height: 420px; margin-top: 10px; }
+.set-backup-table { width: 100%; border-collapse: collapse; text-align: left; }
+.set-backup-table th { color: var(--text-secondary); font-weight: 500; }
+.set-backup-table td, .set-backup-table th { padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
+.set-backup-table td:first-child { width: 30px; }
+.set-backup-table input, .check-row input { accent-color: var(--text-strong); }
+.set-prune-list { max-height: 240px; overflow: auto; }

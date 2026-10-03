@@ -88,6 +88,7 @@ pub struct OpBackup {
     pub created_ms: i64,
     pub bytes: u64,
     pub pruned: bool,
+    pub keep: bool,
     pub protection: Option<Protection>,
 }
 
@@ -158,6 +159,7 @@ pub fn usage(store: &Store, policy: &Policy) -> Result<Usage, CoreError> {
                 dir_bytes(Path::new(&o.backup_dir))
             },
             pruned,
+            keep: o.keep,
             protection,
         });
     }

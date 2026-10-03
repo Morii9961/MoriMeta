@@ -64,7 +64,7 @@
 |---|---|---|---|
 | `presets_*` | `presets::list`、`get`、`save`、`import`、`duplicate`、`delete`；`Preset::lint` | `presets`、`preset-*` | 内置 Preset 只读；导入受大小与数量限制，首次使用标为未信任 |
 | `settings_list` / `setting_set` / `settings_reset` / `settings_migrations` | `settings::KEYS`、`get`、`set`、`reset_all`、`Store::migrations()` | `settings`、`setting`、`migrations` | 已知键、默认值与校验；未知键拒绝；设置或清空备份路径立即更新 Store；调试日志立即生效；重置恢复默认路径，早期 Operation 仍用其登记的备份位置；迁移记录为 `(time_ms, description)` |
-| `backup_usage` / `backup_keep` / `prune_preview` / `prune_execute` | `retention::usage`、`backups::keep`、`backups::PruneBook` | `backups`、`prune`、`keep` | 逐 Operation 的大小、保护原因、总占用与同步目录警告；清理先预览，返回一次性 token，执行前重查选中项与策略；新预览使旧 token 失效；未完成的 Operation 从不清理。仅接口与前端类型已就绪，清理管理界面待接入 |
+| `backup_usage` / `backup_keep` / `prune_preview` / `prune_execute` | `retention::usage`、`backups::keep`、`backups::PruneBook` | `backups`、`prune`、`keep` | 逐 Operation 的大小、保护原因、总占用与同步目录警告；清理先预览，返回一次性 token，执行前重查选中项与策略；新预览使旧 token 失效；未完成的 Operation 从不清理。设置中的管理界面已接入逐操作保留、策略/手动清理预览、撤销能力丢失确认与执行 |
 | 清除只读属性 | `service::clear_read_only` | `clear-readonly` | 仅用户显式操作，写入日志 |
 | ExifTool 完整性 | `service::verify_exiftool`（`Scope::Key` 启动前、`Scope::All` 之后在后台；不一致或缺少清单时自行 `OperationGate::refuse_writes`） | `exiftool-check`、`exiftool-manifest` | SECURITY_MODEL §5；不一致时禁止写入并提示重新安装 |
 | 日志 | `log::init`、`log::set_debug_since` | `debug-log` | 每日文件，7 天 / 50 MB；调试日志 24 小时 |
