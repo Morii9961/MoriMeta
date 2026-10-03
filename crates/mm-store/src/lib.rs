@@ -452,6 +452,22 @@ impl Store {
         &self.data_dir
     }
 
+    /// Flush the WAL before handing control to an installer. A busy checkpoint is an error:
+    /// the caller must keep the app open rather than silently exit with an unfinished flush.
+    pub fn checkpoint(&self) -> Result<()> {
+        let (busy, _, _): (i32, i32, i32) =
+            self.conn
+                .query_row("PRAGMA wal_checkpoint(FULL)", [], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })?;
+        if busy != 0 {
+            return Err(StoreError::Io(std::io::Error::other(
+                "the journal checkpoint is busy",
+            )));
+        }
+        Ok(())
+    }
+
     /// Arm a journal write failure (fault-injection tests only).
     pub fn arm_write_fault(&mut self, fault: WriteFault) {
         self.fault = Some(fault);
@@ -1384,5 +1400,24 @@ mod tests {
             s.conn.pragma_update(None, "user_version", 99).unwrap();
         }
         assert!(matches!(Store::open(&d), Err(StoreError::NewerSchema(99))));
+    }
+
+    #[test]
+    fn checkpoint_makes_committed_settings_readable_without_the_wal() {
+        let d = dir("checkpoint");
+        let mut store = Store::open(&d).unwrap();
+        store.set_setting("updates.last_attempt_ms", "123").unwrap();
+        store.checkpoint().unwrap();
+        let copy = d.join("checkpoint.sqlite");
+        std::fs::copy(d.join("db/morimeta.sqlite"), &copy).unwrap();
+        let conn = Connection::open(copy).unwrap();
+        let value: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                ["updates.last_attempt_ms"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(value, "123");
     }
 }
