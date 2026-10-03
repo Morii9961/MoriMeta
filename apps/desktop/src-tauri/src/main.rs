@@ -8,6 +8,7 @@ mod core;
 mod dto;
 mod errors;
 mod updater;
+mod updater_artifact;
 
 use std::sync::Arc;
 

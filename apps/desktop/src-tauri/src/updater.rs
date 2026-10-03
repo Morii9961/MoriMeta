@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
+use crate::updater_artifact::validate_artifact;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -23,7 +23,7 @@ const PUBLIC_KEY: &str = match option_env!("MORIMETA_UPDATER_PUBLIC_KEY") {
 const ENDPOINT: &str = "https://github.com/Morii9961/MoriMeta/releases/latest/download/latest.json";
 const WEEK_MS: i64 = 7 * 86_400_000;
 const LAST_ATTEMPT: &str = "updates.last_attempt_ms";
-const MAX_DOWNLOAD: u64 = 128 * 1024 * 1024;
+const MAX_DOWNLOAD: u64 = crate::updater_artifact::MAX_INSTALLER_BYTES;
 
 #[derive(Clone, Serialize)]
 pub struct Offer {
@@ -298,44 +298,6 @@ pub async fn update_install(app: AppHandle, id: String) -> Result<(), String> {
     .map_err(ue)?
 }
 
-/// minisign's global signature covers the trusted comment. Verify that before reading version:
-/// a genuine old installer paired with an inflated manifest version must never install.
-fn validate_artifact(
-    bytes: &[u8],
-    key: &str,
-    signature: &str,
-    expected: &str,
-    running: &str,
-) -> Result<(), String> {
-    let decode = |s: &str| -> Result<String, String> {
-        String::from_utf8(
-            base64::engine::general_purpose::STANDARD
-                .decode(s.trim())
-                .map_err(ue)?,
-        )
-        .map_err(ue)
-    };
-    let public = minisign_verify::PublicKey::decode(&decode(key)?).map_err(ue)?;
-    let sig = minisign_verify::Signature::decode(&decode(signature)?).map_err(ue)?;
-    public.verify(bytes, &sig, true).map_err(ue)?;
-    let mut versions = sig
-        .trusted_comment()
-        .split('\t')
-        .filter_map(|v| v.strip_prefix("version:"));
-    let signed = versions
-        .next()
-        .ok_or("the update signature has no signed version")?;
-    if versions.next().is_some() {
-        return Err("the update signature has several signed versions".into());
-    }
-    let parse = |v: &str| semver::Version::parse(v.trim_start_matches('v')).map_err(ue);
-    let signed = parse(signed)?;
-    if signed != parse(expected)? || signed <= parse(running)? {
-        return Err("the signed installer version does not match a newer update".into());
-    }
-    Ok(())
-}
-
 pub fn auto_checks(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -348,33 +310,6 @@ pub fn auto_checks(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn signed_artifacts_bind_the_version_and_refuse_tampering_and_replay() {
-        // Generated with a disposable Ed25519 key; fixture contains no private key.
-        let f: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/updater.json")).unwrap();
-        let text = |name: &str| f[name].as_str().unwrap();
-        let verify = |payload: &[u8], signature: &str, expected: &str, running: &str| {
-            validate_artifact(payload, text("publicKey"), signature, expected, running)
-        };
-        let payload = text("payload").as_bytes();
-        assert!(verify(payload, text("signature"), "0.2.0", "0.1.0").is_ok());
-        assert!(verify(b"altered", text("signature"), "0.2.0", "0.1.0").is_err());
-        assert!(verify(payload, text("signature"), "9.9.9", "0.1.0").is_err());
-        assert!(verify(payload, text("signature"), "0.2.0", "0.2.0").is_err());
-        assert!(verify(payload, text("signature"), "0.2.0", "0.3.0").is_err());
-        assert!(verify(payload, text("legacy"), "0.2.0", "0.1.0").is_err());
-        assert!(verify(payload, text("duplicate"), "0.2.0", "0.1.0").is_err());
-        let signature = base64::engine::general_purpose::STANDARD
-            .decode(text("signature"))
-            .unwrap();
-        let signature = String::from_utf8(signature)
-            .unwrap()
-            .replace("version:0.2.0", "version:9.9.9");
-        let signature = base64::engine::general_purpose::STANDARD.encode(signature);
-        assert!(verify(payload, &signature, "9.9.9", "0.1.0").is_err());
-    }
 
     #[test]
     fn automatic_checks_require_consent_and_wait_a_week() {
