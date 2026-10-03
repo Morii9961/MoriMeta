@@ -59,6 +59,11 @@ impl std::fmt::Display for StoreError {
 impl std::error::Error for StoreError {}
 
 impl StoreError {
+    /// Only SQLite's structural corruption classifications justify offering reconstruction.
+    /// Permissions, lock contention, full disks and newer schemas must never be replaced.
+    pub fn is_corrupt(&self) -> bool {
+        matches!(self, StoreError::Sql(e) if matches!(e.sqlite_error_code(), Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)))
+    }
     /// The journal or manifest could not be written because a volume is full (`SQLITE_FULL`,
     /// Win32 112/39).
     pub fn is_disk_full(&self) -> bool {

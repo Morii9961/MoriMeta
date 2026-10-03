@@ -154,3 +154,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - A file that makes ExifTool hang is now read alone after the chunk times out (like an oversize one), but no hanging file was found to test with; the timeout path is covered only by the oversize case.
 - Seen twice (2026-09-30), both in the regression's time Sequence pass under heavy parallel load (one full run took 1,141 s instead of ~270 s): a write hit the 30 s timeout ("ExifTool timed out"; original unchanged). Alone the slowest command of that pass takes 1.1 s. The regression now retries a timed-out file once (`plan-retry`) and compares the retry's outcome; write timeouts are initial values for S4 to calibrate.
 - Product work now unblocked by the decisions: message codes + parameters for the en / zh-CN UI; Clean Export (JPEG, D-15 (c)); the "UTC offset unchanged" note for Shift (D-18); the orphan-XMP warning (R-6); the desktop app (Tauri adapter + React UI per the frozen design); updates (asked at first launch, D-4) after S6.
+# 2026-10-03：桌面启动 Journal 修复
+
+- 隔离重建候选数据库，先保留原数据库与附属文件，再显示导入/跳过数量和设置、预设无法恢复的限制；恢复出的备份默认保留。采用前核对内容，单实例锁覆盖全过程，提权和非损坏错误不会触发替换。
+- 替换前刷新中断标记；中断后需确认继续，原副本和预览报告保留。见 `docs/JOURNAL_REPAIR.md`。
+- 验证：workspace 247 项、桌面适配器 13 项和更新清单工具 2 项测试通过；格式和严格 Clippy 通过。三个边界的合成中断测试不等于掉电验证，原生弹窗尚未手动验收。

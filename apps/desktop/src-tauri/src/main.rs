@@ -7,6 +7,7 @@ mod cmd;
 mod core;
 mod dto;
 mod errors;
+mod journal_repair;
 mod updater;
 mod updater_artifact;
 
@@ -15,6 +16,14 @@ use std::sync::Arc;
 use tauri::{DragDropEvent, Manager, WindowEvent};
 
 fn main() {
+    if let Err(why) = journal_repair::startup(&core::data_dir()) {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("MoriMeta")
+            .set_description(format!("MoriMeta cannot start.\n\n{why}"))
+            .show();
+        std::process::exit(1);
+    }
     let core = match core::Core::open() {
         Ok(c) => Arc::new(c),
         Err(why) => {
