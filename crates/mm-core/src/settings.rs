@@ -174,10 +174,31 @@ pub fn set(store: &mut Store, name: &str, value: &str) -> Result<(), CoreError> 
     let k = key(name)?;
     if value.is_empty() {
         store.clear_setting(name)?;
+        apply_runtime(store, name)?;
         return Ok(());
     }
     (k.check)(value).map_err(|e| CoreError::Input(format!("{name}: {e}")))?;
     store.set_setting(name, value)?;
+    apply_runtime(store, name)?;
+    Ok(())
+}
+
+/// Settings with live backend state are applied only after their value was persisted.
+fn apply_runtime(store: &mut Store, name: &str) -> Result<(), CoreError> {
+    match name {
+        "backup.root" => {
+            let root = get(store, name)?;
+            store.set_backup_root(if root.is_empty() {
+                store.data_dir().join("backups")
+            } else {
+                root.into()
+            });
+        }
+        crate::log::SETTING_DEBUG_SINCE => {
+            crate::log::set_debug_since(get(store, name)?.parse().ok());
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -187,6 +208,8 @@ pub fn reset_all(store: &mut Store) -> Result<(), CoreError> {
     for k in KEYS {
         store.clear_setting(k.name)?;
     }
+    apply_runtime(store, "backup.root")?;
+    apply_runtime(store, crate::log::SETTING_DEBUG_SINCE)?;
     Ok(())
 }
 
@@ -248,7 +271,16 @@ mod tests {
         assert_eq!(workers(&s), 7);
         set(&mut s, "backup.max_age_days", "").unwrap();
         assert_eq!(get(&s, "backup.max_age_days").unwrap(), "30");
+        let alternate = d.join("alternate");
+        set(&mut s, "backup.root", alternate.to_str().unwrap()).unwrap();
+        assert_eq!(s.backup_root(), alternate);
+        assert!(set(&mut s, "backup.root", "relative").is_err());
+        assert_eq!(s.backup_root(), alternate);
+        set(&mut s, "backup.root", "").unwrap();
+        assert_eq!(s.backup_root(), d.join("backups"));
+        set(&mut s, "backup.root", alternate.to_str().unwrap()).unwrap();
         reset_all(&mut s).unwrap();
+        assert_eq!(s.backup_root(), d.join("backups"));
         for k in KEYS {
             assert_eq!(get(&s, k.name).unwrap(), k.default, "{}", k.name);
         }
