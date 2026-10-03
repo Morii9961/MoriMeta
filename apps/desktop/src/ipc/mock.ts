@@ -17,6 +17,8 @@ import type {
 } from './types'
 import { createMockUpdates } from './mockUpdates'
 const mockUpdates = createMockUpdates()
+import { createMockSettings } from './mockSettings'
+const mockSettings = createMockSettings()
 import { createMockBackups } from './mockBackups'
 const mockBackups = createMockBackups()
 
@@ -317,18 +319,10 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   recovery_resume: () => undefined,
   clear_read_only: () => true,
   selection_aggregate: () => [],
-  settings_list: () => [
-    { name: 'backup.root', value: '', default: '', about: '' },
-    { name: 'backup.max_age_days', value: '30', default: '30', about: '' },
-    { name: 'backup.max_share_of_volume', value: '0.1', default: '0.1', about: '' },
-    { name: 'backup.keep_latest', value: '10', default: '10', about: '' },
-    { name: 'metadata.preserve_mtime', value: 'false', default: 'false', about: '' },
-    { name: 'metadata.default_creator', value: '', default: '', about: '' },
-    { name: 'metadata.copyright_template', value: '© {creator} {year}', default: '© {creator} {year}', about: '' },
-    { name: 'exec.workers', value: '', default: '', about: '' },
-    { name: 'log.debug_since_ms', value: '', default: '', about: '' },
-  ],
-  setting_set: () => undefined,
+  settings_list: () => mockSettings.list(),
+  setting_set: (a) => mockSettings.set(a.name as string, a.value as string),
+  settings_reset: () => mockSettings.reset(),
+  settings_migrations: () => [],
 }
 
 export const transport = {

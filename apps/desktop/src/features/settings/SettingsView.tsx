@@ -11,6 +11,7 @@ import { sizeText } from '../library/data'
 import './settings.css'
 import { UpdatesPanel } from './UpdatesPanel'
 import { BackupsPanel } from './BackupsPanel'
+import { AdvancedTools } from './AdvancedTools'
 
 type Page = 'general' | 'metadata' | 'raw' | 'backup' | 'privacy' | 'updates' | 'advanced'
 const PAGES: { key: Page; label: MessageKey }[] = [
@@ -284,6 +285,7 @@ export function SettingsView() {
                   {info?.dev ? ' (development build)' : ''}
                 </span>
               </Row>
+              <AdvancedTools onReset={() => Promise.all([load(), refreshInfo()])} />
             </>
           )}
         </div>

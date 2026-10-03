@@ -738,6 +738,13 @@ export const messages = {
 
   'update.simulated': ['Preview simulation: no network requests or installation.', '预览模拟：不会联网或安装。'],
   'backup.manage': ['Manage operation backups', '管理操作备份'],
+  'set.maintenance': ['Settings maintenance', '设置维护'],
+  'set.migrations': ['Database migration history', '数据库迁移记录'],
+  'set.no_migrations': ['No database migrations recorded.', '尚无数据库迁移记录。'],
+  'set.reset': ['Restore defaults', '恢复默认设置'],
+  'set.reset_question': ['Restore the default settings?', '恢复默认设置？'],
+  'set.reset_note': ['Creator and copyright defaults, backup location and retention, worker count, debug logging and update preferences return to their defaults. Earlier operations keep their recorded backup locations. Photos, history, backups and presets are kept.', '作者与版权默认值、备份位置和保留策略、并发数、调试日志及更新偏好将恢复默认。早期操作仍使用其已登记的备份位置。照片、历史、备份和预设会保留。'],
+  'set.reset_done': ['Default settings restored.', '已恢复默认设置。'],
   'backup.simulated': ['Preview simulation: sample backups only; no files are deleted.', '预览模拟：仅展示示例备份，不会删除文件。'],
   'backup.help': ['Protect backups from automatic cleanup, or preview exactly which operations will lose Undo.', '可保留备份，避免自动清理；清理前会预览哪些操作将失去撤销能力。'],
   'backup.refresh': ['Refresh', '刷新'],
