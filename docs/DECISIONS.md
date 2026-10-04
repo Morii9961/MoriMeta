@@ -65,3 +65,10 @@
 | R-6 | 见 §3 第 5 项 |
 | 设计 §6 的写入范围 | 1.0 写入 JPEG（文件内）与 NEF/NRW（sidecar）；**TIFF 为只读**（Morii 2026-09-28 决定），设计稿中 TIFF 写入按只读处理 |
 | "Nothing touches disk before Apply" | 指不在 Apply 前修改源照片或 sidecar；Plan 摘要落库等内部数据不在此列 |
+
+## 5. 发布准备中的工程决定（2026-10-04）
+
+| # | 问题 | 决定 |
+|---|---|---|
+| U-1 卸载与数据（RELEASE_PLAN §3） | 卸载程序是否提供“同时删除 MoriMeta 数据” | **1.0 卸载程序从不删除 MoriMeta 数据与备份**。Tauri NSIS 卸载程序只删除它安装的文件，非递归地删除安装目录；按用户安装时安装目录与数据目录同为 `%LOCALAPPDATA%\MoriMeta`，数据因此保留；“删除应用程序数据”复选框只删除 `%LOCALAPPDATA%\org.morimeta.app`（WebView 缓存）。手动删除的位置写在 `docs/INSTALLATION.md` 与 `PRIVACY.md`。理由：备份是撤销的依据，卸载中的删除无法撤销；自定义的删除页需要在虚拟机中实测安装/卸载（D-13）后才能加入 |
+| U-2 第三方声明 | 生成方式与分发 | `tools/third_party_notices.py` 在暂存安装包时生成，只含 Windows 构建实际链接的 crate 与打包的 npm 包；随安装包分发，“关于”中查看；许可证白名单由 `deny.toml` 在 CI 中检查（cargo-deny，仅 `x86_64-pc-windows-msvc` 目标） |

@@ -1,0 +1,44 @@
+name: Compatibility report / 兼容性报告
+description: How another program shows what MoriMeta wrote (Lightroom, Capture One, NX Studio, …). 其他软件如何显示 MoriMeta 写入的内容。
+labels: [compatibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please test on copies. Do not attach photos with personal metadata. 请在副本上测试，不要附带含个人元数据的照片。
+  - type: input
+    id: versions
+    attributes:
+      label: MoriMeta and ExifTool versions / 版本
+      description: Help › About MoriMeta › Copy details.
+    validations:
+      required: true
+  - type: input
+    id: program
+    attributes:
+      label: Other program and version / 其他软件及版本
+      placeholder: "Lightroom Classic 15.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Where MoriMeta wrote / 写入位置
+      options: ["JPEG (in file)", "NEF/NRW (XMP sidecar)", "XMP file picked on its own"]
+    validations:
+      required: true
+  - type: dropdown
+    id: field
+    attributes:
+      label: Field / 字段
+      multiple: true
+      options: ["Creator", "Copyright", "Capture time", "GPS (set)", "GPS (removed)", "Clean Export copy"]
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What the other program shows / 其他软件显示的内容
+      description: Including whether it needed a refresh or "read metadata from file". 包括是否需要刷新或“从文件读取元数据”。
+    validations:
+      required: true

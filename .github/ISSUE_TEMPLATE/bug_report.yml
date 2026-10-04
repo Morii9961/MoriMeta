@@ -1,0 +1,54 @@
+name: Bug report / 问题报告
+description: Something MoriMeta did wrong or failed to do. 程序出错或没有按预期工作。
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Privacy / 隐私**: metadata can contain your name, location (GPS) and camera serial numbers. Do not paste photos, full paths or metadata values you do not want public. Use History › *Export log…*, which leaves paths and values out unless you include them, and check the file before attaching it.
+        元数据可能包含姓名、位置（GPS）和相机序列号。请不要粘贴不想公开的照片、完整路径或元数据值。请使用“历史 › 导出日志…”（默认不含路径和值），附加前先检查文件。
+  - type: input
+    id: version
+    attributes:
+      label: Versions / 版本
+      description: Help › About MoriMeta › Copy details. 帮助 › 关于 MoriMeta › 复制详细信息。
+      placeholder: "MoriMeta 0.1.0, ExifTool 13.59, WebView2 …"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Windows
+      options: ["Windows 11", "Windows 10 22H2", "Other / 其他"]
+    validations:
+      required: true
+  - type: input
+    id: formats
+    attributes:
+      label: File formats and camera / 文件格式与相机
+      placeholder: "JPEG from NIKON Z 8; NEF + XMP sidecar"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: "1. Add folder … 2. Set Creator … 3. Preview … 4. Apply …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected / 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual / 实际结果
+      description: Include the message shown, and whether any file changed. 请写明显示的信息，以及是否有文件被修改。
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Exported log (optional) / 导出的日志（可选）
+      description: Attach the file from History › Export log…, after checking it. 附上“历史 › 导出日志…”生成的文件（请先检查）。

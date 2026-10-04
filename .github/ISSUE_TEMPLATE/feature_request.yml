@@ -1,0 +1,20 @@
+name: Feature request / 功能建议
+description: Something MoriMeta should do. 希望 MoriMeta 支持的功能。
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do? / 你想完成什么？
+      description: The task and why the current app does not cover it. 任务是什么，现有功能为什么不够。
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Suggestion / 建议
+  - type: textarea
+    id: files
+    attributes:
+      label: Formats and workflow / 格式与工作流
+      placeholder: "NEF with Lightroom sidecars; 5,000 files per shoot"

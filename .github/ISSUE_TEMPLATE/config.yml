@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / 安全漏洞
+    url: https://github.com/Morii9961/MoriMeta/security/advisories/new
+    about: Report it privately, never in a public issue (SECURITY.md). 请私下报告，不要公开提交。
