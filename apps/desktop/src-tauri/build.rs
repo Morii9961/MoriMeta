@@ -30,6 +30,7 @@ const COMMANDS: &[&str] = &[
     "recovery_keep",
     "export_log",
     "restore_to",
+    "history_import",
     "recovery_status",
     "recovery_dismiss",
     "recovery_resume",

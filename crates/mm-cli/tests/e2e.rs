@@ -6548,6 +6548,12 @@ fn unicode_data_folder_and_backup_location() {
         String::from_utf8_lossy(&o.stdout)
     );
     assert!(lab.cli(&["recover"]).status.success());
+    // the folder named is listed from now on: the next rebuild finds it without being told
+    let listed = std::fs::read_to_string(data.join("backup-locations.txt")).unwrap();
+    assert!(listed.contains("移动后 🚚"), "{listed}");
+    lab.lose_database();
+    assert_eq!(lab.rebuild()["imported"].as_array().unwrap().len(), 2);
+    assert!(lab.cli(&["recover"]).status.success());
 
     let log = dir.join("日志 导出.json");
     assert!(

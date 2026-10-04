@@ -76,4 +76,4 @@
 - Clean Export：已实施（`mm-core::clean_export`，`clean_plan` / `clean_entry` / `clean_export` 命令）；`clean_export(plan_id, number_taken)` 校验界面显示的预览 id，已被替换的预览拒绝。2026-10-02 接入写入门禁，完整性失败、提权或已有写操作时拒绝；启动恢复未处理完时拒绝。
 - 时区修正与"从参考同步"：按 DECISIONS D-18 属后续版本，不是 MVP 未完成项。
 - 适配层：`apps/desktop/src-tauri`（命令见 `src/cmd.rs`，前端镜像类型 `src/ipc/types.ts`，手工维护）。
-- `exec.workers` 在下一次执行或恢复前调整会话池；拒绝并行写入时保留当前操作的取消句柄，结束时自动清理。`undo_plan(op_id, force_seqs)` 显式指定冲突项，仍须预览与确认；`plan_again` 重新读取并规划；`recovery_keep` 保留所选文件现状。执行和恢复共用进度事件。Journal 重建已接入桌面启动：隔离重建、保留原 DB/WAL/SHM、哈希绑定的采用确认及中断继续；详情和限制见 `JOURNAL_REPAIR.md`。整个数据目录丢失且外部位置未登记时仍需 CLI 指定备份根目录。
+- `exec.workers` 在下一次执行或恢复前调整会话池；拒绝并行写入时保留当前操作的取消句柄，结束时自动清理。`undo_plan(op_id, force_seqs)` 显式指定冲突项，仍须预览与确认；`plan_again` 重新读取并规划；`recovery_keep` 保留所选文件现状。执行和恢复共用进度事件。Journal 重建已接入桌面启动：隔离重建、保留原 DB/WAL/SHM、哈希绑定的采用确认及中断继续；详情和限制见 `JOURNAL_REPAIR.md`。整个数据目录丢失且外部位置未登记时，设置 › 高级的“从备份文件夹找回历史…”（`history_import`，`mm-core::history::import_from_folder`）读回所选位置中缺少的操作：只读 MoriMeta 自己的记录并沿用重建的名称检查，读回的操作默认保留备份，随后照常运行中断恢复；该位置登记到 `backup-locations.txt`，CLI `rebuild-journal --from` 同样登记。

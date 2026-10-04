@@ -622,3 +622,166 @@ pub fn restore_backups_to(
     }
     Ok(out)
 }
+
+/// What "Find history in a backup folder…" brought back.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct HistoryImport {
+    /// The backup location searched: the folder picked, or the location holding it when the
+    /// user picked one Operation's own backup folder.
+    pub location: String,
+    pub imported: Vec<String>,
+    /// MoriMeta backup folders that were not taken in, with the reason.
+    pub skipped: Vec<(String, String)>,
+    /// Files settled by crash recovery for imported Operations that had been interrupted.
+    pub recovered_files: usize,
+}
+
+/// Bring back the History kept in a backup location the Journal does not know: the whole data
+/// folder was lost, and with it the list of locations used (BACKEND_INTERFACE §6). Only
+/// MoriMeta's own records are read, with the checks of the Journal rebuild; photos are touched
+/// only by the crash recovery that follows, exactly as at launch. The keep marks were lost with
+/// the Journal, so every imported Operation keeps its backups until the user releases them. The
+/// location is listed for later rebuilds. The caller holds the write gate.
+pub fn import_from_folder(
+    store: &mut Store,
+    folder: &std::path::Path,
+) -> Result<HistoryImport, CoreError> {
+    if !folder.is_dir() {
+        return Err(CoreError::Input(format!(
+            "{}: not a folder",
+            folder.display()
+        )));
+    }
+    let p = mm_fs::probe(folder)?;
+    if p.reparse_point || p.cloud_placeholder {
+        return Err(CoreError::Input(format!(
+            "{}: a link or cloud folder; history is only read from a local folder",
+            folder.display()
+        )));
+    }
+    let root = if folder.join(mm_store::MANIFEST_LOG).is_file() {
+        folder.parent().unwrap_or(folder)
+    } else {
+        folder
+    };
+    let report = store.import_from_backups_in(&[root.to_path_buf()])?;
+    for id in &report.imported {
+        store.set_keep(id, true)?;
+    }
+    let recovered = crate::recovery::recover(store)?;
+    Ok(HistoryImport {
+        location: root.display().to_string(),
+        imported: report.imported,
+        // a folder without a record is not one of MoriMeta's backups: not worth a line
+        skipped: report
+            .skipped
+            .into_iter()
+            .filter(|(_, why)| !why.starts_with("no manifest.jsonl"))
+            .collect(),
+        recovered_files: recovered.iter().map(|r| r.files.len()).sum(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(label: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "mm-history-{label}-{}-{}",
+            std::process::id(),
+            mm_store::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    /// A synthetic finished Operation (a record only, no photos) whose backup folder lives in
+    /// `location`.
+    fn synthetic(data: &std::path::Path, location: &std::path::Path, id: &str) {
+        let mut store = Store::open(data).unwrap();
+        store.set_backup_root(location.to_path_buf());
+        store
+            .begin_operation(
+                &mm_store::NewOperation {
+                    id: id.into(),
+                    kind: "apply".into(),
+                    title: "Synthetic record only".into(),
+                    plan_json: "{}".into(),
+                    app_version: "0.1".into(),
+                    exiftool_version: "13.59".into(),
+                    registry_version: 0,
+                    undo_of: None,
+                },
+                &[],
+            )
+            .unwrap();
+        store
+            .finish_operation(id, mm_store::OpStatus::Completed)
+            .unwrap();
+    }
+
+    #[test]
+    fn history_comes_back_from_a_backup_folder_after_the_data_folder_is_lost() {
+        let dir = tmp("import");
+        let old = dir.join("old data");
+        let location = dir.join("外部 备份");
+        synthetic(&old, &location, "op-one");
+        synthetic(&old, &location, "op-two");
+        std::fs::remove_dir_all(&old).unwrap();
+        // something that is not a MoriMeta backup next to them is not reported
+        std::fs::create_dir_all(location.join("Holiday photos")).unwrap();
+
+        let mut store = Store::open(&dir.join("new data")).unwrap();
+        assert!(store.import_from_backups().unwrap().imported.is_empty());
+        // picking one Operation's own folder searches the location that holds it
+        let r = import_from_folder(&mut store, &location.join("op-one")).unwrap();
+        assert_eq!(r.imported, ["op-one", "op-two"]);
+        assert!(r.skipped.is_empty(), "{:?}", r.skipped);
+        assert_eq!(r.location, location.display().to_string());
+        for id in ["op-one", "op-two"] {
+            assert!(store.operation(id).unwrap().unwrap().keep, "{id}");
+        }
+        // listed now: a later rebuild finds them without being told, and a second import
+        // brings nothing twice
+        drop(store);
+        std::fs::remove_dir_all(dir.join("new data").join("db")).unwrap();
+        let mut store = Store::open(&dir.join("new data")).unwrap();
+        assert_eq!(store.import_from_backups().unwrap().imported.len(), 2);
+        let again = import_from_folder(&mut store, &location).unwrap();
+        assert!(again.imported.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_a_local_folder_is_read() {
+        let dir = tmp("refuse");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = Store::open(&dir.join("data")).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(matches!(
+            import_from_folder(&mut store, &file),
+            Err(CoreError::Input(_))
+        ));
+        // a junction is not followed, whatever it points to
+        let target = dir.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let j = dir.join("j");
+        let ok = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&j)
+            .arg(&target)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J failed");
+        assert!(matches!(
+            import_from_folder(&mut store, &j),
+            Err(CoreError::Input(_))
+        ));
+        std::fs::remove_dir(&j).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

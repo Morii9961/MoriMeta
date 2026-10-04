@@ -547,7 +547,6 @@ impl Store {
         Ok(())
     }
 
-    /// The backup locations to look in: the current one and the default.
     /// The migrations recorded in [`MIGRATIONS`], oldest first: (time ms, description).
     pub fn migrations(&self) -> Vec<(i64, String)> {
         std::fs::read_to_string(self.data_dir.join("db").join(MIGRATIONS))
@@ -562,6 +561,7 @@ impl Store {
             .unwrap_or_default()
     }
 
+    /// The backup locations to look in: the current one, the default and every recorded one.
     pub fn backup_roots(&self) -> Vec<PathBuf> {
         let mut roots = vec![self.backup_root.clone(), self.data_dir.join("backups")];
         for r in self.recorded_backup_roots() {
@@ -591,7 +591,12 @@ impl Store {
     /// Add the current backup location to [`BACKUP_LOCATIONS`] (flushed) before an Operation
     /// puts its first file there; the default location is always searched and not listed.
     fn record_backup_root(&self) -> Result<()> {
-        let root = &self.backup_root;
+        self.record_location(&self.backup_root)
+    }
+
+    /// Add `root` to [`BACKUP_LOCATIONS`] (flushed) unless it is the default or already listed,
+    /// so a later rebuild of the Journal searches it without being told.
+    pub fn record_location(&self, root: &Path) -> Result<()> {
         if same_dir(root, &self.data_dir.join("backups"))
             || self
                 .recorded_backup_roots()
@@ -1269,6 +1274,9 @@ mod tests {
             .import_from_backups_in(std::slice::from_ref(&elsewhere))
             .unwrap();
         assert_eq!(r.imported, ["op2", "op3"]);
+        // the named folder is listed again, so the next rebuild finds it by itself
+        let listed = std::fs::read_to_string(d.join(BACKUP_LOCATIONS)).unwrap();
+        assert_eq!(listed.trim(), elsewhere.display().to_string());
 
         // SECURITY_MODEL §7: a record whose names recovery would act on are not MoriMeta's is
         // not imported (recovery removes a registered temporary name when its hash matches)
@@ -1312,7 +1320,7 @@ mod tests {
         std::fs::write(&log, text.replacen("\"t\":\"state\"", "\"t\":\"sta", 1)).unwrap();
         let mut s = Store::open(&d).unwrap();
         let r = s.import_from_backups().unwrap();
-        assert!(r.imported.is_empty());
+        assert_eq!(r.imported, ["op2", "op3"]);
         assert_eq!(r.skipped.len(), 1, "{:?}", r.skipped);
     }
 

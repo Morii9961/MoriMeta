@@ -93,6 +93,7 @@ fn main() {
             cmd::recovery_keep,
             cmd::export_log,
             cmd::restore_to,
+            cmd::history_import,
             cmd::recovery_status,
             cmd::recovery_dismiss,
             cmd::recovery_resume,

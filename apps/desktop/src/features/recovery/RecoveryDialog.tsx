@@ -18,6 +18,8 @@ export function RecoveryDialog() {
   const [pending, setPending] = useState<RecoverySummary[]>([])
   const [busy, setBusy] = useState(false)
   const launched = info?.launched ?? false
+  // also asked again when an operation brought back from a backup folder needs a decision
+  const asking = info?.startup.needs_decision.length ?? 0
 
   useEffect(() => {
     if (!launched) return
@@ -25,7 +27,7 @@ export function RecoveryDialog() {
       .recoveryStatus()
       .then(setPending)
       .catch(() => {})
-  }, [launched])
+  }, [launched, asking])
 
   const op = pending[0]
   if (!op) return null

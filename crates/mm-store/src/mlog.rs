@@ -216,21 +216,34 @@ impl Store {
     }
 
     /// The same, also searching `extra` backup locations the user names (when the list of
-    /// locations was lost with the data folder).
+    /// locations was lost with the data folder). An extra location that gave back an Operation
+    /// is added to the list of locations, so the next rebuild finds it by itself.
     pub fn import_from_backups_in(&mut self, extra: &[PathBuf]) -> Result<ImportReport> {
         let mut report = ImportReport::default();
         let mut dirs: Vec<_> = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for root in self.backup_roots().into_iter().chain(extra.iter().cloned()) {
+        let known = self.backup_roots().len();
+        for (i, root) in self
+            .backup_roots()
+            .into_iter()
+            .chain(extra.iter().cloned())
+            .enumerate()
+        {
             if !seen.insert(root.to_string_lossy().to_lowercase()) {
                 continue;
             }
             if let Ok(rd) = std::fs::read_dir(&root) {
-                dirs.extend(rd.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()));
+                let named = (i >= known).then(|| root.clone());
+                dirs.extend(
+                    rd.filter_map(|e| e.ok())
+                        .filter(|e| e.path().is_dir())
+                        .map(|e| (named.clone(), e)),
+                );
             }
         }
-        dirs.sort_by_key(|e| e.file_name());
-        for d in dirs {
+        dirs.sort_by_key(|(_, e)| e.file_name());
+        let mut found_in: Vec<PathBuf> = Vec::new();
+        for (named, d) in dirs {
             let id = d.file_name().to_string_lossy().into_owned();
             if self.operation(&id)?.is_some() {
                 continue;
@@ -300,6 +313,14 @@ impl Store {
             }
             tx.commit()?;
             report.imported.push(id);
+            if let Some(root) = named
+                && !found_in.contains(&root)
+            {
+                found_in.push(root);
+            }
+        }
+        for root in &found_in {
+            self.record_location(root)?;
         }
         Ok(report)
     }

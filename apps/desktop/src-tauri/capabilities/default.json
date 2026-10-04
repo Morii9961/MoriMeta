@@ -45,6 +45,7 @@
     "allow-prune-execute",
     "allow-export-log",
     "allow-restore-to",
+    "allow-history-import",
     "allow-app-close",
     "allow-presets-list",
     "allow-preset-save",

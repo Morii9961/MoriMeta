@@ -23,6 +23,14 @@ export interface RecoverySummary {
   other: number
 }
 
+/** Find history in a backup folder… (`history::HistoryImport`). */
+export interface HistoryImport {
+  location: string
+  imported: string[]
+  skipped: [string, string][]
+  recovered_files: number
+}
+
 export interface StartupInfo {
   recovered_files: number
   recovery_waiting: [string, string][]

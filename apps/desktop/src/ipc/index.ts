@@ -25,6 +25,7 @@ import type {
   PlanView,
   Preflight,
   RecoverySummary,
+  HistoryImport,
   Setting,
   UpdateInfo,
 } from './types'
@@ -118,6 +119,7 @@ export const api = {
     call<string | null>('export_log', { opId, includePaths, includeValues }),
   restoreTo: (opId: string) =>
     call<{ folder: string; restored: number; without_backup: number; notes: string[] } | null>('restore_to', { opId }),
+  historyImport: () => call<HistoryImport | null>('history_import'),
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),
   recoveryResume: (opId: string) => call<OpReport>('recovery_resume', { opId }),

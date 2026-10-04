@@ -162,6 +162,7 @@
     "metadata unreadable: {err}": "元数据无法读取：{1}",
     "the image data cannot be hashed, so the copy could not be checked": "无法计算图像数据的哈希，因此无法核对副本",
     "{}: not a folder": "{1}：不是文件夹",
+    "{}: a link or cloud folder; history is only read from a local folder": "{1}：这是链接或云文件夹；只从本地文件夹读取历史",
     "cannot flush the copy: {err}": "无法将副本写入磁盘：{1}",
     "cannot name the copy: {err:?}": "无法为副本命名：{1}",
     "changed after the undo (conflict); not removed": "撤销后被改动（冲突）；未移除",

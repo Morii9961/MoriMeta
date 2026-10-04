@@ -813,6 +813,40 @@ pub async fn restore_to(app: AppHandle, op_id: String) -> Res<Option<RestoreRepo
     .map_err(ue)?
 }
 
+/// Find history in a backup folder… (Settings › Advanced): after the whole data folder was lost,
+/// bring back the Operations kept in a backup location the user picks (BACKEND_INTERFACE §6).
+/// Under the write gate, since crash recovery runs for interrupted ones; the launch state is
+/// updated so their recovery decisions are asked for. None when the dialog was cancelled.
+#[tauri::command]
+pub async fn history_import(app: AppHandle) -> Res<Option<history::HistoryImport>> {
+    let window = app.get_webview_window("main");
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = rfd::FileDialog::new().set_title("Find history in a backup folder");
+        if let Some(w) = &window {
+            d = d.set_parent(w);
+        }
+        let Some(dir) = d.pick_folder() else {
+            return Ok(None);
+        };
+        core.wait_launched();
+        let _active = core.begin_write()?;
+        let found = {
+            let mut store = lock(&core.store);
+            let found = history::import_from_folder(&mut store, &dir).map_err(ue)?;
+            let mut info = lock(&core.startup);
+            info.recovered_files += found.recovered_files;
+            info.recovery_waiting = recovery::waiting_for_backups(&store).map_err(ue)?;
+            info.needs_decision = recovery::summary(&store).map_err(ue)?;
+            found
+        };
+        core.emit(AppEvent::Status);
+        Ok(Some(found))
+    })
+    .await
+    .map_err(ue)?
+}
+
 #[tauri::command]
 pub fn recovery_status(core: CoreState) -> Res<Vec<recovery::RecoverySummary>> {
     recovery::summary(&lock(&core.store)).map_err(ue)

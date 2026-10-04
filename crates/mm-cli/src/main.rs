@@ -53,7 +53,8 @@
 //!   rebuild-journal [--from DIR]...
 //!                             re-import operations missing from the database from their
 //!                             backup folders (manifest.jsonl, plan.json) in the default, current
-//!                             and every recorded backup location, and DIR; then run recover
+//!                             and every recorded backup location, and DIR (listed from then on
+//!                             when it gave back an Operation); then run recover
 //!   resume OP_ID [FAULTS]
 //!   recovery-status           interrupted Operations: done, remaining, needing attention
 //!   dismiss OP_ID             keep a recovered Operation as it is (remaining files stay; resumable)
