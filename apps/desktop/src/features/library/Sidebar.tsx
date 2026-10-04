@@ -7,6 +7,7 @@ import { useApp } from '../../state/store'
 import { useT, type T } from '../../i18n'
 import { FACET_GROUPS, facetGroups } from './data'
 import { useItems } from './hooks'
+import { conditionText } from './Conditions'
 
 function facetLabel(t: T, group: string, value: string): string {
   if (value === '') return t('facet.none')
@@ -30,6 +31,10 @@ export function Sidebar() {
   const toggleFacet = useApp((s) => s.toggleFacet)
   const clearFacets = useApp((s) => s.clearFacets)
   const assets = useApp((s) => s.assets)
+  const smart = useApp((s) => s.smartFilters)
+  const conditions = useApp((s) => s.conditions)
+  const setConditions = useApp((s) => s.setConditions)
+  const deleteSmart = useApp((s) => s.deleteSmartFilter)
   const groups = useMemo(() => facetGroups(items), [items])
   const folders = useMemo(() => {
     const m = new Map<string, number>()
@@ -52,6 +57,26 @@ export function Sidebar() {
           </div>
         ))}
       </div>
+      {smart.length > 0 && (
+        <div className="side-group">
+          <div className="side-group-header">
+            <span className="section-label">{t('sidebar.smart')}</span>
+          </div>
+          {smart.map((f) => {
+            const on = JSON.stringify(f.value) === JSON.stringify(conditions)
+            return (
+              <div key={f.name} className={`smart-row${on ? ' on' : ''}`} title={f.value.map((c) => conditionText(t, c)).join(' · ')}>
+                <button className="smart-name ellipsis" aria-pressed={on} onClick={() => setConditions(on ? [] : f.value)}>
+                  {f.name}
+                </button>
+                <button className="btn plain tiny" aria-label={t('sidebar.smart_delete', { name: f.name })} onClick={() => deleteSmart(f.name)}>
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
       {assets.length > 0 &&
         groups.map((g) => {
           const meta = FACET_GROUPS.find((x) => x.key === g.key)!

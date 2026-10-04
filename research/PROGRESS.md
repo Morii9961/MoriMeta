@@ -185,3 +185,5 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - “关于 MoriMeta”：应用、ExifTool、字段注册表、WebView2 版本及“复制详细信息”；第三方声明由 `tools/third_party_notices.py` 在暂存安装包时生成并随安装包分发。CI 新增 cargo-deny（两个 Cargo workspace，`deny.toml`，仅 Windows x64 目标）与 npm audit；Dependabot 覆盖桌面应用的 Cargo 与 npm。
 - 公开文档：`PRIVACY.md`、`docs/INSTALLATION.md`、`CHANGELOG.md`、Issue 模板。核对 Tauri NSIS 模板后确认：按用户安装的安装目录与数据目录同为 `%LOCALAPPDATA%\MoriMeta`，卸载只删除安装的文件、非递归删除目录，数据与备份保留（DECISIONS U-1）。
 - 检查器按 SCREEN_SPEC §2 补全：内嵌预览图（`inspect::embedded_preview`，只接受 1 MiB 内的 JPEG；集成测试覆盖有缩略图、无缩略图和缩略图损坏三种文件）、序列号显示/隐藏、固件/镜头序列号/测光/快门次数、“全部复制为文本”、作者/版权冲突的“所有位置都使用…/保持现状”（经预览）、度分秒坐标与省州/地点、高级标签按组筛选与逐行复制、复制拍摄时间。修复：重新打开时间工具时恢复已暂存的参数。
+- 资料库按 SCREEN_SPEC 1#columns / 1#sort / 1#filters 补全：列选择器（显示/隐藏、前后移动、文件名锁定、默认布局、命名保存的布局）、拖动列标题边缘调整列宽并实时显示“拍摄时间 · 176 → 236 px”、表头右键菜单（升降序、添加下一级排序、按此列分组、隐藏、列…）、按列分组的 24 px 分组行（含数量，选择范围和键盘沿显示顺序）、表格上方的条件行（字段 → 运算 → 值，添加前实时显示加上已有条件后的符合数量；全部清除；保存为智能筛选并在侧栏应用/删除）。布局、分组和智能筛选只存在本机浏览器存储中，读写失败时使用默认值。`layout.test.ts` 8 项单元测试；模拟后端中已验证列隐藏、右键分组、条件计数、智能筛选与列宽持久化。
+

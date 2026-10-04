@@ -14,6 +14,15 @@ import type {
   Row,
 } from '../ipc/types'
 import { detectLang, type Lang } from '../i18n'
+import {
+  load,
+  normalizeConditions,
+  normalizeLayout,
+  save,
+  type Condition,
+  type Layout,
+  type Saved,
+} from '../features/library/layout'
 
 export type Module = 'library' | 'presets' | 'rules' | 'history'
 
@@ -57,6 +66,14 @@ interface AppState {
   sort: SortKey[]
   search: string
   facets: Record<string, Set<string>>
+  /** Table columns: order, hidden, widths (SCREEN_SPEC 1#columns; kept per viewer). */
+  layout: Layout
+  /** The column whose values group the rows (SCREEN_SPEC 1#sort). */
+  groupBy: string | null
+  /** AND-ed conditions above the table (SCREEN_SPEC 1#filters). */
+  conditions: Condition[]
+  addingCondition: boolean
+  smartFilters: Saved<Condition[]>[]
 
   staged: BatchEdit
   /** Bumped when staged edits are discarded, so editors start afresh. */
@@ -92,6 +109,11 @@ interface AppState {
   setSearch: (s: string) => void
   toggleFacet: (group: string, value: string) => void
   clearFacets: (group?: string) => void
+  setLayout: (l: Layout) => void
+  setGroupBy: (key: string | null) => void
+  setConditions: (c: Condition[]) => void
+  saveSmartFilter: (name: string, c: Condition[]) => void
+  deleteSmartFilter: (name: string) => void
 
   stageEdit: (e: Partial<BatchEdit>) => void
   unstage: (field: keyof BatchEdit) => void
@@ -124,6 +146,13 @@ export const useApp = create<AppState>((set) => ({
   sort: [{ key: 'name', dir: 1 }],
   search: '',
   facets: {},
+  layout: normalizeLayout(load<Partial<Layout> | null>('mm.layout', null)),
+  groupBy: load<string | null>('mm.group', null),
+  conditions: [],
+  addingCondition: false,
+  smartFilters: load<Saved<Condition[]>[]>('mm.smart', [])
+    .filter((s) => s && typeof s.name === 'string')
+    .map((s) => ({ name: s.name, value: normalizeConditions(s.value) })),
 
   staged: {},
   stagedGen: 0,
@@ -173,6 +202,7 @@ export const useApp = create<AppState>((set) => ({
       staged: {},
       facets: {},
       search: '',
+      conditions: [],
       lastImport: null,
       stagedGen: useApp.getState().stagedGen + 1,
     }),
@@ -198,6 +228,29 @@ export const useApp = create<AppState>((set) => ({
       const next = { ...s.facets }
       delete next[group]
       return { facets: next }
+    }),
+
+  setLayout: (l) => {
+    const layout = normalizeLayout(l)
+    save('mm.layout', layout)
+    set({ layout })
+  },
+  setGroupBy: (groupBy) => {
+    save('mm.group', groupBy)
+    set({ groupBy })
+  },
+  setConditions: (conditions) => set({ conditions }),
+  saveSmartFilter: (name, c) =>
+    set((s) => {
+      const smartFilters = [...s.smartFilters.filter((f) => f.name !== name), { name, value: c }]
+      save('mm.smart', smartFilters)
+      return { smartFilters }
+    }),
+  deleteSmartFilter: (name) =>
+    set((s) => {
+      const smartFilters = s.smartFilters.filter((f) => f.name !== name)
+      save('mm.smart', smartFilters)
+      return { smartFilters }
     }),
 
   stageEdit: (e) => set((s) => ({ staged: { ...s.staged, ...e } })),

@@ -2,14 +2,18 @@
 // MetadataTable (DESIGN_SYSTEM): virtualised, 22 px zebra rows, frozen flags + name columns,
 // multi-level sort (click; Shift-click adds a level), selection with the mouse and the keyboard
 // (INTERACTION_SPEC §18 Table). Values are plain text; unread values show "…", empty ones "—".
+// SCREEN_SPEC 1#sort / 1#columns: rows grouped by a column (24 px group rows with a count), a
+// header context menu, columns resized by dragging the header edge with a live readout.
 
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useApp } from '../../state/store'
 import { useT, type T } from '../../i18n'
 import { COLUMNS, flagsOf, middleTruncate, type Item } from './data'
+import { clampWidth, itemsInOrder, visibleColumns, withGroups } from './layout'
 
 const ROW = 22
+const GROUP_ROW = 24
 const FLAGS_W = 64
 
 function cellText(t: T, key: string, v: string | null | undefined): { text: string; cls: string } {
@@ -27,7 +31,13 @@ function cellText(t: T, key: string, v: string | null | undefined): { text: stri
   return { text: v, cls: '' }
 }
 
-export function MetadataTable({ items }: { items: Item[] }) {
+interface HeaderMenu {
+  key: string
+  x: number
+  y: number
+}
+
+export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: () => void }) {
   const t = useT()
   const selection = useApp((s) => s.selection)
   const focus = useApp((s) => s.focus)
@@ -35,23 +45,48 @@ export function MetadataTable({ items }: { items: Item[] }) {
   const select = useApp((s) => s.select)
   const sort = useApp((s) => s.sort)
   const setSort = useApp((s) => s.setSort)
+  const layout = useApp((s) => s.layout)
+  const setLayout = useApp((s) => s.setLayout)
+  const groupBy = useApp((s) => s.groupBy)
+  const setGroupBy = useApp((s) => s.setGroupBy)
   const scroller = useRef<HTMLDivElement>(null)
+  const [menu, setMenu] = useState<HeaderMenu | null>(null)
+  const [resizing, setResizing] = useState<{ key: string; from: number; to: number } | null>(null)
+
+  const columns = useMemo(() => visibleColumns(layout), [layout])
+  const display = useMemo(() => withGroups(items, groupBy), [items, groupBy])
+  // selection ranges and the keyboard follow the drawn order
+  const ordered = useMemo(() => itemsInOrder(display), [display])
   const v = useVirtualizer({
-    count: items.length,
+    count: display.length,
     getScrollElement: () => scroller.current,
-    estimateSize: () => ROW,
+    estimateSize: (i) => (display[i]?.kind === 'group' ? GROUP_ROW : ROW),
     overscan: 20,
   })
-  const width = FLAGS_W + COLUMNS.reduce((a, c) => a + c.width, 0)
-  const index = new Map(items.map((it, i) => [it.asset.id, i]))
+  useEffect(() => v.measure(), [display, v])
+  const width = FLAGS_W + columns.reduce((a, c) => a + (resizing?.key === c.key ? resizing.to : c.width), 0)
+  const index = useMemo(() => new Map(ordered.map((it, i) => [it.asset.id, i])), [ordered])
+  const row = useMemo(() => new Map(display.map((d, i) => [d.kind === 'item' ? d.it.asset.id : -1 - i, i])), [display])
 
   // keep the focused row in view
   useEffect(() => {
     if (focus === null) return
-    const i = index.get(focus)
+    const i = row.get(focus)
     if (i !== undefined) v.scrollToIndex(i, { align: 'auto' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
+
+  useEffect(() => {
+    if (!menu) return
+    const close = () => setMenu(null)
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && close()
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
 
   const onHeader = (e: MouseEvent, key: string) => {
     const at = sort.findIndex((s) => s.key === key)
@@ -65,9 +100,29 @@ export function MetadataTable({ items }: { items: Item[] }) {
     }
   }
 
+  const startResize = (e: MouseEvent, key: string, from: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const x0 = e.clientX
+    let to = from
+    setResizing({ key, from, to })
+    const move = (m: globalThis.MouseEvent) => {
+      to = clampWidth(from + m.clientX - x0)
+      setResizing({ key, from, to })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      setResizing(null)
+      if (to !== from) setLayout({ ...layout, widths: { ...layout.widths, [key]: to } })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   const range = (a: number, b: number) => {
     const [lo, hi] = a < b ? [a, b] : [b, a]
-    return items.slice(lo, hi + 1).map((it) => it.asset.id)
+    return ordered.slice(lo, hi + 1).map((it) => it.asset.id)
   }
 
   const onRow = (e: MouseEvent, id: number) => {
@@ -87,19 +142,19 @@ export function MetadataTable({ items }: { items: Item[] }) {
   }
 
   const onKey = (e: KeyboardEvent) => {
-    if (!items.length) return
+    if (!ordered.length) return
     const cur = focus !== null && index.has(focus) ? index.get(focus)! : -1
     const page = Math.max(1, Math.floor((scroller.current?.clientHeight ?? 400) / ROW) - 1)
     let next = cur
     switch (e.key) {
       case 'ArrowDown':
-        next = Math.min(items.length - 1, cur + 1)
+        next = Math.min(ordered.length - 1, cur + 1)
         break
       case 'ArrowUp':
         next = Math.max(0, cur - 1)
         break
       case 'PageDown':
-        next = Math.min(items.length - 1, cur + page)
+        next = Math.min(ordered.length - 1, cur + page)
         break
       case 'PageUp':
         next = Math.max(0, cur - page)
@@ -108,12 +163,12 @@ export function MetadataTable({ items }: { items: Item[] }) {
         next = 0
         break
       case 'End':
-        next = items.length - 1
+        next = ordered.length - 1
         break
       case ' ': {
         e.preventDefault()
         if (cur < 0) return
-        const id = items[cur].asset.id
+        const id = ordered[cur].asset.id
         const s = new Set(selection)
         if (s.has(id)) s.delete(id)
         else s.add(id)
@@ -124,7 +179,7 @@ export function MetadataTable({ items }: { items: Item[] }) {
       case 'A':
         if (e.ctrlKey) {
           e.preventDefault()
-          select(items.map((it) => it.asset.id))
+          select(ordered.map((it) => it.asset.id))
         }
         return
       case 'Escape':
@@ -135,10 +190,10 @@ export function MetadataTable({ items }: { items: Item[] }) {
     }
     e.preventDefault()
     if (next < 0) next = 0
-    const id = items[next].asset.id
+    const id = ordered[next].asset.id
     if (e.shiftKey) {
       const a = anchor !== null && index.has(anchor) ? index.get(anchor)! : cur < 0 ? next : cur
-      select(range(a, next), id, items[a].asset.id)
+      select(range(a, next), id, ordered[a].asset.id)
     } else if (e.ctrlKey) {
       select([...selection], id)
     } else {
@@ -153,13 +208,36 @@ export function MetadataTable({ items }: { items: Item[] }) {
     return <span className="sort-mark mono">{sort.length > 1 ? `${at + 1}${arrow}` : arrow}</span>
   }
 
+  const menuItems = (key: string) => {
+    const label = t(COLUMNS.find((c) => c.key === key)!.label)
+    const items: { text: string; run: () => void; disabled?: boolean; checked?: boolean }[] = [
+      { text: t('cols.sort_asc'), run: () => setSort([{ key, dir: 1 }]) },
+      { text: t('cols.sort_desc'), run: () => setSort([{ key, dir: -1 }]) },
+      {
+        text: t('cols.sort_add'),
+        run: () => setSort([...sort.filter((s) => s.key !== key), { key, dir: 1 }]),
+        disabled: sort.length === 1 && sort[0].key === key,
+      },
+      groupBy === key
+        ? { text: t('cols.ungroup'), run: () => setGroupBy(null), checked: true }
+        : { text: t('cols.group_by', { name: label }), run: () => setGroupBy(key), disabled: key === 'name' || key === 'size' },
+      {
+        text: t('cols.hide', { name: label }),
+        run: () => setLayout({ ...layout, hidden: [...layout.hidden, key] }),
+        disabled: key === 'name',
+      },
+      { text: t('cols.chooser'), run: onColumns },
+    ]
+    return items
+  }
+
   return (
     <div
       className="mtable"
       ref={scroller}
       tabIndex={0}
       role="grid"
-      aria-rowcount={items.length}
+      aria-rowcount={ordered.length}
       aria-multiselectable
       aria-label={t('table.label')}
       onKeyDown={onKey}
@@ -169,23 +247,58 @@ export function MetadataTable({ items }: { items: Item[] }) {
           <div className="mth frozen" style={{ width: FLAGS_W, left: 0 }} role="columnheader">
             <span className="secondary">{t('col.flags')}</span>
           </div>
-          {COLUMNS.map((c, i) => (
-            <div
-              key={c.key}
-              role="columnheader"
-              aria-sort={sort[0]?.key === c.key ? (sort[0].dir === 1 ? 'ascending' : 'descending') : undefined}
-              className={`mth${i === 0 ? ' frozen frozen-edge' : ''}${sort.some((s) => s.key === c.key) ? ' sorted' : ''}${i === COLUMNS.length - 1 ? ' flex' : ''}`}
-              style={{ width: c.width, left: i === 0 ? FLAGS_W : undefined, textAlign: c.align }}
-              onClick={(e) => onHeader(e, c.key)}
-              title={t('table.sort_hint')}
-            >
-              <span className="ellipsis">{t(c.label)}</span>
-              {sortMark(c.key)}
-            </div>
-          ))}
+          {columns.map((c, i) => {
+            const w = resizing?.key === c.key ? resizing.to : c.width
+            return (
+              <div
+                key={c.key}
+                role="columnheader"
+                aria-sort={sort[0]?.key === c.key ? (sort[0].dir === 1 ? 'ascending' : 'descending') : undefined}
+                className={`mth${i === 0 ? ' frozen frozen-edge' : ''}${sort.some((s) => s.key === c.key) ? ' sorted' : ''}${i === columns.length - 1 ? ' flex' : ''}`}
+                style={{ width: w, left: i === 0 ? FLAGS_W : undefined, textAlign: c.align }}
+                onClick={(e) => onHeader(e, c.key)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ key: c.key, x: e.clientX, y: e.clientY })
+                }}
+                title={t('table.sort_hint')}
+              >
+                <span className="ellipsis">{t(c.label)}</span>
+                {groupBy === c.key && <span className="group-mark" title={t('cols.grouped')}>⊟</span>}
+                {sortMark(c.key)}
+                <span
+                  className="col-resize"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={t('cols.resize', { name: t(c.label) })}
+                  onMouseDown={(e) => startResize(e, c.key, c.width)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )
+          })}
         </div>
         {v.getVirtualItems().map((vr) => {
-          const it = items[vr.index]
+          const d = display[vr.index]
+          if (d.kind === 'group') {
+            const col = COLUMNS.find((c) => c.key === groupBy)
+            const { text } = cellText(t, groupBy ?? '', d.label)
+            return (
+              <div
+                key={`g-${vr.index}`}
+                role="row"
+                className="mrow group-row"
+                style={{ transform: `translateY(${vr.start + 24}px)`, width, height: GROUP_ROW }}
+              >
+                <div className="mtd group-cell" role="gridcell">
+                  <span className="secondary">{col ? t(col.label) : ''}</span>
+                  <span className="mono strong">{text}</span>
+                  <span className="mono faint">{d.count}</span>
+                </div>
+              </div>
+            )
+          }
+          const it = d.it
           const id = it.asset.id
           const selected = selection.has(id)
           const focused = focus === id
@@ -195,7 +308,7 @@ export function MetadataTable({ items }: { items: Item[] }) {
               key={id}
               role="row"
               aria-selected={selected}
-              className={`mrow${vr.index % 2 ? ' alt' : ''}${selected ? ' selected' : ''}${focused ? ' focused' : ''}${it.asset.writable ? '' : ' readonly'}`}
+              className={`mrow${d.index % 2 ? ' alt' : ''}${selected ? ' selected' : ''}${focused ? ' focused' : ''}${it.asset.writable ? '' : ' readonly'}`}
               style={{ transform: `translateY(${vr.start + 24}px)`, width }}
               onMouseDown={(e) => {
                 if (e.button === 0) onRow(e, id)
@@ -209,16 +322,17 @@ export function MetadataTable({ items }: { items: Item[] }) {
                   </span>
                 ))}
               </div>
-              {COLUMNS.map((c, i) => {
+              {columns.map((c, i) => {
                 const raw = c.value(it)
                 const { text, cls } = cellText(t, c.key, raw)
-                const shown = c.key === 'name' ? middleTruncate(text, 34) : text
+                const w = resizing?.key === c.key ? resizing.to : c.width
+                const shown = c.key === 'name' ? middleTruncate(text, Math.max(8, Math.floor(w / 6.8))) : text
                 return (
                   <div
                     key={c.key}
                     role="gridcell"
-                    className={`mtd${c.mono ? ' mono' : ''}${i === 0 ? ' frozen frozen-edge' : ''}${i === COLUMNS.length - 1 ? ' flex' : ''} ${cls}`}
-                    style={{ width: c.width, left: i === 0 ? FLAGS_W : undefined, textAlign: c.align }}
+                    className={`mtd${c.mono ? ' mono' : ''}${i === 0 ? ' frozen frozen-edge' : ''}${i === columns.length - 1 ? ' flex' : ''} ${cls}`}
+                    style={{ width: w, left: i === 0 ? FLAGS_W : undefined, textAlign: c.align }}
                     title={text !== shown || text.length > 24 ? text : undefined}
                   >
                     {shown}
@@ -229,6 +343,37 @@ export function MetadataTable({ items }: { items: Item[] }) {
           )
         })}
       </div>
+      {resizing && (
+        <div className="resize-readout mono" role="status">
+          {t(COLUMNS.find((c) => c.key === resizing.key)!.label)} · {resizing.from} → {resizing.to} px
+        </div>
+      )}
+      {menu && (
+        <div className="menu-popup header-menu" role="menu" style={{ position: 'fixed', left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+          {menuItems(menu.key).map((m, k) => (
+            <button
+              key={m.text}
+              role="menuitem"
+              disabled={m.disabled}
+              autoFocus={k === 0}
+              onClick={() => {
+                setMenu(null)
+                m.run()
+              }}
+              onKeyDown={(e) => {
+                const all = [...(e.currentTarget.parentElement?.querySelectorAll('button:not(:disabled)') ?? [])] as HTMLElement[]
+                const at = all.indexOf(e.currentTarget)
+                if (e.key === 'ArrowDown') all[(at + 1) % all.length]?.focus()
+                if (e.key === 'ArrowUp') all[(at - 1 + all.length) % all.length]?.focus()
+              }}
+            >
+              <span className="menu-check">{m.checked ? '✓' : ''}</span>
+              <span className="menu-label">{m.text}</span>
+              <span className="menu-keys" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
