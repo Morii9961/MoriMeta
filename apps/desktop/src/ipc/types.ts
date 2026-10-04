@@ -146,6 +146,8 @@ export interface AssetDetail {
   fields: FieldView[]
   tags: Record<string, string>
   sidecar_tags: Record<string, string> | null
+  /** The file has the read-only attribute (SCREEN_SPEC 6#e-ro). */
+  read_only: boolean
 }
 
 export interface FieldAggregate {

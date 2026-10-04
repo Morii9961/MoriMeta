@@ -487,6 +487,19 @@ fn inspector_and_selection_aggregate() {
     assert_eq!(names, ["creator", "copyright", "capture_time", "gps"]);
     assert!(d.tags.len() > 10, "{:?}", d.tags);
     assert!(d.sidecar.is_none());
+    // the read-only attribute is reported for the Inspector's explicit "Clear read-only attribute…"
+    assert!(!d.read_only);
+    let mut perm = std::fs::metadata(&lab.files[0]).unwrap().permissions();
+    perm.set_readonly(true);
+    std::fs::set_permissions(&lab.files[0], perm.clone()).unwrap();
+    assert!(
+        inspect::asset_detail(&mut lab.engines[0], &lab.files[0])
+            .unwrap()
+            .read_only
+    );
+    #[allow(clippy::permissions_set_readonly_false)]
+    perm.set_readonly(false);
+    std::fs::set_permissions(&lab.files[0], perm).unwrap();
 
     let agg = |lab: &mut Lab| {
         inspect::selection_aggregate(&mut lab.engines[0], &lab.files, &Default::default()).unwrap()

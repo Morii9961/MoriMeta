@@ -191,6 +191,8 @@ function bump(id: string, f: (e: PlanEntry[]) => PlanEntry[]): PlanView {
   return p.view
 }
 
+const roCleared = new Set<number>()
+
 const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   backup_usage: () => mockBackups.usage(),
   backup_keep: (a) => mockBackups.keep(a.opId as string, a.keep as boolean),
@@ -224,6 +226,8 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
       })),
       tags: { 'IFD0:Make': r.make, 'IFD0:Model': r.model, 'ExifIFD:LensModel': r.lens, 'ExifIFD:ISO': '400', 'ExifIFD:FNumber': '5.6', 'ExifIFD:ExposureTime': '1/250', 'ExifIFD:OffsetTimeOriginal': '+09:00', 'ExifIFD:CreateDate': r.capture_time?.slice(0, 19) ?? '' },
       sidecar_tags: null,
+      // a few JPEGs carry the read-only attribute until it is cleared
+      read_only: as.ext === 'JPG' && as.id % 37 === 5 && !roCleared.has(as.id),
     }
   },
   attention: () => ({ read_only: [], conflicts: [...rows.values()].filter((r) => r.conflicts.length).map((r) => r.id), cloud_placeholders: [], cloud_files: [], darktable_sidecars: [], c2pa: [], links: [], unreadable: [], long_paths: [], removable: [], network: [], other_file_system: [], changed_since_import: [] }),
@@ -329,7 +333,10 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   recovery_status: () => [],
   recovery_dismiss: () => undefined,
   recovery_resume: () => undefined,
-  clear_read_only: () => true,
+  clear_read_only: (a) => {
+    roCleared.add(a.id as number)
+    return true
+  },
   selection_aggregate: () => [],
   settings_list: () => mockSettings.list(),
   setting_set: (a) => mockSettings.set(a.name as string, a.value as string),

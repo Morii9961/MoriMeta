@@ -10,6 +10,7 @@ import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey, type T } from '../../i18n'
 import { sizeText } from '../library/data'
 import { BatchFields } from './BatchPanel'
+import { Dialog } from '../../components/Dialog'
 
 type Layer = 'effective' | 'file' | 'sidecar'
 type Section = 'edit' | 'capture' | 'camera' | 'creator' | 'location' | 'basic' | 'advanced'
@@ -159,6 +160,9 @@ export function FileInspector({ id }: { id: number }) {
   const [group, setGroup] = useState('')
   const [showSerial, setShowSerial] = useState(false)
   const [preview, setPreview] = useState<string | null | undefined>(undefined)
+  const [askClear, setAskClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     setShowSerial(false)
@@ -192,7 +196,7 @@ export function FileInspector({ id }: { id: number }) {
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, row?.not_downloaded, row])
+  }, [id, row?.not_downloaded, row, reload])
 
   const tags = useMemo(() => {
     if (!detail) return {}
@@ -257,6 +261,55 @@ export function FileInspector({ id }: { id: number }) {
             <b>⊘ {t('insp.read_only_format', { ext: asset.ext })}</b>
             <div>{t('insp.read_only_note')}</div>
           </div>
+        )}
+        {detail?.read_only && asset.writable && (
+          <div className="tone warn insp-error" role="status">
+            <b>⚠ {t('insp.ro_title')}</b>
+            <div>{t(writesTo === 'in_file' ? 'insp.ro_in_file' : 'insp.ro_other')}</div>
+            {writesTo === 'in_file' && (
+              <div>
+                <button className="btn small" onClick={() => setAskClear(true)}>
+                  {t('insp.ro_clear')}…
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {askClear && (
+          <Dialog
+            title={t('insp.ro_clear_q')}
+            glyph="⚠"
+            onCancel={() => !clearing && setAskClear(false)}
+            footer={
+              <>
+                <button className="btn" disabled={clearing} onClick={() => setAskClear(false)}>
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="btn primary"
+                  disabled={clearing}
+                  onClick={async () => {
+                    setClearing(true)
+                    try {
+                      await api.clearReadOnly(id)
+                      useApp.getState().notify('success', t('insp.ro_cleared'))
+                      setAskClear(false)
+                      setReload((n) => n + 1)
+                    } catch (e) {
+                      useApp.getState().notify('error', errorText(e))
+                    } finally {
+                      setClearing(false)
+                    }
+                  }}
+                >
+                  {t('insp.ro_clear')}
+                </button>
+              </>
+            }
+          >
+            <p>{t('insp.ro_clear_body', { name: asset.name })}</p>
+            <p className="note">{t('insp.ro_clear_note')}</p>
+          </Dialog>
         )}
         {!detail && !error && <p className="note">{t('insp.reading')}</p>}
         {section === 'edit' && asset.writable && <BatchFields ids={[id]} />}

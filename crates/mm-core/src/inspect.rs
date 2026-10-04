@@ -41,6 +41,9 @@ pub struct AssetDetail {
     pub tags: BTreeMap<String, String>,
     /// The sidecar's tags, when it exists.
     pub sidecar_tags: Option<BTreeMap<String, String>>,
+    /// The file has the read-only attribute: it is not written in place until the user clears
+    /// it (INTERACTION_SPEC §7, SCREEN_SPEC 6#e-ro).
+    pub read_only: bool,
 }
 
 fn fields_of(t: &Target) -> Vec<FieldView> {
@@ -139,6 +142,7 @@ pub fn asset_detail(engine: &mut Engine, path: &Path) -> Result<AssetDetail, Cor
             .as_ref()
             .map(|(p, _)| p.to_string_lossy().into_owned()),
         sidecar_tags: sidecar.as_ref().and_then(|(_, s)| s.as_ref().map(flat)),
+        read_only: mm_fs::probe(&path).map(|p| p.read_only).unwrap_or(false),
     })
 }
 
