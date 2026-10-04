@@ -24,7 +24,7 @@ rfd = { version = "0.17", default-features = false }
 tauri-plugin-updater = "=2.10.1"
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 base64 = "0.22"
-minisign-verify = "=0.2.5"
+minisign-verify = "=0.3.0"
 semver = "1"
 mm-core = { path = "../../../crates/mm-core" }
 mm-domain = { path = "../../../crates/mm-domain" }
