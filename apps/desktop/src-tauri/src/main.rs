@@ -74,6 +74,7 @@ fn main() {
             cmd::rescan,
             cmd::session_clear,
             cmd::asset_detail,
+            cmd::asset_preview,
             cmd::selection_aggregate,
             cmd::attention,
             cmd::clear_read_only,

@@ -17,6 +17,7 @@
 | `session_import_dialog` / `session_import_dropped` | `service::Session::import`、`import_folder` | —（`scan`） | 返回 `AssetId`；按卷 + File ID 去重；文件夹导入不跟随目录链接、不读取云占位符、不纳入 MoriMeta 备份库中的文件（`backup_files`，逐个选择时拒绝）；非写入格式为只读资产 |
 | `session_rows` | `Session::assets`、`changed_since_import`；`inspect::scan_rows` | `rows` | 行数据由 `scan_rows` 按批读取（每批 400 个文件，读完即经回调推送；`PlanCtl` 进度与取消）：四个字段的有效值（与 Inspector 相同）、相机、型号、镜头、写入去向（`in_file` / `sidecar` / `new_sidecar` / `read_only`）；云占位符不读取（`not_downloaded`），无法读取或内容与扩展名不符时给出原因。分页、排序与筛选在适配层；"导入后被改动"按导入时的指纹 |
 | `asset_detail` | `inspect::asset_detail` | `inspect` | 字段有效值、来源、冲突、全部原始标签与 sidecar 标签；文件或其 sidecar 为未下载占位符时 `NotDownloaded`（不读取） |
+| `asset_preview` | `inspect::embedded_preview` | `inspect` | 检查器“基本”中的内嵌预览图：文件自带的缩略图（RAW 没有时取 PreviewImage），只返回不超过 1 MiB 且以 JPEG 标记开头的数据，以 `data:image/jpeg;base64` 交给界面；占位符不读取 |
 | `selection_aggregate` | `inspect::selection_aggregate` | `aggregate` | 每字段各值的文件数、空、冲突、不可读、未下载（不读取） |
 | 会话摘要"需要注意" | `inspect::attention` | `attention` | 只读、链接、云占位符、darktable sidecar、C2PA、来源冲突、不可读；长路径、可移动介质、网络驱动器、非 NTFS 的本地卷（`other_file_system`） |
 

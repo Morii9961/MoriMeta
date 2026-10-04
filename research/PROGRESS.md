@@ -179,3 +179,9 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 
 - 后端最后一个功能缺口：整个数据目录丢失、外部备份位置也未登记时，应用内（设置 › 高级）可选择备份位置或其中某个操作的文件夹，读回历史中缺少的操作。沿用重建的记录与名称检查；拒绝链接和云文件夹；读回的操作默认保留备份；随后照常运行中断恢复，需要决定的操作弹出恢复对话框。
 - `Store::import_from_backups_in` 现在把读回过操作的额外位置登记到 `backup-locations.txt`，CLI `rebuild-journal --from` 之后的重建无需再指定。合成记录的单元测试（含 junction 拒绝）、store 重建测试和中文/emoji 路径 e2e 已覆盖；模拟后端在浏览器中验证了界面文案和结果显示。
+
+## 2026-10-04：发布准备与检查器补全
+
+- “关于 MoriMeta”：应用、ExifTool、字段注册表、WebView2 版本及“复制详细信息”；第三方声明由 `tools/third_party_notices.py` 在暂存安装包时生成并随安装包分发。CI 新增 cargo-deny（两个 Cargo workspace，`deny.toml`，仅 Windows x64 目标）与 npm audit；Dependabot 覆盖桌面应用的 Cargo 与 npm。
+- 公开文档：`PRIVACY.md`、`docs/INSTALLATION.md`、`CHANGELOG.md`、Issue 模板。核对 Tauri NSIS 模板后确认：按用户安装的安装目录与数据目录同为 `%LOCALAPPDATA%\MoriMeta`，卸载只删除安装的文件、非递归删除目录，数据与备份保留（DECISIONS U-1）。
+- 检查器按 SCREEN_SPEC §2 补全：内嵌预览图（`inspect::embedded_preview`，只接受 1 MiB 内的 JPEG；集成测试覆盖有缩略图、无缩略图和缩略图损坏三种文件）、序列号显示/隐藏、固件/镜头序列号/测光/快门次数、“全部复制为文本”、作者/版权冲突的“所有位置都使用…/保持现状”（经预览）、度分秒坐标与省州/地点、高级标签按组筛选与逐行复制、复制拍摄时间。修复：重新打开时间工具时恢复已暂存的参数。

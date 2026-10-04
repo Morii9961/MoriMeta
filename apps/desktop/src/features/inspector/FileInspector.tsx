@@ -34,6 +34,38 @@ function tag(tags: Record<string, string>, ...names: string[]): [string, string]
   return null
 }
 
+/** `35.6895, 139.6917[, 40 m]` (the GPS field's display) → degrees, minutes, seconds. */
+export function dms(value: string | null | undefined): string | null {
+  const m = /^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/.exec(value ?? '')
+  if (!m) return null
+  const part = (v: number, pos: string, neg: string) => {
+    const a = Math.abs(v)
+    let d = Math.floor(a)
+    let mi = Math.floor((a - d) * 60)
+    let s = Math.round(((a - d) * 60 - mi) * 600) / 10
+    if (s >= 60) {
+      s -= 60
+      mi += 1
+    }
+    if (mi >= 60) {
+      mi -= 60
+      d += 1
+    }
+    return `${d}°${String(mi).padStart(2, '0')}′${s.toFixed(1).padStart(4, '0')}″${v < 0 ? neg : pos}`
+  }
+  return `${part(Number(m[1]), 'N', 'S')} ${part(Number(m[2]), 'E', 'W')}`
+}
+
+async function copyText(text: string, done: string) {
+  const s = useApp.getState()
+  try {
+    await navigator.clipboard.writeText(text)
+    s.notify('success', done)
+  } catch (e) {
+    s.notify('error', errorText(e))
+  }
+}
+
 function Provenance({ k }: { k: string | null }) {
   if (!k) return <span className="prov faint">—</span>
   return (
@@ -60,8 +92,20 @@ function Line({ label, value, k, lock, t }: { label: string; value: string | nul
   )
 }
 
-function FieldBlock({ f, t }: { f: FieldView; t: T }) {
+function FieldBlock({ f, t, id }: { f: FieldView; t: T; id?: number }) {
   const bt = useBT()
+  const [kept, setKept] = useState(false)
+  const stageEdit = useApp((s) => s.stageEdit)
+  const notify = useApp((s) => s.notify)
+  // SCREEN_SPEC 1#i-creator: settle a conflict with the effective value, through the Preview
+  const settle =
+    f.conflicting && f.value && id !== undefined && (f.field === 'creator' || f.field === 'copyright')
+      ? () => {
+          if (f.field === 'creator') stageEdit({ creator: { op: 'set', values: f.value!.split('; ') } })
+          else stageEdit({ copyright: { op: 'set', value: f.value! } })
+          notify('info', t('insp.settle_staged'))
+        }
+      : null
   return (
     <div className={`field-block${f.conflicting ? ' conflict' : ''}`}>
       <div className="field-line">
@@ -88,6 +132,12 @@ function FieldBlock({ f, t }: { f: FieldView; t: T }) {
             </div>
           ))}
           {f.conflicting && <div className="field-note glyph-conflict">{t('insp.conflict_note')}</div>}
+          {settle && !kept && (
+            <div className="conflict-actions">
+              <button className="btn small" onClick={settle}>{t('insp.use_everywhere', { value: f.value! })}</button>
+              <button className="btn small plain" onClick={() => setKept(true)}>{t('insp.keep_as_is')}</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -106,6 +156,25 @@ export function FileInspector({ id }: { id: number }) {
   const [layer, setLayer] = useState<Layer>('effective')
   const [section, setSection] = useState<Section>(asset?.writable === false ? 'capture' : 'edit')
   const [filter, setFilter] = useState('')
+  const [group, setGroup] = useState('')
+  const [showSerial, setShowSerial] = useState(false)
+  const [preview, setPreview] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    setShowSerial(false)
+    setPreview(undefined)
+  }, [id])
+  useEffect(() => {
+    if (section !== 'basic' || preview !== undefined || row?.not_downloaded) return
+    let alive = true
+    api
+      .assetPreview(id)
+      .then((p) => alive && setPreview(p && p.startsWith('data:image/jpeg;base64,') ? p : null))
+      .catch(() => alive && setPreview(null))
+    return () => {
+      alive = false
+    }
+  }, [section, preview, id, row?.not_downloaded])
 
   useEffect(() => {
     let alive = true
@@ -193,45 +262,81 @@ export function FileInspector({ id }: { id: number }) {
         {section === 'edit' && asset.writable && <BatchFields ids={[id]} />}
         {detail && section === 'capture' && (
           <div className="insp-section">
-            {field('capture_time') && <FieldBlock f={field('capture_time')!} t={t} />}
+            {field('capture_time') && <FieldBlock f={field('capture_time')!} t={t} id={id} />}
             <Line t={t} label={t('insp.offset')} value={tag(tags, 'OffsetTimeOriginal')?.[1]} k={tag(tags, 'OffsetTimeOriginal')?.[0]} />
             <Line t={t} label={t('insp.subsec')} value={tag(tags, 'SubSecTimeOriginal')?.[1]} k={tag(tags, 'SubSecTimeOriginal')?.[0]} lock />
             <Line t={t} label={t('insp.created')} value={tag(tags, 'CreateDate')?.[1]} k={tag(tags, 'CreateDate')?.[0]} />
             <Line t={t} label={t('insp.modified')} value={tag(tags, 'ModifyDate')?.[1]} k={tag(tags, 'ModifyDate')?.[0]} lock />
             <Line t={t} label={t('insp.gps_utc')} value={[tag(tags, 'GPSDateStamp')?.[1], tag(tags, 'GPSTimeStamp')?.[1]].filter(Boolean).join(' ') || null} k={tag(tags, 'GPSDateStamp')?.[0]} lock />
             <p className="note">{t('insp.capture_note')}</p>
-            <button className="btn small" onClick={() => useApp.getState().setTimeToolsOpen(true)}>
-              {t('menu.time_tools')} <span className="mono faint">T</span>
-            </button>
+            <div className="insp-actions">
+              <button className="btn small" onClick={() => useApp.getState().setTimeToolsOpen(true)}>
+                {t('menu.time_tools')} <span className="mono faint">T</span>
+              </button>
+              <button className="btn small" disabled={!field('capture_time')?.value} onClick={() => void copyText(field('capture_time')?.value ?? '', t('insp.copied'))}>
+                {t('insp.copy_time')}
+              </button>
+            </div>
           </div>
         )}
-        {detail && section === 'camera' && (
-          <div className="insp-section">
-            {(
-              [
-                ['insp.make', ['Make']],
-                ['insp.model', ['Model']],
-                ['insp.serial', ['SerialNumber', 'InternalSerialNumber']],
-                ['insp.lens', ['LensModel', 'Lens', 'LensID']],
-                ['insp.focal', ['FocalLength']],
-                ['insp.aperture', ['FNumber', 'Aperture']],
-                ['insp.shutter', ['ExposureTime', 'ShutterSpeed']],
-                ['insp.iso', ['ISO']],
-                ['insp.ec', ['ExposureCompensation']],
-                ['insp.flash', ['Flash']],
-              ] as [MessageKey, string[]][]
-            ).map(([label, names]) => {
-              const hit = tag(tags, ...names)
-              const masked = label === 'insp.serial' && hit ? `••••${hit[1].slice(-3)}` : hit?.[1]
-              return <Line key={label} t={t} label={t(label)} value={masked} k={hit?.[0]} lock />
-            })}
-            <p className="note">{t('insp.camera_note')}</p>
-          </div>
-        )}
+        {detail && section === 'camera' && (() => {
+          const lines = (
+            [
+              ['insp.make', ['Make'], false],
+              ['insp.model', ['Model'], false],
+              ['insp.serial', ['SerialNumber', 'InternalSerialNumber', 'BodySerialNumber'], true],
+              ['insp.firmware', ['FirmwareVersion', 'Firmware', 'Software'], false],
+              ['insp.lens', ['LensModel', 'Lens', 'LensID'], false],
+              ['insp.lens_serial', ['LensSerialNumber'], true],
+              ['insp.focal', ['FocalLength'], false],
+              ['insp.aperture', ['FNumber', 'Aperture'], false],
+              ['insp.shutter', ['ExposureTime', 'ShutterSpeed'], false],
+              ['insp.iso', ['ISO'], false],
+              ['insp.ec', ['ExposureCompensation'], false],
+              ['insp.metering', ['MeteringMode'], false],
+              ['insp.flash', ['Flash'], false],
+              ['insp.shutter_count', ['ShutterCount', 'ImageCount'], false],
+            ] as [MessageKey, string[], boolean][]
+          ).map(([label, names, secret]) => {
+            const hit = tag(tags, ...names)
+            const shown = secret && hit && !showSerial ? `••••${hit[1].slice(-3)}` : hit?.[1]
+            return { label, hit, shown, secret }
+          })
+          const anySecret = lines.some((l) => l.secret && l.hit)
+          return (
+            <div className="insp-section">
+              {lines.map((l) => (
+                <Line key={l.label} t={t} label={t(l.label)} value={l.shown} k={l.hit?.[0]} lock />
+              ))}
+              <div className="insp-actions">
+                {anySecret && (
+                  <button className="btn small plain" aria-pressed={showSerial} onClick={() => setShowSerial((v) => !v)}>
+                    {showSerial ? t('insp.hide_serials') : t('insp.show_serials')}
+                  </button>
+                )}
+                <button
+                  className="btn small"
+                  onClick={() =>
+                    void copyText(
+                      lines
+                        .filter((l) => l.hit)
+                        .map((l) => `${t(l.label)}: ${l.shown}`)
+                        .join('\n'),
+                      t('insp.copied'),
+                    )
+                  }
+                >
+                  {t('insp.copy_all')}
+                </button>
+              </div>
+              <p className="note">{t('insp.camera_note')}</p>
+            </div>
+          )
+        })()}
         {detail && section === 'creator' && (
           <div className="insp-section">
-            {field('creator') && <FieldBlock f={field('creator')!} t={t} />}
-            {field('copyright') && <FieldBlock f={field('copyright')!} t={t} />}
+            {field('creator') && <FieldBlock f={field('creator')!} t={t} id={id} />}
+            {field('copyright') && <FieldBlock f={field('copyright')!} t={t} id={id} />}
             <Line t={t} label={t('insp.credit')} value={tag(tags, 'Credit')?.[1]} k={tag(tags, 'Credit')?.[0]} lock />
             <Line t={t} label={t('insp.website')} value={tag(tags, 'CreatorWorkURL', 'WebStatement')?.[1]} k={tag(tags, 'CreatorWorkURL', 'WebStatement')?.[0]} lock />
             <Line t={t} label={t('insp.email')} value={tag(tags, 'CreatorWorkEmail')?.[1]} k={tag(tags, 'CreatorWorkEmail')?.[0]} lock />
@@ -240,10 +345,13 @@ export function FileInspector({ id }: { id: number }) {
         )}
         {detail && section === 'location' && (
           <div className="insp-section">
-            {field('gps') && <FieldBlock f={field('gps')!} t={t} />}
+            {field('gps') && <FieldBlock f={field('gps')!} t={t} id={id} />}
+            {dms(field('gps')?.value) && <Line t={t} label={t('insp.dms')} value={dms(field('gps')?.value)} />}
             <Line t={t} label={t('insp.altitude')} value={tag(tags, 'GPSAltitude')?.[1]} k={tag(tags, 'GPSAltitude')?.[0]} />
             <Line t={t} label={t('insp.country')} value={tag(tags, 'Country', 'Country-PrimaryLocationName')?.[1]} k={tag(tags, 'Country', 'Country-PrimaryLocationName')?.[0]} lock />
+            <Line t={t} label={t('insp.region')} value={tag(tags, 'State', 'Province-State')?.[1]} k={tag(tags, 'State', 'Province-State')?.[0]} lock />
             <Line t={t} label={t('insp.city')} value={tag(tags, 'City')?.[1]} k={tag(tags, 'City')?.[0]} lock />
+            <Line t={t} label={t('insp.place')} value={tag(tags, 'Location', 'Sub-location')?.[1]} k={tag(tags, 'Location', 'Sub-location')?.[0]} lock />
             {writesTo === 'sidecar' || writesTo === 'new_sidecar' ? (
               <div className="tone warn insp-error">{t('insp.raw_gps_note')}</div>
             ) : null}
@@ -251,6 +359,13 @@ export function FileInspector({ id }: { id: number }) {
         )}
         {detail && section === 'basic' && (
           <div className="insp-section">
+            <div className="embedded-preview">
+              {preview ? (
+                <img src={preview} alt={t('insp.preview_alt')} width={112} />
+              ) : (
+                <span className="faint">{preview === undefined ? t('insp.reading') : t('insp.preview_none')}</span>
+              )}
+            </div>
             <Line t={t} label={t('insp.title')} value={tag(tags, 'Title', 'ObjectName')?.[1]} k={tag(tags, 'Title', 'ObjectName')?.[0]} lock />
             <Line t={t} label={t('insp.description')} value={tag(tags, 'Description', 'ImageDescription', 'Caption-Abstract')?.[1]} k={tag(tags, 'Description', 'ImageDescription', 'Caption-Abstract')?.[0]} lock />
             <Line t={t} label={t('insp.rating')} value={tag(tags, 'Rating')?.[1]} k={tag(tags, 'Rating')?.[0]} lock />
@@ -261,9 +376,20 @@ export function FileInspector({ id }: { id: number }) {
         )}
         {detail && section === 'advanced' && (
           <div className="insp-section">
-            <input className="input ui adv-filter" placeholder={t('insp.filter_tags')} value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <div className="adv-tools">
+              <input className="input ui adv-filter" placeholder={t('insp.filter_tags')} value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <select className="input ui" value={group} onChange={(e) => setGroup(e.target.value)} aria-label={t('insp.group')}>
+                <option value="">{t('insp.all_groups')}</option>
+                {[...new Set(Object.keys(tags).map((k) => k.split(':')[0]))].sort().map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="adv-list">
               {Object.entries(tags)
+                .filter(([k]) => !group || k.split(':')[0] === group)
                 .filter(([k, v]) => !filter || k.toLowerCase().includes(filter.toLowerCase()) || v.toLowerCase().includes(filter.toLowerCase()))
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([k, v]) => (
@@ -274,6 +400,9 @@ export function FileInspector({ id }: { id: number }) {
                     <span className="mono ellipsis selectable" title={v}>
                       {v}
                     </span>
+                    <button className="btn plain adv-copy" title={t('insp.copy')} aria-label={`${t('insp.copy')} ${k}`} onClick={() => void copyText(`${k}: ${v}`, t('insp.copied'))}>
+                      ⧉
+                    </button>
                   </div>
                 ))}
             </div>

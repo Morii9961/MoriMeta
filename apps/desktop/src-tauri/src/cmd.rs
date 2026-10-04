@@ -349,6 +349,28 @@ pub async fn asset_detail(app: AppHandle, id: u64) -> Res<inspect::AssetDetail> 
     .map_err(ue)?
 }
 
+/// The Inspector's embedded preview (SCREEN_SPEC §2): the file's own JPEG thumbnail as a
+/// `data:` URL (the CSP allows images only from the app and `data:`), or None.
+#[tauri::command]
+pub async fn asset_preview(app: AppHandle, id: u64) -> Res<Option<String>> {
+    use base64::Engine as _;
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = paths_of(&core, &[id])?.remove(0);
+        let jpeg = with_reader(&core, |engine| {
+            inspect::embedded_preview(engine, &path).map_err(ue)
+        })?;
+        Ok(jpeg.map(|b| {
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(b)
+            )
+        }))
+    })
+    .await
+    .map_err(ue)?
+}
+
 #[tauri::command]
 pub async fn selection_aggregate(
     app: AppHandle,

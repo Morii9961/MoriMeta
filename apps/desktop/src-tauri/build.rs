@@ -11,6 +11,7 @@ const COMMANDS: &[&str] = &[
     "rescan",
     "session_clear",
     "asset_detail",
+    "asset_preview",
     "selection_aggregate",
     "attention",
     "clear_read_only",

@@ -434,6 +434,47 @@ fn plan_progress_and_cancel() {
     lab.close();
 }
 
+/// SCREEN_SPEC §2: the Inspector's embedded preview is the file's own JPEG thumbnail, read as
+/// data; a file without one, or whose thumbnail is not a JPEG, gives none.
+#[test]
+fn embedded_preview_is_only_ever_a_jpeg() {
+    let Some(mut lab) = Lab::new("preview", 1) else {
+        return;
+    };
+    let images = repo()
+        .join("research/.work/exiftool")
+        .join(version().unwrap())
+        .join("src")
+        .join(format!("Image-ExifTool-{}", version().unwrap()))
+        .join("t/images");
+    let photos = lab.files[0].parent().unwrap().to_path_buf();
+    for n in ["ExifTool.jpg", "Nikon.jpg"] {
+        std::fs::copy(images.join(n), photos.join(n)).unwrap();
+    }
+    let thumb = inspect::embedded_preview(&mut lab.engines[0], &photos.join("ExifTool.jpg"))
+        .unwrap()
+        .expect("ExifTool.jpg carries a JPEG thumbnail");
+    assert!(
+        thumb.starts_with(&[0xff, 0xd8, 0xff]) && thumb.len() < 4096,
+        "{}",
+        thumb.len()
+    );
+    // Writer.jpg has none; Nikon.jpg's is not a valid JPEG (ExifTool warns about it)
+    assert!(
+        inspect::embedded_preview(&mut lab.engines[0], &lab.files[0])
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        inspect::embedded_preview(&mut lab.engines[0], &photos.join("Nikon.jpg"))
+            .unwrap()
+            .is_none()
+    );
+    // reading changed nothing
+    assert_eq!(lab.hashes(), lab.before);
+    lab.close();
+}
+
 /// ARCHITECTURE §5.2 `asset_detail` and `selection_aggregate`: field views with their sources,
 /// every raw tag, and per-field value counts that show a mixed selection.
 #[test]

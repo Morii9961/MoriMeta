@@ -15,6 +15,7 @@
     "allow-rescan",
     "allow-session-clear",
     "allow-asset-detail",
+    "allow-asset-preview",
     "allow-selection-aggregate",
     "allow-attention",
     "allow-clear-read-only",

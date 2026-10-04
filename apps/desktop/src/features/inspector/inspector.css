@@ -42,7 +42,7 @@
 
 .adv-filter { width: 100%; height: 22px; }
 .adv-list { display: flex; flex-direction: column; }
-.adv-row { display: grid; grid-template-columns: 45% 55%; gap: 8px; height: 20px; align-items: center; font-size: 11px; border-bottom: 1px solid var(--border-subtle); }
+.adv-row { display: grid; grid-template-columns: 45% minmax(0, 1fr) auto; gap: 8px; height: 20px; align-items: center; font-size: 11px; border-bottom: 1px solid var(--border-subtle); }
 .adv-row:hover { background: var(--bg-hover); }
 
 .batch-note { margin: 8px 12px 0; font-size: 11px; }
@@ -90,3 +90,16 @@
 .small-ack { margin: 8px 12px 0; padding: 4px 8px; font-size: 11.5px; }
 .result-list { display: flex; flex-direction: column; gap: 1px; }
 .result-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; font-size: 11px; height: 18px; align-items: center; }
+
+/* SCREEN_SPEC §2 additions */
+.insp-actions, .conflict-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.embedded-preview {
+  width: 112px; min-height: 64px; display: grid; place-items: center; border: 1px solid var(--border-pane);
+  border-radius: var(--radius-sm); background: var(--bg-input); font-size: 11px; text-align: center; padding: 4px;
+}
+.embedded-preview img { display: block; max-width: 112px; height: auto; }
+.adv-tools { display: flex; gap: 6px; }
+.adv-tools .adv-filter { flex: 1; min-width: 0; }
+.adv-row { position: relative; }
+.adv-copy { visibility: hidden; padding: 0 4px; height: 18px; font-size: 11px; }
+.adv-row:hover .adv-copy, .adv-copy:focus-visible { visibility: visible; }

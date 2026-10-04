@@ -15,7 +15,7 @@ use mm_domain::plan::Target;
 use mm_domain::snapshot::Snapshot;
 use serde::Serialize;
 
-use crate::engine::Engine;
+use crate::engine::{BinaryTag, Engine};
 use crate::planner::{PlanCtl, Policy, pair_sidecar, policy};
 use crate::{CoreError, normalize};
 
@@ -140,6 +140,28 @@ pub fn asset_detail(engine: &mut Engine, path: &Path) -> Result<AssetDetail, Cor
             .map(|(p, _)| p.to_string_lossy().into_owned()),
         sidecar_tags: sidecar.as_ref().and_then(|(_, s)| s.as_ref().map(flat)),
     })
+}
+
+/// The largest embedded preview the Inspector shows.
+const MAX_PREVIEW: usize = 1 << 20;
+
+/// The embedded JPEG preview of a file for the Inspector (SCREEN_SPEC §2, 112 px): its
+/// thumbnail, or a RAW's preview when it has none. Only JPEG data of at most 1 MiB is returned,
+/// for the WebView to show as an image. A cloud placeholder is not read.
+pub fn embedded_preview(engine: &mut Engine, path: &Path) -> Result<Option<Vec<u8>>, CoreError> {
+    let path = normalize(path)?;
+    if crate::is_placeholder(&path) {
+        return Err(CoreError::NotDownloaded(path.display().to_string()));
+    }
+    for tag in [BinaryTag::Thumbnail, BinaryTag::Preview] {
+        if let Some(b) = engine.read_binary(&path, tag)?
+            && b.len() <= MAX_PREVIEW
+            && b.starts_with(&[0xff, 0xd8, 0xff])
+        {
+            return Ok(Some(b));
+        }
+    }
+    Ok(None)
 }
 
 /// What the Session summary lists under "Needs attention" (SCREEN_SPEC Library): indexes into

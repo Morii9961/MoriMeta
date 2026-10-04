@@ -122,6 +122,7 @@ export const api = {
     call<{ folder: string; restored: number; without_backup: number; notes: string[] } | null>('restore_to', { opId }),
   about: () => call<About>('about'),
   thirdPartyNotices: () => call<string>('third_party_notices'),
+  assetPreview: (id: number) => call<string | null>('asset_preview', { id }),
   historyImport: () => call<HistoryImport | null>('history_import'),
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),

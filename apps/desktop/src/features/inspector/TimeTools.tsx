@@ -36,6 +36,24 @@ export function timeSummary(t: T, e: TimeEdit): string {
   }
 }
 
+/** `YYYY:MM:DD HH:MM:SS` → the panel's `YYYY-MM-DD` and `HH:MM:SS`. */
+function exifParts(v: string): [string, string] {
+  const [d = '', c = ''] = v.split(' ')
+  return [d.replace(/:/g, '-'), c]
+}
+
+/** `[+|-][Nd]HH:MM:SS` → the shift fields. */
+function shiftParts(by: string) {
+  const m = /^([+-]?)(?:(\d+)d)?(\d{1,2}):(\d{2}):(\d{2})$/.exec(by.trim())
+  if (!m) return { sign: '+', d: '0', h: '0', m: '0', s: '0' }
+  return { sign: m[1] === '-' ? '-' : '+', d: String(Number(m[2] ?? 0)), h: String(Number(m[3])), m: String(Number(m[4])), s: String(Number(m[5])) }
+}
+
+function stepParts(step: string) {
+  const p = shiftParts(step)
+  return { h: String(Number(p.d) * 24 + Number(p.h)), m: p.m, s: p.s }
+}
+
 export function TimeTools() {
   const t = useT()
   const selection = useApp((s) => s.selection)
@@ -44,15 +62,17 @@ export function TimeTools() {
   const staged = useApp((s) => s.staged)
   const stageEdit = useApp((s) => s.stageEdit)
   const setOpen = useApp((s) => s.setTimeToolsOpen)
+  // reopening the panel shows the staged parameters again
   const init = staged.time
+  const initTo = init?.mode === 'absolute' || init?.mode === 'preserve' ? init.to : init?.mode === 'sequence' ? init.start : null
   const [mode, setMode] = useState<Mode>(init?.mode ?? 'shift')
-  const [date, setDate] = useState('')
-  const [clock, setClock] = useState('')
-  const [shift, setShift] = useState({ sign: '+', d: '0', h: '0', m: '0', s: '0' })
-  const [step, setStep] = useState({ h: '0', m: '0', s: '1' })
-  const [order, setOrder] = useState<'time' | 'name'>('time')
-  const [orderConfirmed, setOrderConfirmed] = useState(false)
-  const [anchor, setAnchor] = useState<number | null>(null)
+  const [date, setDate] = useState(initTo ? exifParts(initTo)[0] : '')
+  const [clock, setClock] = useState(initTo ? exifParts(initTo)[1] : '')
+  const [shift, setShift] = useState(init?.mode === 'shift' ? shiftParts(init.by) : { sign: '+', d: '0', h: '0', m: '0', s: '0' })
+  const [step, setStep] = useState(init?.mode === 'sequence' ? stepParts(init.step) : { h: '0', m: '0', s: '1' })
+  const [order, setOrder] = useState<'time' | 'name'>(init?.mode === 'sequence' ? init.order : 'time')
+  const [orderConfirmed, setOrderConfirmed] = useState(init?.mode === 'sequence')
+  const [anchor, setAnchor] = useState<number | null>(init?.mode === 'preserve' ? init.anchor : null)
   const [digitized, setDigitized] = useState(staged.digitized ?? true)
 
   const files = useMemo(

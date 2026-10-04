@@ -32,6 +32,49 @@ impl KillSwitch {
     }
 }
 
+/// Standard base64 with padding, as ExifTool prints binary values in JSON; None when malformed.
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    fn val(c: u8) -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        } as u32)
+    }
+    let b = s.as_bytes();
+    if !b.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(b.len() / 4 * 3);
+    for (i, q) in b.chunks(4).enumerate() {
+        let last = i == b.len() / 4 - 1;
+        let pad = q.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 2 || (pad > 0 && !last) {
+            return None;
+        }
+        let mut n = 0u32;
+        for &c in &q[..4 - pad] {
+            n = (n << 6) | val(c)?;
+        }
+        n <<= 6 * pad as u32;
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..3 - pad]);
+    }
+    Some(out)
+}
+
+/// The binary tags [`Engine::read_binary`] may return.
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryTag {
+    /// The small embedded thumbnail (about 160 px).
+    Thumbnail,
+    /// The larger embedded preview (RAW files).
+    Preview,
+}
+
 /// A command that ran out of time (the session is restarted).
 const TIMED_OUT: &str = "ExifTool timed out";
 /// A command whose output passed the session's limit (the session is restarted).
@@ -429,6 +472,40 @@ impl Engine {
             .collect())
     }
 
+    /// One binary tag of one file (`-b`, base64 in the JSON output), decoded; None when the file
+    /// has no such tag. Only tags named here can be asked for.
+    pub fn read_binary(
+        &mut self,
+        path: &Path,
+        tag: BinaryTag,
+    ) -> Result<Option<Vec<u8>>, CoreError> {
+        let mut c = Command::read_json();
+        c.push(Line::option("-b"));
+        let (option, name) = match tag {
+            BinaryTag::Thumbnail => ("-ThumbnailImage", "ThumbnailImage"),
+            BinaryTag::Preview => ("-PreviewImage", "PreviewImage"),
+        };
+        c.push(Line::option(option));
+        c.push(path_line(path)?);
+        let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let out = self.exec(&c, read_timeout(bytes))?;
+        let arr = out
+            .json()
+            .map_err(|e| CoreError::Engine(format!("unparsable ExifTool output: {e}")))?;
+        let Some(text) = arr
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|o| o.get(name))
+            .and_then(|v| v.as_str())
+        else {
+            return Ok(None);
+        };
+        let Some(b64) = text.strip_prefix("base64:") else {
+            return Ok(None);
+        };
+        Ok(base64_decode(b64))
+    }
+
     /// `-ex <ops> -o <out> <source>`. `out` must not exist (`-o` never overwrites).
     pub fn write(&mut self, ops: &[TagOp], source: &Path, out: &Path) -> Result<Output, CoreError> {
         let mut c = Command::write();
@@ -493,6 +570,23 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base64_as_exiftool_prints_it() {
+        assert_eq!(base64_decode("").unwrap(), b"");
+        assert_eq!(base64_decode("/9j/").unwrap(), [0xff, 0xd8, 0xff]);
+        assert_eq!(base64_decode("TW9yaWk=").unwrap(), b"Morii");
+        assert_eq!(base64_decode("TW9yaU1ldGE=").unwrap(), b"MoriMeta");
+        assert_eq!(base64_decode("TW9y").unwrap(), b"Mor");
+        assert_eq!(base64_decode("TW8=").unwrap(), b"Mo");
+        assert_eq!(base64_decode("TQ==").unwrap(), b"M");
+        for bad in [
+            "TW9", "TW9y
+", "T===", "TQ==TW9y", "TW-y", "TW9y ",
+        ] {
+            assert!(base64_decode(bad).is_none(), "{bad}");
+        }
+    }
 
     #[test]
     fn never_written_tags_are_refused() {
