@@ -27,6 +27,7 @@ import type {
   RecoverySummary,
   HistoryImport,
   About,
+  DryRun,
   Setting,
   UpdateInfo,
 } from './types'
@@ -121,6 +122,7 @@ export const api = {
   restoreTo: (opId: string) =>
     call<{ folder: string; restored: number; without_backup: number; notes: string[] } | null>('restore_to', { opId }),
   about: () => call<About>('about'),
+  presetDryRun: (ids: number[], preset: Preset) => call<DryRun>('preset_dry_run', { ids, preset }),
   uiZoom: (percent: number) => call<void>('ui_zoom', { percent }),
   thirdPartyNotices: () => call<string>('third_party_notices'),
   assetPreview: (id: number) => call<string | null>('asset_preview', { id }),

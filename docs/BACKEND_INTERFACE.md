@@ -27,6 +27,7 @@
 |---|---|---|---|
 | `plan_create(selection, edits)` | `planner::plan_creator`、`plan_copyright`、`plan_gps`、`plan_capture_time` | `plan-creator` 等 | `PlanCtl`：进度、取消、并行读取会话数；值可用模板变量 |
 | `plan_create(preset_id)` | `planner::plan_preset`（`presets::mark_untrusted`、`presets::used`） | `plan-preset` | 条件基于原始快照；多字段合并为一个条目 |
+| `preset_dry_run(ids, preset)` | `planner::plan_preset` | — | 规则构建器的试运行：未保存的预设对最多 500 个文件规划，只读；Plan 不进入 PlanBook，无法确认或执行，也不更新预设的最近使用时间 |
 | 保存 Plan | `service::PlanBook::insert` | — | Plan 不可变，带来源（`PlanSource`） |
 | `plan_page` | `PlanBook::page` | — | 按状态筛选，每页 200 行；摘要含警告数 |
 | `plan_exclude` | `PlanBook::exclude` | `plan-exclude --seq` | 生成新版本；旧版本只读 |
@@ -78,3 +79,5 @@
 - 时区修正与"从参考同步"：按 DECISIONS D-18 属后续版本，不是 MVP 未完成项。
 - 适配层：`apps/desktop/src-tauri`（命令见 `src/cmd.rs`，前端镜像类型 `src/ipc/types.ts`，手工维护）。
 - `exec.workers` 在下一次执行或恢复前调整会话池；拒绝并行写入时保留当前操作的取消句柄，结束时自动清理。`undo_plan(op_id, force_seqs)` 显式指定冲突项，仍须预览与确认；`plan_again` 重新读取并规划；`recovery_keep` 保留所选文件现状。执行和恢复共用进度事件。Journal 重建已接入桌面启动：隔离重建、保留原 DB/WAL/SHM、哈希绑定的采用确认及中断继续；详情和限制见 `JOURNAL_REPAIR.md`。整个数据目录丢失且外部位置未登记时，设置 › 高级的“从备份文件夹找回历史…”（`history_import`，`mm-core::history::import_from_folder`）读回所选位置中缺少的操作：只读 MoriMeta 自己的记录并沿用重建的名称检查，读回的操作默认保留备份，随后照常运行中断恢复；该位置登记到 `backup-locations.txt`，CLI `rebuild-journal --from` 同样登记。
+- 界面辅助命令（不改动照片）：`about`（应用、ExifTool、字段注册表、WebView2 版本）、`third_party_notices`（安装包附带的第三方声明）、`ui_zoom(percent)`（窗口缩放，限 90/100/110/125）。
+

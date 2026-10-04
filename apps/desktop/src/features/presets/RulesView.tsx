@@ -9,6 +9,9 @@ import { api, errorText } from '../../ipc'
 import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
 import { usePresets } from './PresetsView'
+import { useVisibleItems } from '../library/hooks'
+import { showPreview } from '../../app/actions'
+import type { DryRun } from '../../ipc/types'
 import {
   ACTION_KINDS,
   CONDITION_KINDS,
@@ -134,8 +137,50 @@ export function RulesView() {
   }, [id, list])
 
   const dirty = JSON.stringify(draft) !== saved
+  // Dry run (SCREEN_SPEC §5): the draft against some files of the Session, read only
+  const assets = useApp((s) => s.assets)
+  const selection = useApp((s) => s.selection)
+  const visible = useVisibleItems()
+  const [against, setAgainst] = useState<'selection' | 'filter' | 'sample'>('selection')
+  const [dry, setDry] = useState<DryRun | null>(null)
+  const [dryBusy, setDryBusy] = useState(false)
+  const [dryError, setDryError] = useState<string | null>(null)
+  const targets = {
+    selection: assets.filter((a) => selection.has(a.id)).map((a) => a.id),
+    filter: visible.map((it) => it.asset.id),
+    sample: assets.slice(0, 100).map((a) => a.id),
+  }
+  useEffect(() => {
+    setDry(null)
+    setDryError(null)
+  }, [draft, against])
   const problems = useMemo(() => draft.rules.map((r) => ruleProblems(t, r)), [draft, t])
   const enabled = draft.rules.filter((r) => r.enabled).length
+  // incomplete rules are left out of the dry run, as the footer says
+  const runnable: Preset = { ...draft, rules: draft.rules.filter((r, i) => r.enabled && problems[i].length === 0) }
+  const leftOut = draft.rules.map((r, i) => (r.enabled && problems[i].length ? i + 1 : 0)).filter(Boolean)
+  const runDry = async () => {
+    setDryBusy(true)
+    setDryError(null)
+    try {
+      setDry(await api.presetDryRun(targets[against], runnable))
+    } catch (e) {
+      setDryError(errorText(e))
+    } finally {
+      setDryBusy(false)
+    }
+  }
+  const previewPlan = async () => {
+    if (!id || dirty) return
+    const ids = targets[against]
+    useApp.getState().setStage({ kind: 'planning', done: 0, total: ids.length, stage: 'files' })
+    try {
+      showPreview(await api.planPreset(ids, id), 'edit')
+    } catch (e) {
+      useApp.getState().setStage({ kind: 'library' })
+      notify('error', errorText(e))
+    }
+  }
 
   const setRule = (i: number, r: Rule) => setDraft({ ...draft, rules: draft.rules.map((x, k) => (k === i ? r : x)) })
   const move = (i: number, d: number) => {
@@ -325,6 +370,69 @@ export function RulesView() {
       </div>
       <aside className="pane-inspector">
         <div className="pane-scroll insp">
+          <div className="insp-section dry-run">
+            <div className="section-label">{t('rules.dry_run')}</div>
+            <label className="popover-field">
+              <span className="field-label">{t('rules.test_against')}</span>
+              <select className="input ui" value={against} onChange={(e) => setAgainst(e.target.value as typeof against)}>
+                <option value="selection">{t('rules.against_selection', { n: targets.selection.length })}</option>
+                <option value="filter">{t('rules.against_filter', { n: targets.filter.length })}</option>
+                <option value="sample">{t('rules.against_sample', { n: targets.sample.length })}</option>
+              </select>
+            </label>
+            <button className="btn small" disabled={dryBusy || !targets[against].length || runnable.rules.length === 0} onClick={runDry}>
+              {dryBusy ? t('rules.dry_running') : t('rules.dry_run_now')}
+            </button>
+            {!targets[against].length && <p className="note">{t('rules.dry_no_files')}</p>}
+            {dryError && <div className="tone error selectable">{bt(dryError)}</div>}
+            {dry && (
+              <>
+                <p className="mono">
+                  {t('rules.dry_files', { n: dry.files })} · {t('rules.dry_changes', { n: dry.view.summary.ready })}
+                </p>
+                <ul className="facts">
+                  <li>{t('rules.dry_kinds', { add: dry.view.kinds.add, modify: dry.view.kinds.modify, remove: dry.view.kinds.remove })}</li>
+                  <li>{t('rules.dry_unmatched', { n: dry.view.kinds.no_change })}</li>
+                  {dry.view.kinds.warnings > 0 && <li className="glyph-warn">{t('rules.dry_warnings', { n: dry.view.kinds.warnings })}</li>}
+                  {dry.view.kinds.blocked > 0 && <li className="glyph-warn">{t('rules.dry_blocked', { n: dry.view.kinds.blocked })}</li>}
+                  {dry.view.kinds.unsupported > 0 && <li className="faint">{t('rules.dry_unsupported', { n: dry.view.kinds.unsupported })}</li>}
+                  <li className="glyph-ok">{t('rules.dry_protected')}</li>
+                </ul>
+                {dry.view.field_counts.length > 0 && (
+                  <>
+                    <div className="section-label">{t('rules.dry_by_field')}</div>
+                    <ul className="facts">
+                      {dry.view.field_counts.map(([f, n]) => (
+                        <li key={f}>
+                          {fieldLabel(t, f)}: <span className="mono">{n}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {dry.samples.length > 0 && (
+                  <>
+                    <div className="section-label">{t('rules.dry_samples')}</div>
+                    {dry.samples.map((s) => (
+                      <div key={s.name} className="dry-sample">
+                        <div className="mono ellipsis">{s.name}</div>
+                        {s.changes.map(([f, before, after]) => (
+                          <div key={f} className="mono faint ellipsis" title={`${before} → ${after}`}>
+                            {fieldLabel(t, f)}: {before || '—'} → <span className="glyph-mod">{after || '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+            {leftOut.length > 0 && <p className="note glyph-warn">{t('rules.left_out', { rules: leftOut.map((n) => String(n).padStart(2, '0')).join(', ') })}</p>}
+            <button className="btn small accent" disabled={!id || dirty || !targets[against].length} title={dirty ? t('rules.save_first') : undefined} onClick={previewPlan}>
+              {t('rules.preview_plan')}
+            </button>
+            {dirty && <p className="note">{t('rules.save_first')}</p>}
+          </div>
           <div className="insp-section">
             <div className="section-label">{t('rules.checks')}</div>
             {error && <div className="tone error selectable">{bt(error)}</div>}

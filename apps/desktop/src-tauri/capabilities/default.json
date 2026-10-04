@@ -58,6 +58,7 @@
     "allow-preset-import",
     "allow-preset-export",
     "allow-plan-preset",
+    "allow-preset-dry-run",
     "allow-clean-plan",
     "allow-clean-entry",
     "allow-clean-export",

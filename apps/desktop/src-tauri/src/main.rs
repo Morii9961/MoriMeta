@@ -122,6 +122,7 @@ fn main() {
             cmd::preset_import,
             cmd::preset_export,
             cmd::plan_preset,
+            cmd::preset_dry_run,
             updater::update_status,
             updater::update_check,
             updater::update_download,

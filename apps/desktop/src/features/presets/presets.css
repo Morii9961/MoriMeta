@@ -52,3 +52,7 @@
 .scope-row.disabled { color: var(--text-disabled); cursor: default; }
 .facts { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
 
+/* SCREEN_SPEC §5 Dry run */
+.dry-run { display: flex; flex-direction: column; gap: 6px; }
+.dry-sample { padding: 4px 0; border-bottom: 1px solid var(--border-subtle); font-size: 11px; }
+

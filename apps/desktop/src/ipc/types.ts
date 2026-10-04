@@ -23,6 +23,13 @@ export interface RecoverySummary {
   other: number
 }
 
+/** Rule builder › Dry run (`cmd::DryRunDto`). */
+export interface DryRun {
+  view: PlanView
+  files: number
+  samples: { name: string; changes: [string, string, string][] }[]
+}
+
 /** Help › About MoriMeta (`cmd::AboutDto`). */
 export interface About {
   version: string

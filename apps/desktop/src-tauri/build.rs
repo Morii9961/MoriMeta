@@ -59,6 +59,7 @@ const COMMANDS: &[&str] = &[
     "preset_import",
     "preset_export",
     "plan_preset",
+    "preset_dry_run",
     "update_status",
     "update_check",
     "update_download",

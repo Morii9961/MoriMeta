@@ -1107,6 +1107,68 @@ pub async fn plan_preset(app: AppHandle, ids: Vec<u64>, preset_id: String) -> Re
     .map_err(ue)?
 }
 
+/// The most files a dry run reads (it is a check while editing, not the Preview).
+const DRY_RUN_MAX: usize = 500;
+
+#[derive(Serialize)]
+pub struct DrySample {
+    pub name: String,
+    /// (field, before, after), values joined with "; ".
+    pub changes: Vec<(String, String, String)>,
+}
+
+#[derive(Serialize)]
+pub struct DryRunDto {
+    pub view: PlanView,
+    /// Files actually read (the first [`DRY_RUN_MAX`] of those asked for).
+    pub files: usize,
+    pub samples: Vec<DrySample>,
+}
+
+/// Rule builder › Dry run (SCREEN_SPEC §5): the Preset being edited, saved or not, planned over
+/// some files. Read only: the Plan is not kept, so it can never be confirmed or applied, and the
+/// Preset's last use is not touched.
+#[tauri::command]
+pub async fn preset_dry_run(app: AppHandle, ids: Vec<u64>, preset: Preset) -> Res<DryRunDto> {
+    let core = app.state::<Arc<Core>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        preset.validate()?;
+        let ids = &ids[..ids.len().min(DRY_RUN_MAX)];
+        let paths = paths_of(&core, ids)?;
+        let ctl = plan_ctl(&core);
+        let plan = with_planner(&core, |engine| {
+            planner::plan_preset(engine, &paths, &preset, &ctl).map_err(ue)
+        })?;
+        let join = |v: &Option<Vec<String>>| v.as_ref().map(|v| v.join("; ")).unwrap_or_default();
+        let samples = plan
+            .entries
+            .iter()
+            .filter(|e| {
+                matches!(e.status, mm_domain::plan::EntryStatus::Ready) && !e.changes.is_empty()
+            })
+            .take(5)
+            .map(|e| DrySample {
+                name: std::path::Path::new(e.raw.as_deref().unwrap_or(&e.path))
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                changes: e
+                    .changes
+                    .iter()
+                    .map(|c| (c.field.clone(), join(&c.before), join(&c.after)))
+                    .collect(),
+            })
+            .collect();
+        Ok(DryRunDto {
+            view: PlanView::of(&plan),
+            files: paths.len(),
+            samples,
+        })
+    })
+    .await
+    .map_err(ue)?
+}
+
 // ---------------------------------------------------------------------------------------------
 // Clean Export (D-15 (c), PRODUCT_SPEC §6.8.3)
 

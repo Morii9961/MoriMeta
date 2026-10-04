@@ -303,6 +303,11 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   },
   export_log: () => 'D:\\MoriMeta-op.json',
   ui_zoom: () => undefined,
+  preset_dry_run: (a) => {
+    const ids = (a.ids as number[]).slice(0, 500)
+    const view = planBatch(ids, { copyright: { op: 'set', value: '© 2026 Morii' } })
+    return { view, files: ids.length, samples: ids.slice(0, 3).map((id) => ({ name: assets.find((x) => x.id === id)?.name ?? '', changes: [['copyright', '', '© 2026 Morii']] })) }
+  },
   about: () => ({ version: '0.1.0', exiftool: '13.59', registry_version: 0, webview2: '141.0.3537.71', os: 'windows x86_64', dev: true }),
   third_party_notices: () => '# Third-party notices\n\n(development mock: the real file is generated when the installer is staged)\n',
   asset_preview: () => null,
