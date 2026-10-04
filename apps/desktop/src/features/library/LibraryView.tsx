@@ -10,6 +10,7 @@ import { Sidebar } from './Sidebar'
 import { MetadataTable } from './MetadataTable'
 import { EmptyLibrary } from './EmptyLibrary'
 import { InspectorSlot } from '../inspector/InspectorSlot'
+import { TimePreview } from '../inspector/TimePreview'
 import { api } from '../../ipc'
 import { ColumnChooser } from './ColumnChooser'
 import { ConditionRow } from './Conditions'
@@ -106,7 +107,9 @@ export function LibraryView() {
             </button>
           </div>
         )}
-        {assets.length === 0 ? (
+        {timeToolsOpen && assets.length > 0 ? (
+          <TimePreview />
+        ) : assets.length === 0 ? (
           <EmptyLibrary />
         ) : visible.length === 0 ? (
           <div className="table-empty">

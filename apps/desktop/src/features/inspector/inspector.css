@@ -103,3 +103,24 @@
 .adv-row { position: relative; }
 .adv-copy { visibility: hidden; padding: 0 4px; height: 18px; font-size: 11px; }
 .adv-row:hover .adv-copy, .adv-copy:focus-visible { visibility: visible; }
+
+/* SCREEN_SPEC §4: the centre pane while the time tools are open */
+.time-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.time-preview.empty { padding: 24px; }
+.time-summary { flex: none; display: flex; gap: 8px; align-items: center; height: 30px; padding: 0 10px; border-bottom: 1px solid var(--border-pane); }
+.time-table .mrow { width: 100%; }
+.tcol-n { width: 48px; text-align: right; }
+.tcol-name { width: 230px; overflow: hidden; text-overflow: ellipsis; }
+.tcol-to { width: 110px; }
+.tcol-time { width: 170px; }
+.tcol-change { width: 110px; }
+.tint { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.pair-mark { color: var(--accent); font-size: 9px; }
+.timeline { flex: none; height: 128px; margin: 0; border-top: 1px solid var(--border-pane); background: var(--bg-panel); display: flex; flex-direction: column; }
+.timeline svg { flex: 1; width: 100%; min-height: 0; }
+.tl-axis { stroke: var(--border-strong); stroke-width: 1; }
+.tl-mark line { stroke: var(--text-muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tl-pair line { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.tl-link { opacity: 0.35; }
+.timeline-legend { display: flex; justify-content: space-between; gap: 8px; padding: 0 10px 4px; font-size: 10.5px; color: var(--text-secondary); }
+

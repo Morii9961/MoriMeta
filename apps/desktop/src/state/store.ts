@@ -23,6 +23,7 @@ import {
   type Layout,
   type Saved,
 } from '../features/library/layout'
+import type { TimeRow } from '../features/inspector/timeRows'
 
 export type Module = 'library' | 'presets' | 'rules' | 'history'
 
@@ -54,6 +55,8 @@ interface AppState {
   sidebarOpen: boolean
   inspectorOpen: boolean
   timeToolsOpen: boolean
+  /** The time tools' preview rows for the centre pane (SCREEN_SPEC §4). */
+  timeRows: TimeRow[] | null
 
   assets: Asset[]
   rows: Map<number, Row>
@@ -98,6 +101,7 @@ interface AppState {
   toggleSidebar: () => void
   toggleInspector: () => void
   setTimeToolsOpen: (o: boolean) => void
+  setTimeRows: (r: TimeRow[] | null) => void
 
   addAssets: (a: Asset[], s: ImportSummary) => void
   putRows: (rows: Row[]) => void
@@ -134,6 +138,7 @@ export const useApp = create<AppState>((set) => ({
   sidebarOpen: true,
   inspectorOpen: true,
   timeToolsOpen: false,
+  timeRows: null,
 
   assets: [],
   rows: new Map(),
@@ -178,7 +183,8 @@ export const useApp = create<AppState>((set) => ({
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
-  setTimeToolsOpen: (timeToolsOpen) => set({ timeToolsOpen }),
+  setTimeToolsOpen: (timeToolsOpen) => set(timeToolsOpen ? { timeToolsOpen } : { timeToolsOpen, timeRows: null }),
+  setTimeRows: (timeRows) => set({ timeRows }),
 
   addAssets: (a, summary) =>
     set((s) => {

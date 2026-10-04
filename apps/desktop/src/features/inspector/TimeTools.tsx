@@ -3,12 +3,13 @@
 // modes are executable; Change time zone, Sync from reference, Range and Random are listed and
 // disabled (1.x; DECISIONS H-3). Parameters → a result preview → Add to plan.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { TimeEdit } from '../../ipc/types'
 import { useApp } from '../../state/store'
 import { useT, type MessageKey, type T } from '../../i18n'
 import { openPreview } from '../../app/actions'
 import { formatExif, formatShift, localFromParts, naturalCompare, parseExif, parseShift } from './timeMath'
+import { finishRows, summarize, type TimeRow } from './timeRows'
 
 type Mode = 'absolute' | 'shift' | 'sequence' | 'preserve'
 
@@ -79,7 +80,7 @@ export function TimeTools() {
     () =>
       assets
         .filter((a) => selection.has(a.id) && a.writable)
-        .map((a) => ({ a, now: rows.get(a.id)?.capture_time ?? null })),
+        .map((a) => ({ a, now: rows.get(a.id)?.capture_time ?? null, writesTo: rows.get(a.id)?.writes_to ?? null })),
     [assets, selection, rows],
   )
 
@@ -113,7 +114,7 @@ export function TimeTools() {
 
   // result preview: now → new for the first files
   const result = useMemo(() => {
-    const out: { name: string; now: string | null; next: string | null; pair?: boolean }[] = []
+    const out: { id: number; name: string; folder: string; writesTo: string | null; now: string | null; next: string | null }[] = []
     const e = built.edit
     if (!e) return out
     if (e.mode === 'sequence') {
@@ -131,7 +132,7 @@ export function TimeTools() {
       for (const f of sorted) {
         const k = key(f)
         if (!positions.has(k)) positions.set(k, positions.size)
-        out.push({ name: f.a.name, now: f.now, next: formatExif(start + positions.get(k)! * stepSec), pair: true })
+        out.push({ id: f.a.id, name: f.a.name, folder: f.a.folder, writesTo: f.writesTo, now: f.now, next: formatExif(start + positions.get(k)! * stepSec) })
       }
       return out
     }
@@ -144,11 +145,27 @@ export function TimeTools() {
     for (const f of files) {
       const now = parseExif(f.now)
       const next = e.mode === 'absolute' ? e.to : now === null || delta === null ? null : formatExif(now + delta)
-      out.push({ name: f.a.name, now: f.now, next })
+      out.push({ id: f.a.id, name: f.a.name, folder: f.a.folder, writesTo: f.writesTo, now: f.now, next })
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(built.edit), files, stepSec])
+
+  // the centre pane shows every file: now, after, change, order status (SCREEN_SPEC §4)
+  const previewRows: TimeRow[] | null = useMemo(() => (built.edit ? finishRows(result) : null), [result, built.edit])
+  const setTimeRows = useApp((s) => s.setTimeRows)
+  useEffect(() => setTimeRows(previewRows), [previewRows, setTimeRows])
+  const sum = previewRows ? summarize(previewRows) : null
+  const reset = () => {
+    setDate('')
+    setClock('')
+    setShift({ sign: '+', d: '0', h: '0', m: '0', s: '0' })
+    setStep({ h: '0', m: '0', s: '1' })
+    setOrder('time')
+    setOrderConfirmed(false)
+    setAnchor(null)
+    setDigitized(true)
+  }
 
   const noTime = files.filter((f) => !parseExif(f.now)).length
   const addToPlan = () => {
@@ -254,20 +271,15 @@ export function TimeTools() {
 
         <div className="insp-section">
           <div className="section-label">{t('time.result')}</div>
-          {built.why ? (
+          {built.why || !sum ? (
             <p className="note">{built.why}</p>
           ) : (
             <div className="result-list">
-              {result.slice(0, 12).map((r, i) => (
-                <div key={i} className="result-row">
-                  <span className="mono ellipsis" title={r.name}>
-                    {r.name}
-                  </span>
-                  <span className="mono faint">{r.now ?? '—'}</span>
-                  <span className="mono glyph-mod">→ {r.next ?? '—'}</span>
-                </div>
-              ))}
-              {result.length > 12 && <div className="faint mono">+{result.length - 12}</div>}
+              <div className="mono">{t('time.sum_changing', { n: sum.changing })}</div>
+              <div className={`mono ${sum.moved || sum.tied ? 'glyph-warn' : 'glyph-ok'}`}>
+                {sum.moved || sum.tied ? t('time.sum_order_changed', { moved: sum.moved, tied: sum.tied }) : t('time.sum_order_kept')}
+              </div>
+              <div className="note">{t('time.see_table')}</div>
             </div>
           )}
           {noTime > 0 && mode !== 'absolute' && (
@@ -284,6 +296,9 @@ export function TimeTools() {
       <div className="batch-footer">
         <button className="btn small" onClick={() => setOpen(false)}>
           {t('common.close')}
+        </button>
+        <button className="btn small plain" onClick={reset}>
+          {t('time.reset')}
         </button>
         <div className="toolbar-spacer" />
         <button className="btn small" disabled={!built.edit} onClick={addToPlan} title={built.why ?? undefined}>
