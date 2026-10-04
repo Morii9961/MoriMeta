@@ -9,6 +9,7 @@ import { useApp, stagedCount } from '../../state/store'
 import { useT, fieldLabel, type T } from '../../i18n'
 import { openPreview, previewBlocker } from '../../app/actions'
 import { timeSummary } from './TimeTools'
+import { gpsPosition, parseGpsInput } from './gpsInput'
 
 type Field = 'creator' | 'copyright' | 'gps'
 
@@ -97,14 +98,14 @@ function MixedValueField({ field, ids, agg }: { field: Field; ids: number[]; agg
     } else if (field === 'copyright') {
       stageEdit({ copyright: { op: 'set', value } })
     } else {
-      const parts = value.split(',').map((x) => x.trim())
-      const nums = parts.map(Number)
-      if (parts.length < 2 || parts.length > 3 || nums.some((n) => !Number.isFinite(n)) || Math.abs(nums[0]) > 90 || Math.abs(nums[1]) > 180) {
+      // decimal or degrees/minutes/seconds; the backend is always given decimal degrees
+      const p = parseGpsInput(value)
+      if (!p) {
         setInvalid(t('batch.gps_format'))
         unstage(field)
         return
       }
-      stageEdit({ gps: { op: 'set', position: parts.join(',') } })
+      stageEdit({ gps: { op: 'set', position: gpsPosition(p) } })
     }
   }
 

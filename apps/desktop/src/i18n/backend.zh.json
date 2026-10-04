@@ -238,6 +238,8 @@
     "download and verify the update first": "请先下载并验证更新",
     "the update signature has no signed version": "更新签名缺少签名版本",
     "the update signature has several signed versions": "更新签名包含多个签名版本",
-    "the signed installer version does not match a newer update": "签名的安装包版本与新版本信息不一致"
+    "the signed installer version does not match a newer update": "签名的安装包版本与新版本信息不一致",
+    "{}: use lat,lon[,alt] in decimal degrees, or degrees, minutes and seconds with N/S and E/W": "{1}：请使用十进制度数的 纬度,经度[,海拔]，或带 N/S 与 E/W 的度分秒",
+    "{}: use lat,lon[,alt] in decimal degrees and metres": "{1}：请使用十进制度数和米表示的 纬度,经度[,海拔]"
   }
 }

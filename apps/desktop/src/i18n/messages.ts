@@ -343,7 +343,7 @@ export const messages = {
   'batch.clear': ['Clear', '清除'],
   'batch.remove': ['Remove', '移除'],
   'batch.empty_not_allowed': ['Set needs a value. To remove the field, use Clear.', '设置需要一个值。要移除该字段，请使用清除。'],
-  'batch.gps_format': ['Latitude, longitude[, altitude] in decimal degrees, e.g. 35.6586, 139.7454', '十进制度数的纬度, 经度[, 海拔]，例如 35.6586, 139.7454'],
+  'batch.gps_format': ['Latitude, longitude[, altitude] in decimal degrees (35.6586, 139.7454) or in degrees, minutes and seconds with N/S and E/W (35°39′31″N 139°44′43″E)', '十进制度数的纬度, 经度[, 海拔]（35.6586, 139.7454），或带 N/S 与 E/W 的度分秒（35°39′31″N 139°44′43″E）'],
   'batch.ph_creator': ['Name; another name', '姓名；另一个姓名'],
   'batch.ph_copyright': ['© {year} Your Name', '© {year} 你的名字'],
   'batch.ph_gps': ['35.6586, 139.7454', '35.6586, 139.7454'],

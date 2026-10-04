@@ -48,8 +48,15 @@ pub struct GeoPoint {
 }
 
 impl GeoPoint {
-    /// `lat,lon[,alt]` in decimal degrees and metres, range-checked.
+    /// `lat,lon[,alt]` in decimal degrees and metres, or a position in degrees, minutes and
+    /// seconds with hemisphere letters as maps and cameras print it (`35°41′22.2″N 139°41′30.1″E`,
+    /// `N 35 41.37, E 139 41.5`), range-checked.
     pub fn parse(s: &str) -> Result<GeoPoint, String> {
+        if s.chars().any(|c| "NSEWnsew°º'\"′″’”".contains(c)) {
+            let p = parse_dms(s)?;
+            p.validate()?;
+            return Ok(p);
+        }
         let parts: Vec<f64> = s
             .split(',')
             .map(|p| p.trim().parse::<f64>())
@@ -94,6 +101,98 @@ impl GeoPoint {
             None => format!("{:.7}, {:.7}", self.lat, self.lon),
         }
     }
+}
+
+/// Degrees[, minutes[, seconds]] per coordinate, each with its hemisphere letter before or
+/// after it; latitude and longitude in either order. Minutes and seconds below 60; a decimal
+/// part only on the last number given.
+fn parse_dms(s: &str) -> Result<GeoPoint, String> {
+    let bad = || {
+        format!(
+            "{s:?}: use lat,lon[,alt] in decimal degrees, or degrees, minutes and seconds with N/S and E/W"
+        )
+    };
+    enum Tok {
+        Num(f64, bool),
+        Hemi(char),
+    }
+    let mut toks = Vec::new();
+    let mut num = String::new();
+    let flush = |num: &mut String, toks: &mut Vec<Tok>| -> Result<(), String> {
+        if !num.is_empty() {
+            let v: f64 = num.parse().map_err(|_| bad())?;
+            toks.push(Tok::Num(v, num.contains('.')));
+            num.clear();
+        }
+        Ok(())
+    };
+    for c in s.chars() {
+        match c {
+            '0'..='9' | '.' => num.push(c),
+            'N' | 'S' | 'E' | 'W' | 'n' | 's' | 'e' | 'w' => {
+                flush(&mut num, &mut toks)?;
+                toks.push(Tok::Hemi(c.to_ascii_uppercase()));
+            }
+            ' ' | ',' | ';' | '°' | 'º' | '\'' | '"' | '′' | '″' | '’' | '”' | '\t' => {
+                flush(&mut num, &mut toks)?
+            }
+            _ => return Err(bad()),
+        }
+    }
+    flush(&mut num, &mut toks)?;
+    // two coordinates, each a hemisphere letter and 1-3 numbers, the letter first or last
+    let prefix = matches!(toks.first(), Some(Tok::Hemi(_)));
+    let mut coords: Vec<(char, Vec<(f64, bool)>)> = Vec::new();
+    let mut nums: Vec<(f64, bool)> = Vec::new();
+    for t in toks {
+        match t {
+            Tok::Num(v, frac) => nums.push((v, frac)),
+            Tok::Hemi(h) if prefix => {
+                if let Some(last) = coords.last_mut() {
+                    last.1 = std::mem::take(&mut nums);
+                }
+                coords.push((h, Vec::new()));
+            }
+            Tok::Hemi(h) => coords.push((h, std::mem::take(&mut nums))),
+        }
+    }
+    if prefix && let Some(last) = coords.last_mut() {
+        last.1 = std::mem::take(&mut nums);
+    }
+    if coords.len() != 2 || !nums.is_empty() {
+        return Err(bad());
+    }
+    let value = |(h, parts): &(char, Vec<(f64, bool)>)| -> Result<f64, String> {
+        if parts.is_empty() || parts.len() > 3 {
+            return Err(bad());
+        }
+        // only the last number may have a decimal part; minutes and seconds below 60
+        if parts[..parts.len() - 1].iter().any(|(_, frac)| *frac)
+            || parts[1..].iter().any(|(v, _)| *v >= 60.0)
+        {
+            return Err(bad());
+        }
+        let v = parts
+            .iter()
+            .zip([1.0, 60.0, 3600.0])
+            .map(|((v, _), d)| v / d)
+            .sum::<f64>();
+        Ok(if *h == 'S' || *h == 'W' { -v } else { v })
+    };
+    let lat_first = matches!(coords[0].0, 'N' | 'S');
+    let (la, lo) = if lat_first {
+        (&coords[0], &coords[1])
+    } else {
+        (&coords[1], &coords[0])
+    };
+    if !matches!(la.0, 'N' | 'S') || !matches!(lo.0, 'E' | 'W') {
+        return Err(bad());
+    }
+    Ok(GeoPoint {
+        lat: value(la)?,
+        lon: value(lo)?,
+        alt: None,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -517,6 +616,37 @@ mod tests {
             "1,2,3,4",
             "0,0,1000000",
             "NaN,0",
+        ] {
+            assert!(GeoPoint::parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parse_degrees_minutes_seconds() {
+        let close = |s: &str, lat: f64, lon: f64| {
+            let p = GeoPoint::parse(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+            assert!(
+                (p.lat - lat).abs() < 1e-6 && (p.lon - lon).abs() < 1e-6,
+                "{s}: {p:?}"
+            );
+            assert!(p.alt.is_none());
+        };
+        close("35°41′22.2″N 139°41′30.1″E", 35.689_5, 139.691_694_4);
+        close("35°41'22.2\"N, 139°41'30.1\"E", 35.689_5, 139.691_694_4);
+        close("N 35 41.37, E 139 41.5", 35.6895, 139.691_666_7);
+        close("33 51 24.4 S 70 38 53.7 W", -33.856_777_8, -70.648_25);
+        close("139°41′30.1″E 35°41′22.2″N", 35.689_5, 139.691_694_4);
+        close("51.5°N 0.12°w", 51.5, -0.12);
+        for bad in [
+            "35°61′N 139°E",
+            "35.5°30′N 139°E",
+            "35°N 139°N",
+            "35°E 139°E",
+            "35°41′N",
+            "NaN,0",
+            "35°41′N 139°41′E 40",
+            "91°N 0°E",
+            "35°41′22″X 139°E",
         ] {
             assert!(GeoPoint::parse(bad).is_err(), "{bad}");
         }
