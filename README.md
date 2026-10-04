@@ -64,7 +64,7 @@ npm ci
 npm run dev                                   # the UI in a browser, with a mock backend (development only)
 cargo build --manifest-path src-tauri/Cargo.toml   # then run src-tauri/target/debug/morimeta.exe with npm run dev running
 node scripts/ui-smoke.mjs <copies-folder> <work-folder>   # drives the real app: edit, apply, verify on disk, undo
-python scripts/stage-exiftool.py              # stage the checked ExifTool package for the installer
+python scripts/stage-exiftool.py              # stage the checked ExifTool package and THIRD_PARTY_NOTICES.md for the installer
 npx tauri build --config src-tauri/tauri.bundle.conf.json   # unsigned per-user NSIS installer
 ```
 

@@ -24,6 +24,7 @@ import { RecoveryDialog } from '../features/recovery/RecoveryDialog'
 import { useGlobalKeys } from './keys'
 import { CloseDialog } from './CloseDialog'
 import { FirstLaunch } from '../features/launch/FirstLaunch'
+import { AboutDialog } from './AboutDialog'
 
 function onEvent(e: AppEvent) {
   const s = useApp.getState()
@@ -108,6 +109,7 @@ export function App() {
       {info && <RecoveryDialog />}
       <FirstLaunch />
       <CloseDialog />
+      <AboutDialog />
     </div>
   )
 }

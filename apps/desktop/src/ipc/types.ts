@@ -23,6 +23,16 @@ export interface RecoverySummary {
   other: number
 }
 
+/** Help › About MoriMeta (`cmd::AboutDto`). */
+export interface About {
+  version: string
+  exiftool: string | null
+  registry_version: number
+  webview2: string | null
+  os: string
+  dev: boolean
+}
+
 /** Find history in a backup folder… (`history::HistoryImport`). */
 export interface HistoryImport {
   location: string

@@ -11,7 +11,8 @@
     "licenseFile": "../../../LICENSE",
     "icon": ["icons/icon.ico"],
     "resources": {
-      "staging/exiftool/": "exiftool/"
+      "staging/exiftool/": "exiftool/",
+      "staging/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     },
     "windows": {
       "nsis": {

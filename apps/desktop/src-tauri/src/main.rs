@@ -67,6 +67,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             cmd::subscribe,
             cmd::app_info,
+            cmd::about,
+            cmd::third_party_notices,
             cmd::import_dialog,
             cmd::scan_cancel,
             cmd::rescan,

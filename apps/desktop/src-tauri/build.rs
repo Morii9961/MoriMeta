@@ -4,6 +4,8 @@
 const COMMANDS: &[&str] = &[
     "subscribe",
     "app_info",
+    "about",
+    "third_party_notices",
     "import_dialog",
     "scan_cancel",
     "rescan",

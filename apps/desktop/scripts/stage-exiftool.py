@@ -6,9 +6,11 @@
    libraries and licences). The CC0 launcher is not shipped (D-17).
 3. A manifest of exactly the staged files is written next to them (`exiftool.manifest`), and the
    staged package is checked against it, as the app does at every launch.
+4. THIRD_PARTY_NOTICES.md for what the build ships (tools/third_party_notices.py, RELEASE_PLAN
+   §7.2); About › Third-party notices shows it.
 
 Usage: python apps/desktop/scripts/stage-exiftool.py
-Output: apps/desktop/src-tauri/staging/exiftool/ (not committed)
+Output: apps/desktop/src-tauri/staging/exiftool/ and staging/THIRD_PARTY_NOTICES.md (not committed)
 """
 
 from __future__ import annotations
@@ -62,6 +64,14 @@ def main() -> None:
         sys.exit(f"the staged package does not pass its own check: {r.get('problem')}")
     size = sum(p.stat().st_size for p in STAGE.rglob("*") if p.is_file())
     print(f"staged ExifTool {version}: {files} files, {size / 1e6:.1f} MB, manifest checked -> {STAGE}")
+
+    notices = STAGE.parent / "THIRD_PARTY_NOTICES.md"
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "third_party_notices.py"), "--check", "--out", str(notices)],
+        cwd=ROOT,
+    )
+    if r.returncode != 0:
+        sys.exit("third-party notices could not be generated")
 
 
 if __name__ == "__main__":

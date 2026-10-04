@@ -8,6 +8,8 @@
   "permissions": [
     "allow-subscribe",
     "allow-app-info",
+    "allow-about",
+    "allow-third-party-notices",
     "allow-import-dialog",
     "allow-scan-cancel",
     "allow-rescan",

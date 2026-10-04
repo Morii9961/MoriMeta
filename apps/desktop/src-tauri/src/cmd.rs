@@ -75,6 +75,56 @@ pub struct AppInfo {
     pub dev: bool,
 }
 
+/// About MoriMeta (RELEASE_PLAN §6): the versions a bug report needs.
+#[derive(Serialize)]
+pub struct AboutDto {
+    pub version: &'static str,
+    pub exiftool: Option<String>,
+    pub registry_version: u32,
+    pub webview2: Option<String>,
+    pub os: String,
+    pub dev: bool,
+}
+
+#[tauri::command]
+pub fn about(core: CoreState) -> AboutDto {
+    AboutDto {
+        version: env!("CARGO_PKG_VERSION"),
+        exiftool: lock(&core.exiftool).version.clone(),
+        registry_version: mm_domain::creator::REGISTRY_VERSION,
+        webview2: tauri::webview_version().ok(),
+        os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        dev: cfg!(debug_assertions),
+    }
+}
+
+const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
+
+/// About › Third-party notices (RELEASE_PLAN §7.2): the file `tools/third_party_notices.py`
+/// generates when the installer is staged, shipped next to the program.
+#[tauri::command]
+pub fn third_party_notices(app: AppHandle) -> Res<String> {
+    let mut places = Vec::new();
+    if let Ok(r) = app.path().resource_dir() {
+        places.push(r.join(NOTICES));
+    }
+    if cfg!(debug_assertions) {
+        places.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("staging")
+                .join(NOTICES),
+        );
+    }
+    places
+        .iter()
+        .find_map(|p| std::fs::read_to_string(p).ok())
+        .ok_or_else(|| {
+            "the third-party notices are added when the installer is built \
+             (python apps/desktop/scripts/stage-exiftool.py)"
+                .to_string()
+        })
+}
+
 #[tauri::command]
 pub fn app_info(core: CoreState) -> AppInfo {
     let exiftool = lock(&core.exiftool).clone();

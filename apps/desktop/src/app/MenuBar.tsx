@@ -73,7 +73,7 @@ export function MenuBar() {
     },
     {
       label: 'menu.help',
-      items: [{ label: 'menu.about', run: () => s().notify('info', t('about.text', { version: s().info?.version ?? '' })) }],
+      items: [{ label: 'menu.about', run: () => useApp.setState({ aboutOpen: true }) }],
     },
   ]
 

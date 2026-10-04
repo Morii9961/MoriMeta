@@ -297,7 +297,9 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
     plans.set(id, { versions: [entries], view })
     return view
   },
-  export_log: () => 'D:\MoriMeta-op.json',
+  export_log: () => 'D:\\MoriMeta-op.json',
+  about: () => ({ version: '0.1.0', exiftool: '13.59', registry_version: 0, webview2: '141.0.3537.71', os: 'windows x86_64', dev: true }),
+  third_party_notices: () => '# Third-party notices\n\n(development mock: the real file is generated when the installer is staged)\n',
   history_import: () => ({ location: 'E:\\MoriMeta backups', imported: ['op-mock-1', 'op-mock-2'], skipped: [], recovered_files: 0 }),
   restore_to: () => ({ folder: 'D:\\restored', restored: 3, without_backup: 0, notes: [] }),
   presets_list: () => [

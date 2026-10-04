@@ -26,6 +26,7 @@ import type {
   Preflight,
   RecoverySummary,
   HistoryImport,
+  About,
   Setting,
   UpdateInfo,
 } from './types'
@@ -119,6 +120,8 @@ export const api = {
     call<string | null>('export_log', { opId, includePaths, includeValues }),
   restoreTo: (opId: string) =>
     call<{ folder: string; restored: number; without_backup: number; notes: string[] } | null>('restore_to', { opId }),
+  about: () => call<About>('about'),
+  thirdPartyNotices: () => call<string>('third_party_notices'),
   historyImport: () => call<HistoryImport | null>('history_import'),
   recoveryStatus: () => call<RecoverySummary[]>('recovery_status'),
   recoveryDismiss: (opId: string) => call<void>('recovery_dismiss', { opId }),

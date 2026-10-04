@@ -65,6 +65,8 @@ interface AppState {
   notices: Notice[]
   /** The window asked to close during an Operation (INTERACTION_SPEC §10). */
   closeAsked: boolean
+  /** Help › About MoriMeta is open. */
+  aboutOpen: boolean
   /** Clean Export progress while it writes. */
   cleanProgress: { done: number; total: number } | null
   /** The Preset the rule builder shows. */
@@ -128,6 +130,7 @@ export const useApp = create<AppState>((set) => ({
   stage: { kind: 'library' },
   notices: [],
   closeAsked: false,
+  aboutOpen: false,
   cleanProgress: null,
   editPreset: null,
   closeAfter: false,
