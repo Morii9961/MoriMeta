@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, errorText } from '../../ipc'
 import { useApp } from '../../state/store'
-import { useT, useBT, fieldLabel } from '../../i18n'
+import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
+import { useVisibleItems } from '../library/hooks'
 import { Dialog } from '../../components/Dialog'
 import { showPreview } from '../../app/actions'
 import { actionText, conditionText, presetKind, type PresetInfo } from './model'
@@ -43,6 +44,8 @@ export function PresetsView() {
   const [source, setSource] = useState<'all' | 'builtin' | 'yours' | 'imported'>('all')
   const [sel, setSel] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [applying, setApplying] = useState<PresetInfo | null>(null)
+  const assets = useApp((s) => s.assets)
   const [deleting, setDeleting] = useState<PresetInfo | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -66,8 +69,8 @@ export function PresetsView() {
     }
   }
 
-  const apply = async (p: PresetInfo) => {
-    const ids = useApp.getState().assets.filter((a) => selection.has(a.id)).map((a) => a.id)
+  const apply = async (p: PresetInfo, ids: number[]) => {
+    setApplying(null)
     setStage({ kind: 'planning', done: 0, total: ids.length, stage: 'files' })
     try {
       const plan = await api.planPreset(ids, p.id)
@@ -232,13 +235,14 @@ export function PresetsView() {
             <div className="batch-footer">
               <span className="faint">{t('presets.apply_note')}</span>
               <div className="toolbar-spacer" />
-              <button className={`btn small${selection.size ? ' accent' : ''}`} disabled={!selection.size} title={selection.size ? undefined : t('preview.need_selection')} onClick={() => apply(cur)}>
-                {t('presets.apply_to', { n: selection.size })}
+              <button className={`btn small${assets.length ? ' accent' : ''}`} disabled={!assets.length} title={assets.length ? undefined : t('preview.need_selection')} onClick={() => setApplying(cur)}>
+                {selection.size ? t('presets.apply_to', { n: selection.size }) : t('presets.apply')}
               </button>
             </div>
           </>
         )}
       </aside>
+      {applying && <ApplyDialog preset={applying} onCancel={() => setApplying(null)} onBuild={(ids) => apply(applying, ids)} />}
       {deleting && (
         <Dialog
           title={t('presets.delete_q', { name: deleting.name })}
@@ -272,3 +276,56 @@ export function PresetsView() {
     </>
   )
 }
+
+type Scope = 'selection' | 'filter' | 'session'
+
+/** Apply dialog (SCREEN_SPEC 3#p-apply): which files, the facts, Build preview. */
+function ApplyDialog({ preset, onCancel, onBuild }: { preset: PresetInfo; onCancel: () => void; onBuild: (ids: number[]) => void }) {
+  const t = useT()
+  const assets = useApp((s) => s.assets)
+  const selection = useApp((s) => s.selection)
+  const visible = useVisibleItems()
+  const sets: Record<Scope, number[]> = {
+    selection: assets.filter((a) => selection.has(a.id)).map((a) => a.id),
+    filter: visible.map((it) => it.asset.id),
+    session: assets.map((a) => a.id),
+  }
+  const [scope, setScope] = useState<Scope>(sets.selection.length ? 'selection' : 'filter')
+  const ids = sets[scope]
+  const readOnly = assets.filter((a) => !a.writable && ids.includes(a.id)).length
+  const enabled = preset.preset.rules.filter((r) => r.enabled).length
+  return (
+    <Dialog
+      title={t('presets.apply_q', { name: preset.name })}
+      onCancel={onCancel}
+      footer={
+        <>
+          <span className="note">{t('presets.apply_writes_nothing')}</span>
+          <button className="btn" onClick={onCancel}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn primary" disabled={!ids.length} onClick={() => onBuild(ids)}>
+            {t('presets.build_preview')}
+          </button>
+        </>
+      }
+    >
+      <div role="radiogroup" aria-label={t('presets.apply_scope')} className="scope-list">
+        {(['selection', 'filter', 'session'] as Scope[]).map((k) => (
+          <label key={k} className={`scope-row${sets[k].length ? '' : ' disabled'}`}>
+            <input type="radio" name="apply-scope" checked={scope === k} disabled={!sets[k].length} onChange={() => setScope(k)} />
+            <span>{t(`presets.scope_${k}` as MessageKey)}</span>
+            <span className="mono faint">{t('presets.n_files', { n: sets[k].length })}</span>
+          </label>
+        ))}
+      </div>
+      <ul className="facts">
+        <li>{t('presets.fact_rules', { n: preset.preset.rules.length, enabled })}</li>
+        {readOnly > 0 && <li>{t('presets.fact_read_only', { n: readOnly })}</li>}
+        <li>{t('presets.fact_order')}</li>
+        {preset.untrusted && <li className="glyph-warn">{t('presets.fact_untrusted')}</li>}
+      </ul>
+    </Dialog>
+  )
+}
+

@@ -161,3 +161,10 @@
   font: 11px/1.45 var(--font-mono); background: var(--bg-input); border: 1px solid var(--border-pane);
   border-radius: var(--radius-sm);
 }
+
+/* SCREEN_SPEC 5#r-on: RAW Safe Mode popover from the status bar */
+.status-seg.raw-safe { position: relative; }
+.status-button { border: 0; background: transparent; color: inherit; padding: 0; font: inherit; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+.status-button:hover { color: var(--text-primary); }
+.popover.raw-popover { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; width: 380px; font-size: 12px; cursor: default; }
+

@@ -44,3 +44,11 @@
 .rule-side { padding: 4px 12px; text-align: right; font-size: 11px; }
 .rule-new { margin: 10px 12px; }
 .rules-explain { padding: 0 12px; }
+
+/* SCREEN_SPEC 3#p-apply */
+.scope-list { display: flex; flex-direction: column; gap: 2px; }
+.scope-row { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: center; height: 26px; padding: 0 6px; border-radius: var(--radius-sm); cursor: pointer; }
+.scope-row:hover { background: var(--bg-hover); }
+.scope-row.disabled { color: var(--text-disabled); cursor: default; }
+.facts { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
+

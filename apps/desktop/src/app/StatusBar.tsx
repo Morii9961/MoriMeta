@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // StatusBar (24 px, permanent; DESIGN.md §3): RAW safety · backup · undo · scan · ExifTool.
 
+import { useState } from 'react'
 import { useApp } from '../state/store'
+import { RawSafePopover } from './RawSafePopover'
 import { useT } from '../i18n'
 import { sizeText } from '../features/library/data'
 
@@ -11,6 +13,7 @@ export function StatusBar() {
   const scan = useApp((s) => s.scan)
   const assets = useApp((s) => s.assets)
   const rows = useApp((s) => s.rows)
+  const [rawOpen, setRawOpen] = useState(false)
   if (!info) return <div className="statusbar" />
   const b = info.backup
   const et = info.exiftool
@@ -18,9 +21,12 @@ export function StatusBar() {
   const refused = info.writes_refused
   return (
     <div className="statusbar" role="status">
-      <div className="status-seg raw-safe" title={t('status.raw_safe_tip')}>
-        <span className="glyph-ok">●</span> {t('status.raw_safe')}
-        <span className="faint"> · NEF → XMP sidecar</span>
+      <div className="status-seg raw-safe">
+        <button className="status-button" aria-expanded={rawOpen} title={t('status.raw_safe_tip')} onClick={() => setRawOpen((v) => !v)}>
+          <span className="glyph-ok">●</span> {t('status.raw_safe')}
+          <span className="faint"> · NEF → XMP sidecar</span>
+        </button>
+        {rawOpen && <RawSafePopover onClose={() => setRawOpen(false)} />}
       </div>
       <div className={`status-seg${backupBad ? ' bad' : ''}`} title={b.problem ?? b.root}>
         {backupBad ? (
