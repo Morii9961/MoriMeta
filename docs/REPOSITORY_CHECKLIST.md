@@ -38,7 +38,7 @@
 | P-4 | v0.1 原始规格与设计简报是否公开（含个人化 Preset 示例与个人网站名） | 用户决定公开 |
 | P-5 | 对全部历史运行 `tools/check_repo.py`（`git ls-files` 的全部文件），并人工复核 `docs/` 中的示例值 | 首次推送前对全部已跟踪文件执行，0 拦截 |
 | P-6 | 第三方声明：ExifTool 与 Strawberry Perl 的许可证文件、源码获取方式（V-11）；在打包 ExifTool 之前完成 | 2026-10-04：`tools/third_party_notices.py` 在暂存安装包时生成 `THIRD_PARTY_NOTICES.md`（Windows 构建实际链接的 crate、打包的 npm 包与字体、ExifTool 包说明及各自的许可证原文），随安装包分发，“关于”中可查看；许可证白名单由 `deny.toml` 在 CI 中检查。V-11 法律确认仍待 |
-| P-7 | `SECURITY.md`（漏洞报告渠道）、`CONTRIBUTING.md`（DCO/CLA 取决于 D-1）、`PRIVACY.md`、`CODE_OF_CONDUCT.md` | 2026-09-28：用户选择 DCO；`CONTRIBUTING.md`（DCO，PR 上有签署检查，机器人提交豁免）与 `SECURITY.md`（GitHub 私有漏洞报告，含隐私声明）已写；2026-10-04 `PRIVACY.md` 已写；`CODE_OF_CONDUCT.md` 未写 |
+| P-7 | `SECURITY.md`（漏洞报告渠道）、`CONTRIBUTING.md`（DCO/CLA 取决于 D-1）、`PRIVACY.md`、`CODE_OF_CONDUCT.md` | 2026-09-28：用户选择 DCO；`CONTRIBUTING.md`（DCO，PR 上有签署检查，机器人提交豁免）与 `SECURITY.md`（GitHub 私有漏洞报告，含隐私声明）已写；2026-10-04 `PRIVACY.md`、`CODE_OF_CONDUCT.md` 已写 |
 | P-8 | GitHub 设置：默认分支保护、必需的 CI 检查、Secret scanning、Dependabot、Actions 以 SHA 固定、最小权限 | 2026-09-28 完成（用户确认）：main 分支保护（两个 CI 检查必须通过、禁止强推与删除、线性历史；管理员不强制，可直接推送）；私有漏洞报告；Dependabot 告警、安全更新与每周版本更新（cargo、github-actions）；Secret scanning 与推送保护；Actions 以 SHA 固定、只读令牌 |
 | P-9 | 若走 SignPath（D-2）：代码签名政策页、团队角色（D-16）、全员 MFA | 视 D-2 |
 | P-10 | README 中的项目状态如实标注（预发布、无可用版本、未签名等） | README 已按此写 |
