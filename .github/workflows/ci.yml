@@ -132,6 +132,7 @@ jobs:
         run: |
           node --version
           npm ci --no-fund --no-audit
+          npm audit --audit-level=moderate
           npm run build
           npm test
 
@@ -141,6 +142,28 @@ jobs:
           cargo fmt -- --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --all-targets --locked
+
+  deps:
+    # SECURITY_MODEL §11: licenses (GPL-3.0-or-later compatible), RustSec advisories and crate
+    # sources for what the Windows build ships (deny.toml); the action runs in a Linux container
+    name: dependency audit (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Core workspace
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: ""
+
+      - name: Desktop app workspace
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: apps/desktop/src-tauri/Cargo.toml
+          arguments: --config deny.toml
 
   msrv:
     name: minimum Rust version

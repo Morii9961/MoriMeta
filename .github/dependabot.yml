@@ -16,3 +16,22 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+
+  # the desktop app is its own Cargo workspace and npm project
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      app-cargo-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
