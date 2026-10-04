@@ -12,6 +12,8 @@ import './settings.css'
 import { UpdatesPanel } from './UpdatesPanel'
 import { BackupsPanel } from './BackupsPanel'
 import { AdvancedTools } from './AdvancedTools'
+import { SCALES } from '../../app/uiPrefs'
+import { diagnostics } from './diagnostics'
 
 type Page = 'general' | 'metadata' | 'raw' | 'backup' | 'privacy' | 'updates' | 'advanced'
 const PAGES: { key: Page; label: MessageKey }[] = [
@@ -93,6 +95,13 @@ export function SettingsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const get = (n: string) => settings.find((s) => s.name === n)
+  const prefs = useApp((s) => s.prefs)
+  const setPrefs = useApp((s) => s.setPrefs)
+  const copy = (text: string) =>
+    navigator.clipboard
+      .writeText(text)
+      .then(() => notify('success', t('insp.copied')))
+      .catch((e) => notify('error', errorText(e)))
   const refreshInfo = () => api.appInfo().then(useApp.getState().setInfo)
 
   return (
@@ -129,6 +138,36 @@ export function SettingsView() {
               <Row label={t('set.theme')} tag="LOCKED" help={t('set.theme_help')}>
                 <span className="muted">{t('set.dark')}</span>
               </Row>
+              <Row label={t('set.startup')} tag="LOCKED" help={t('set.startup_help')}>
+                <span className="muted">{t('set.startup_value')}</span>
+              </Row>
+              <Row label={t('set.density')} help={t('set.density_help')}>
+                <div className="segmented small">
+                  {(['compact', 'comfortable'] as const).map((d) => (
+                    <button key={d} aria-pressed={prefs.density === d} onClick={() => setPrefs({ ...prefs, density: d })}>
+                      {t(`set.density_${d}` as MessageKey)}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+              <Row label={t('set.scale')} help={t('set.scale_help')}>
+                <div className="segmented small">
+                  {SCALES.map((sc) => (
+                    <button
+                      key={sc}
+                      aria-pressed={prefs.scale === sc}
+                      onClick={() =>
+                        api
+                          .uiZoom(sc)
+                          .then(() => setPrefs({ ...prefs, scale: sc }))
+                          .catch((e) => notify('error', errorText(e)))
+                      }
+                    >
+                      {sc}%
+                    </button>
+                  ))}
+                </div>
+              </Row>
               <Row label={t('set.close_during')} tag="LOCKED" help={t('set.close_during_help')}>
                 <span className="muted">{t('set.always_ask')}</span>
               </Row>
@@ -154,6 +193,9 @@ export function SettingsView() {
                     </button>
                   ))}
                 </div>
+              </Row>
+              <Row label={t('set.time_display')} tag="LOCKED" help={t('set.time_display_help')}>
+                <span className="muted">{t('set.time_display_value')}</span>
               </Row>
               <Row label="ExifTool" help={info?.exiftool.package ?? ''}>
                 <span className="mono">{info?.exiftool.version ?? '—'}</span>
@@ -237,6 +279,17 @@ export function SettingsView() {
               <Row label={t('set.data_folder')}>
                 <span className="mono selectable">{info?.data_dir}</span>
               </Row>
+              <Row label={t('set.log_folder')} help={t('set.log_folder_help')}>
+                <div className="set-inline">
+                  <span className="mono selectable">{info ? `${info.data_dir}\\logs` : ''}</span>
+                  <button className="btn small" disabled={!info} onClick={() => info && copy(`${info.data_dir}\\logs`)}>
+                    {t('set.copy_path')}
+                  </button>
+                </div>
+              </Row>
+              <Row label={t('set.network')} help={t('set.network_help')}>
+                <span className="muted">{get('updates.check')?.value === 'weekly' ? t('set.network_weekly') : t('set.network_none')}</span>
+              </Row>
             </>
           )}
           {page === 'updates' && (
@@ -254,6 +307,16 @@ export function SettingsView() {
               </div>
               <UpdatesPanel />
             </Row>
+          )}
+          {page === 'updates' && (
+            <>
+              <Row label={t('set.channel')} tag="LOCKED" help={t('set.channel_help')}>
+                <span className="muted">{t('set.channel_stable')}</span>
+              </Row>
+              <Row label={t('set.check_sends')}>
+                <span className="note">{t('set.check_sends_value')}</span>
+              </Row>
+            </>
           )}
           {page === 'advanced' && (
             <>
@@ -284,6 +347,19 @@ export function SettingsView() {
                   MoriMeta {info?.version}
                   {info?.dev ? ' (development build)' : ''}
                 </span>
+              </Row>
+              <Row label={t('set.diagnostics')} help={t('set.diagnostics_help')}>
+                <button
+                  className="btn small"
+                  onClick={() =>
+                    api
+                      .about()
+                      .then((a) => copy(diagnostics(a, useApp.getState().info, settings)))
+                      .catch((e) => notify('error', errorText(e)))
+                  }
+                >
+                  {t('set.copy_diagnostics')}
+                </button>
               </Row>
               <AdvancedTools onReset={() => Promise.all([load(), refreshInfo()])} />
             </>

@@ -80,6 +80,9 @@ export function App() {
       .then(() => api.appInfo())
       .then((i) => alive && useApp.getState().setInfo(i))
       .catch((e) => notify('error', errorText(e)))
+    // Settings › General › Scale is the window's zoom; restore it at launch
+    const scale = useApp.getState().prefs.scale
+    if (scale !== 100) api.uiZoom(scale).catch(() => {})
     return () => {
       alive = false
     }

@@ -24,6 +24,7 @@ import {
   type Saved,
 } from '../features/library/layout'
 import type { TimeRow } from '../features/inspector/timeRows'
+import { applyDensity, loadPrefs, savePrefs, type UiPrefs } from '../app/uiPrefs'
 
 export type Module = 'library' | 'presets' | 'rules' | 'history'
 
@@ -85,6 +86,8 @@ interface AppState {
   notices: Notice[]
   /** The window asked to close during an Operation (INTERACTION_SPEC §10). */
   closeAsked: boolean
+  /** Density and scale (Settings › General), kept per viewer. */
+  prefs: UiPrefs
   /** Help › About MoriMeta is open. */
   aboutOpen: boolean
   /** Clean Export progress while it writes. */
@@ -102,6 +105,7 @@ interface AppState {
   toggleInspector: () => void
   setTimeToolsOpen: (o: boolean) => void
   setTimeRows: (r: TimeRow[] | null) => void
+  setPrefs: (p: UiPrefs) => void
 
   addAssets: (a: Asset[], s: ImportSummary) => void
   putRows: (rows: Row[]) => void
@@ -165,6 +169,7 @@ export const useApp = create<AppState>((set) => ({
   notices: [],
   closeAsked: false,
   aboutOpen: false,
+  prefs: loadPrefs(),
   cleanProgress: null,
   editPreset: null,
   closeAfter: false,
@@ -185,6 +190,11 @@ export const useApp = create<AppState>((set) => ({
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   setTimeToolsOpen: (timeToolsOpen) => set(timeToolsOpen ? { timeToolsOpen } : { timeToolsOpen, timeRows: null }),
   setTimeRows: (timeRows) => set({ timeRows }),
+  setPrefs: (prefs) => {
+    savePrefs(prefs)
+    applyDensity(prefs)
+    set({ prefs })
+  },
 
   addAssets: (a, summary) =>
     set((s) => {

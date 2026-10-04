@@ -68,6 +68,7 @@ fn main() {
             cmd::subscribe,
             cmd::app_info,
             cmd::about,
+            cmd::ui_zoom,
             cmd::third_party_notices,
             cmd::import_dialog,
             cmd::scan_cancel,

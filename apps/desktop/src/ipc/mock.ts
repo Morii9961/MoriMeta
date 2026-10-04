@@ -298,6 +298,7 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
     return view
   },
   export_log: () => 'D:\\MoriMeta-op.json',
+  ui_zoom: () => undefined,
   about: () => ({ version: '0.1.0', exiftool: '13.59', registry_version: 0, webview2: '141.0.3537.71', os: 'windows x86_64', dev: true }),
   third_party_notices: () => '# Third-party notices\n\n(development mock: the real file is generated when the installer is staged)\n',
   asset_preview: () => null,

@@ -9,14 +9,15 @@ import { useApp } from '../../state/store'
 import { useT, type MessageKey } from '../../i18n'
 import { parseExif } from './timeMath'
 import { summarize, type TimeRow } from './timeRows'
+import { rowHeight } from '../../app/uiPrefs'
 
-const ROW = 22
 /** The timeline draws at most this many files (evenly sampled); the table lists them all. */
 const MAX_MARKS = 2000
 
 export function TimePreview() {
   const t = useT()
   const rows = useApp((s) => s.timeRows)
+  const ROW = rowHeight(useApp((s) => s.prefs.density))
   const scroller = useRef<HTMLDivElement>(null)
   const list = rows ?? []
   const v = useVirtualizer({ count: list.length, getScrollElement: () => scroller.current, estimateSize: () => ROW, overscan: 20 })
@@ -55,7 +56,7 @@ export function TimePreview() {
           {v.getVirtualItems().map((vr) => {
             const r = list[vr.index]
             return (
-              <div key={r.id} role="row" className={`mrow${vr.index % 2 ? ' alt' : ''}${r.pair ? ' paired' : ''}`} style={{ transform: `translateY(${vr.start + 24}px)` }}>
+              <div key={r.id} role="row" className={`mrow${vr.index % 2 ? ' alt' : ''}${r.pair ? ' paired' : ''}`} style={{ transform: `translateY(${vr.start + 24}px)`, height: ROW }}>
                 <div className="mtd mono faint tcol-n" role="gridcell">{vr.index + 1}</div>
                 <div className="mtd mono tcol-name" role="gridcell" title={r.name}>
                   {r.pair && <span className="pair-mark" title={t('time.pair')}>◆ </span>}

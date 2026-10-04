@@ -9,6 +9,7 @@
     "allow-subscribe",
     "allow-app-info",
     "allow-about",
+    "allow-ui-zoom",
     "allow-third-party-notices",
     "allow-import-dialog",
     "allow-scan-cancel",

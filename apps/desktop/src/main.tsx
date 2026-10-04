@@ -12,8 +12,10 @@ import './design/base.css'
 import './app/shell.css'
 import { App } from './app/App'
 import { useApp } from './state/store'
+import { applyDensity } from './app/uiPrefs'
 
 document.documentElement.lang = useApp.getState().lang === 'zh' ? 'zh-CN' : 'en'
+applyDensity(useApp.getState().prefs)
 
 // no browser context menu or reload shortcuts: this is an app window
 window.addEventListener('contextmenu', (e) => {

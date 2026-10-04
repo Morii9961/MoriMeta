@@ -11,8 +11,8 @@ import { useApp } from '../../state/store'
 import { useT, type T } from '../../i18n'
 import { COLUMNS, flagsOf, middleTruncate, type Item } from './data'
 import { clampWidth, itemsInOrder, visibleColumns, withGroups } from './layout'
+import { rowHeight } from '../../app/uiPrefs'
 
-const ROW = 22
 const GROUP_ROW = 24
 const FLAGS_W = 64
 
@@ -49,6 +49,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
   const setLayout = useApp((s) => s.setLayout)
   const groupBy = useApp((s) => s.groupBy)
   const setGroupBy = useApp((s) => s.setGroupBy)
+  const ROW = rowHeight(useApp((s) => s.prefs.density))
   const scroller = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<HeaderMenu | null>(null)
   const [resizing, setResizing] = useState<{ key: string; from: number; to: number } | null>(null)
@@ -63,7 +64,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
     estimateSize: (i) => (display[i]?.kind === 'group' ? GROUP_ROW : ROW),
     overscan: 20,
   })
-  useEffect(() => v.measure(), [display, v])
+  useEffect(() => v.measure(), [display, v, ROW])
   const width = FLAGS_W + columns.reduce((a, c) => a + (resizing?.key === c.key ? resizing.to : c.width), 0)
   const index = useMemo(() => new Map(ordered.map((it, i) => [it.asset.id, i])), [ordered])
   const row = useMemo(() => new Map(display.map((d, i) => [d.kind === 'item' ? d.it.asset.id : -1 - i, i])), [display])
@@ -309,7 +310,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
               role="row"
               aria-selected={selected}
               className={`mrow${d.index % 2 ? ' alt' : ''}${selected ? ' selected' : ''}${focused ? ' focused' : ''}${it.asset.writable ? '' : ' readonly'}`}
-              style={{ transform: `translateY(${vr.start + 24}px)`, width }}
+              style={{ transform: `translateY(${vr.start + 24}px)`, width, height: ROW }}
               onMouseDown={(e) => {
                 if (e.button === 0) onRow(e, id)
               }}

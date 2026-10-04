@@ -98,6 +98,17 @@ pub fn about(core: CoreState) -> AboutDto {
     }
 }
 
+/// Settings › General › Scale (SCREEN_SPEC 5#s-general): the window's zoom, as a browser zooms,
+/// so layout, hit testing and the virtualised tables stay consistent.
+#[tauri::command]
+pub fn ui_zoom(app: AppHandle, percent: u32) -> Res<()> {
+    if ![90, 100, 110, 125].contains(&percent) {
+        return Err(format!("unsupported scale {percent}%"));
+    }
+    let w = app.get_webview_window("main").ok_or("no main window")?;
+    w.set_zoom(f64::from(percent) / 100.0).map_err(ue)
+}
+
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 
 /// About › Third-party notices (RELEASE_PLAN §7.2): the file `tools/third_party_notices.py`
