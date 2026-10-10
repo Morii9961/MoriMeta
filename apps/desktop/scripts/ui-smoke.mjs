@@ -5,7 +5,8 @@
 //   node scripts/ui-smoke.mjs <photos-folder> <work-folder>
 //
 // Needs the Vite dev server on :1420 (`npm run dev`) and a debug build
-// (`cargo build` in src-tauri). It copies nothing: <photos-folder> must hold disposable copies.
+// (`cargo build` in src-tauri). It copies nothing: <photos-folder> must hold disposable copies,
+// among them ExifTool.jpg and Writer.jpg from ExifTool's t/images, and a NEF or two.
 // Flow: launch with MM_DEV_IMPORT → rows read → select all → stage Creator → Preview → review →
 // Apply (+ acknowledgements) → completion → files changed as planned (JPEG written, NEF
 // untouched, sidecars created) → Undo through Preview → every file back byte for byte.
@@ -82,8 +83,23 @@ const send = (method, params = {}) =>
     pending.set(id, r)
     ws.send(JSON.stringify({ id, method, params }))
   })
+// helpers inside the page, installed again before every evaluation: the page can reload (Vite
+// reloads it once after optimizing dependencies on a fresh install)
+const HELPERS = `
+  window.__t = window.__t || {
+    text: () => document.body.innerText,
+    btn: (label) => [...document.querySelectorAll('button')].find(b => b.innerText.trim().startsWith(label) && !b.disabled),
+    click: (label) => { const b = window.__t.btn(label); if (!b) throw new Error('no button ' + label); b.click(); return true },
+    key: (el, key, opts = {}) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts })),
+    type: (el, value) => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    },
+  };`
 async function js(expr) {
-  const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })
+  const expression = expr.includes('__t') ? `${HELPERS}\n${expr}` : expr
+  const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
   if (r.result?.exceptionDetails) fail(`page error: ${r.result.exceptionDetails.exception?.description ?? JSON.stringify(r.result.exceptionDetails)}`)
   return r.result?.result?.value
 }
@@ -101,19 +117,6 @@ async function until(what, expr, ms = 60000) {
   fail(`timed out waiting for ${what}`)
 }
 
-// helpers inside the page
-await js(`
-  window.__t = {
-    text: () => document.body.innerText,
-    btn: (label) => [...document.querySelectorAll('button')].find(b => b.innerText.trim().startsWith(label) && !b.disabled),
-    click: (label) => { const b = window.__t.btn(label); if (!b) throw new Error('no button ' + label); b.click(); return true },
-    key: (el, key, opts = {}) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts })),
-    type: (el, value) => {
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-      set.call(el, value)
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-    },
-  }; true`)
 // English UI for the text checks: View menu → English
 await until('menu', `document.querySelectorAll('.menubar-item > button').length === 5`)
 await js(`
@@ -266,7 +269,8 @@ await js(`[...document.querySelectorAll('.toolbar [role=tab]')].find(b => b.inne
 await sleep(300)
 await js(`__t.click('Clean export'); true`)
 await until('clean preview', `document.querySelectorAll('.clean-row').length > 0 && !/Reading…/.test(document.querySelector('.summary-strip').innerText)`, 60000)
-await until('clean detail', `/MAKER NOTES|SERIAL NUMBERS/i.test(document.querySelector('.pane-inspector').innerText)`)
+// the first row's detail: what its copy loses, grouped, and what it keeps (any sample file)
+await until('clean detail', `/KEPT\\s*·\\s*\\d+/i.test(document.querySelector('.pane-inspector').innerText) && /\\s·\\s\\d+[\\s\\S]*KEPT/i.test(document.querySelector('.pane-inspector').innerText)`)
 await shot('10-clean-preview')
 console.log(`clean export preview: ${(await js(`document.querySelector('.summary-strip').innerText`)).replace(/\s+/g, ' ')}`)
 await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)

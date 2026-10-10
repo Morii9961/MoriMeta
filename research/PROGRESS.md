@@ -208,3 +208,10 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - `crates/mm-exiftool/tests/encode_properties.rs`（每项 2048 组，偏向换行、`-execute`、`#[CSTR]`、伪造终止符、实体与控制字符）：任意值要么恰好在 `check_value` 拒绝时被拒绝，要么只成为一行、不以空格开头，按 `-ex` 反转义后与原值逐字相同；标签名无法携带选项或值；路径只能是不含 `|` 的绝对单行。与真实 ExifTool 的往返仍由 `engine.rs` 覆盖。
 - 变异检查：去掉 Shift 的年份范围检查、取消配对共享、非数字段改为区分大小写、换行不转义、首空格不转义、路径允许 `|`，各自被对应属性抓到（随后还原）。本地 workspace 264 项（含新增）、严格 Clippy、MSRV 1.88 检查和桌面适配器 15 项通过。
 - 验证（2026-10-10）：手动运行 release 工作流 4 次，前 3 次安装包构建成功但 release-check 等不到 DevTools 端口；改为读日志后第 4 次（run 38040422715）通过：0.1.0 release 构建、ExifTool 13.59 来自安装包、键文件与全部文件完整、写入仅因管理员权限被拒；生成安装包、SBOM、声明、ExifTool 源码与 SHA256SUMS。只在打标签时执行的构建证明与草稿 Release 两步尚未实际运行。程序启动失败的原因现在也写到 stderr。
+
+## 2026-10-10：签名政策页、ExifTool 新版本监控、夜间属性测试、冒烟测试回归
+
+- `docs/CODE_SIGNING.md`（中英文）按 signpath.org/terms 写出代码签名政策：如实说明尚未签名、计划申请 SignPath Foundation，归属语只作为"获批后"的原文引用；签名范围（安装包与 `morimeta.exe`，ExifTool 包不重签）、角色（一人兼任，D-16 待询问）、签名流程、条款规定的隐私声明、组件许可证。README 中英文各有"Code signing policy"入口；PRIVACY.md 补充安装程序在缺少时下载 Microsoft WebView2 运行时及其隐私声明。GitHub 账户是否已启用 MFA 无法用当前令牌核实，页面写成规则，由 Morii 申请前确认（REPOSITORY_CHECKLIST P-9）。
+- `tools/exiftool_watch.py` + `.github/workflows/exiftool-watch.yml`（RELEASE_PLAN §10 第 1 步）：每天对比 exiftool.org 的 `ver.txt`、`history.html` 与锁定版本，每个新版本开一个 Issue，标题标注安全更新（14 天 SLA），正文列出变更与更新步骤；已存在同名 Issue 时不重复。模拟锁定 13.52 时正确列出 7 个新版本、3 个安全更新（含 Windows only）；GitHub 上手动运行一次：锁定 13.59 即最新，未开 Issue。
+- `MM_PROPTEST_CASES` 控制属性测试用例数；`.github/workflows/nightly.yml` 每晚以 release 构建跑 20 万例（DEVELOPMENT_PLAN §5.4 的模糊测试时间片），首跑通过（时间/GPS 12 项 35 秒，编码 4 项 5 秒）。
+- 真实应用 UI 冒烟测试（调试构建 + ExifTool 13.59，10 个 ExifTool 样本 JPEG + 2 个 NEF 的一次性副本）：PASS，覆盖本次 `core.rs` 启动日志与 `main.rs` 的改动；新日志行不含路径。脚本修正：页面重新加载（Vite 新装依赖后会整页刷新）后重新注入辅助函数；干净导出详情的断言不再依赖某个样本含制造商注释；头部注明需要 ExifTool.jpg 与 Writer.jpg。
