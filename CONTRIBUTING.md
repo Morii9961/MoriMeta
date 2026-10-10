@@ -35,7 +35,19 @@ Contributor License Agreement.
 - `python tools/check_repo.py` on the files you add: the repository never contains photos, RAW
   files, raw research results, local paths or private metadata
   ([`docs/REPOSITORY_CHECKLIST.md`](docs/REPOSITORY_CHECKLIST.md))
+- `python tools/check_architecture.py`: crate dependencies point one way, `mm-domain` stays
+  pure, and the frontend can call only the app's own commands
+- For the desktop app (`apps/desktop`): `npm ci`, `npm run build`, `npm test`; in `src-tauri`,
+  `cargo fmt -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. A new UI or
+  backend text needs both languages (`src/i18n/messages.ts`; backend sentences in
+  `src/i18n/backend.zh.json`, checked by `python tools/message_inventory.py --check
+  apps/desktop/src/i18n/backend.zh.json`)
 - New Rust source files start with `// SPDX-License-Identifier: GPL-3.0-or-later`
+
+Where the UI repeats a backend rule to show a result while you type (GPS input, the time tools'
+preview), both sides are tested against one case file in `crates/mm-domain/tests/`
+(`gps_input_cases.json`, `time_text_cases.json`). Change the rule on both sides and extend the
+case file; the backend's own test defines the expected results.
 
 Changes that touch writing files — the transaction, recovery, undo, backups — need tests that
 leave every file byte-identical to its original after recovery and undo
