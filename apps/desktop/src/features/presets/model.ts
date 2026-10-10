@@ -189,3 +189,13 @@ export function presetKind(p: Preset): 'removal' | 'time' | 'descriptive' {
   if (acts.some((a) => a.do === 'set_time' || a.do === 'shift_time')) return 'time'
   return 'descriptive'
 }
+
+/** `rules` with the rule at `from` moved to drop position `to` (0 = before the first rule,
+ * `rules.length` = after the last), as dragging a rule does (SCREEN_SPEC 3#rules-drag). */
+export function moveRule<R>(rules: R[], from: number, to: number): R[] {
+  if (from < 0 || from >= rules.length || to < 0 || to > rules.length) return rules
+  const out = [...rules]
+  const [r] = out.splice(from, 1)
+  out.splice(to > from ? to - 1 : to, 0, r)
+  return out
+}

@@ -4,7 +4,7 @@
 // IF lines (all must hold) and THEN lines; enable, reorder (Alt ↑/↓), delete; Save (Ctrl S).
 // Built-in Presets are shown read-only.
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api, errorText } from '../../ipc'
 import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
@@ -19,6 +19,7 @@ import {
   actionValue,
   newAction,
   newCondition,
+  moveRule,
   ruleProblems,
   withActionValue,
   type Action,
@@ -190,6 +191,25 @@ export function RulesView() {
     ;[rules[i], rules[j]] = [rules[j], rules[i]]
     setDraft({ ...draft, rules })
   }
+  // drag a rule by its handle; the drop line shows the position it will take (3#rules-drag)
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const endDrag = () => {
+    setDragging(null)
+    setDropAt(null)
+  }
+  const drop = () => {
+    if (dragging !== null && dropAt !== null) setDraft({ ...draft, rules: moveRule(draft.rules, dragging, dropAt) })
+    endDrag()
+  }
+  // the position a dropped rule takes; a drop next to the dragged rule changes nothing
+  const landsAt = (at: number) => (dragging !== null && at > dragging ? at : at + 1)
+  const dropLine = (at: number) =>
+    dragging !== null && dropAt === at && at !== dragging && at !== dragging + 1 ? (
+      <div className="rule-drop" aria-hidden>
+        <span className="mono">{t('rules.drop_at', { n: String(landsAt(at)).padStart(2, '0') })}</span>
+      </div>
+    ) : null
   const save = async () => {
     if (ro || !dirty) return
     try {
@@ -279,10 +299,40 @@ export function RulesView() {
         </div>
         <div className="pane-scroll rules-body">
           {draft.rules.map((r, i) => (
-            <div key={i} className={`rule-row${r.enabled ? '' : ' disabled'}${problems[i].length ? ' incomplete' : ''}`}>
+            <Fragment key={i}>
+            {dropLine(i)}
+            <div
+              className={`rule-row${r.enabled ? '' : ' disabled'}${problems[i].length ? ' incomplete' : ''}${dragging === i ? ' dragging' : ''}`}
+              onDragOver={(e) => {
+                if (dragging === null) return
+                e.preventDefault()
+                const box = e.currentTarget.getBoundingClientRect()
+                setDropAt(e.clientY < box.top + box.height / 2 ? i : i + 1)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                drop()
+              }}
+            >
               <div className="rule-rail">
                 <input type="checkbox" className="checkbox" disabled={ro} checked={r.enabled} onChange={(e) => setRule(i, { ...r, enabled: e.target.checked })} aria-label={t('rules.enabled')} />
                 <span className="mono faint">{String(i + 1).padStart(2, '0')}</span>
+                {!ro && draft.rules.length > 1 && (
+                  <span
+                    className="rule-grip"
+                    draggable
+                    title={t('rules.drag')}
+                    aria-label={t('rules.drag')}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      e.dataTransfer.setData('text/plain', String(i))
+                      setDragging(i)
+                    }}
+                    onDragEnd={endDrag}
+                  >
+                    ⋮⋮
+                  </span>
+                )}
                 {!ro && (
                   <span className="rule-move">
                     <button className="link" onClick={() => move(i, -1)} disabled={i === 0} aria-label={t('rules.up')}>
@@ -356,7 +406,9 @@ export function RulesView() {
                 )}
               </div>
             </div>
+            </Fragment>
           ))}
+          {dropLine(draft.rules.length)}
           {!ro && (
             <button
               className="btn small rule-new"

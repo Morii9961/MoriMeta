@@ -851,6 +851,8 @@ export const messages = {
   'rules.enabled': ['Enabled', '启用'],
   'rules.up': ['Move up', '上移'],
   'rules.down': ['Move down', '下移'],
+  'rules.drag': ['Drag to reorder (or Alt ↑/↓)', '拖动以调整顺序（或 Alt ↑/↓）'],
+  'rules.drop_at': ['position {n}', '第 {n} 位'],
   'rules.rule_name': ['Rule name (optional)', '规则名称（可选）'],
   'rules.if': ['IF', '如果'],
   'rules.and': ['AND', '并且'],
