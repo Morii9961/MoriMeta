@@ -179,7 +179,7 @@ EV 证书自 2024 年起不再立即绕过 SmartScreen [F-51]，不值得为此�
 
 ## 10. ExifTool 更新流程
 
-1. 监控 exiftool.org history/RSS（自动任务，发现新版本开 Issue）。
+1. 监控 exiftool.org history/RSS（自动任务，发现新版本开 Issue）。已实现（2026-10-10）：`.github/workflows/exiftool-watch.yml` 每天运行 `tools/exiftool_watch.py`，对比 `ver.txt`、`history.html` 与锁定版本，每个新版本开一个 Issue（标题注明安全更新，正文列出各版本变更与更新步骤）。
 2. 判断：标注 "Security update"（含 "Windows only"）→ 启动 SLA（14 天），即使它不是 production release；其他版本 → 纳入下一个计划版本（锁定规则：包含全部已知安全修复的最新版本）。
 3. 更新 `tools/fetch-exiftool` 中的版本与 SHA-256 → CI 运行完整语料回归（写入 + V1–V6 验证 + 派生标签白名单差异报告）。
 4. 抽查兼容性实验室关键项。
