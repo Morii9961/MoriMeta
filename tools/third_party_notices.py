@@ -57,7 +57,9 @@ def norm_key(text: str) -> str:
     return hashlib.sha256(" ".join(text.split()).encode()).hexdigest()
 
 
-def cargo_packages() -> list[dict]:
+def cargo_graph() -> tuple[str, dict[str, dict], dict[str, list[str]]]:
+    """The app crate's id, and every package it links (normal dependencies, Windows x64) with
+    the edges between them."""
     cargo = os.environ.get("CARGO", "cargo")
     out = subprocess.run(
         [cargo, "metadata", "--format-version", "1", "--locked", "--filter-platform", TARGET],
@@ -68,20 +70,25 @@ def cargo_packages() -> list[dict]:
     meta = json.loads(out)
     by_id = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
-    seen: set[str] = set()
-    stack = [meta["resolve"]["root"]]
+    root = meta["resolve"]["root"]
+    edges: dict[str, list[str]] = {}
+    stack = [root]
     while stack:
         pid = stack.pop()
-        if pid in seen:
+        if pid in edges:
             continue
-        seen.add(pid)
-        for dep in nodes[pid]["deps"]:
-            # only normal dependencies end up in the program
-            if any(k["kind"] is None for k in dep["dep_kinds"]):
-                stack.append(dep["pkg"])
+        # only normal dependencies end up in the program
+        edges[pid] = sorted(
+            dep["pkg"] for dep in nodes[pid]["deps"] if any(k["kind"] is None for k in dep["dep_kinds"])
+        )
+        stack.extend(edges[pid])
+    return root, {pid: by_id[pid] for pid in edges}, edges
+
+
+def cargo_packages() -> list[dict]:
+    _, packages, _ = cargo_graph()
     rows = []
-    for pid in seen:
-        p = by_id[pid]
+    for p in packages.values():
         if not p["source"]:
             continue  # MoriMeta's own crates
         folder = Path(p["manifest_path"]).parent

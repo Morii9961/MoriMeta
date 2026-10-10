@@ -199,6 +199,8 @@ EV 证书自 2024 年起不再立即绕过 SmartScreen [F-51]，不值得为此�
 - [ ] Release Notes（含用户可见的安全/兼容性说明）中英文。
 - [ ] `latest.json` 仅在所有产物上传并验证后更新。
 
+自动化（2026-10-10）：推送 `v<版本>` 标签后，`.github/workflows/release.yml` 在 Windows runner 上检查标签、`tauri.conf.json`、桌面 `Cargo.toml`、`package.json` 版本一致且 CHANGELOG 有该版本段落；暂存并校验 ExifTool；构建 NSIS 安装包；用 `release-check.mjs` 确认程序取用并校验了随附的 ExifTool；`tools/release_assets.py` 收集安装包、`THIRD_PARTY_NOTICES.md`、CycloneDX SBOM（`tools/sbom.py`）、ExifTool 源码包和 `SHA256SUMS.txt`；为这些文件生成 GitHub 构建证明，为安装包生成 SBOM 证明（D-2 的"SHA-256 与 GitHub 构建证明"）；最后建立**草稿** Release。发布前由维护者核对草稿、补中文说明，按 `docs/UPDATER_RELEASE.md` 另行签名并生成 `latest.json`，再手动发布。手动运行（workflow_dispatch）只构建并上传为工作流产物，不建证明、不建 Release。上面的清单中，签名、真机安装/升级/卸载与迁移路径仍需人工完成。
+
 ---
 
 ## 12. macOS / Linux（v2）

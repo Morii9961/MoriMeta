@@ -142,6 +142,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - Decided 2026-09-30 (`docs/DECISIONS.md`): D-2 … D-18, the open questions of 2026-09-28/30, the design alignment (H-1…H-7, R-1…R-6).
 - Morii to carry out (outward-facing or paid): SignPath Foundation application and the D-16 question (D-2); posting the F-104 report to the ExifTool forum (draft in `research/reports/`).
 - Design session files stay the design session's (engineering does not edit them); Morii's manual screen review once the app runs.
+- Dependabot (2026-10-10, merging needs Morii's approval): #2 (tauri 2.12.1, tauri-plugin-updater =2.12.0, tauri-build 2.7.1) and #5 (@tauri-apps/api, cli 2.12.1, vite 8.3.2) pass every check and are recommended; the updater plugin's 2.11/2.12 changes do not touch this app (no webview updater permission) and it still uses minisign-verify 0.2.5. #3 (base64 0.23) and #4 (minisign-verify 0.3.0) are better closed: each adds a second copy beside the one tauri-plugin-updater uses, and #4 would make the app's own signature pre-check use a different verifier than the plugin that installs. Revisit when the plugin moves.
+- First release: rename `## [Unreleased]` in CHANGELOG.md to the version, make the versions agree, push the `v<version>` tag; `release.yml` then drafts the release (RELEASE_PLAN §11). Optionally set the repository variable `MORIMETA_UPDATER_PUBLIC_KEY` first, or the build never checks for updates.
 - Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, a real SD card (exFAT and FAT32 are covered by VHDs in CI), a real NAS (SMB is covered over localhost), a dedicated cloud-sync folder (V-04, downloaded cloud files stay blocked until then).
 
 ## Next engineering steps (no design dependency)
@@ -194,3 +196,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - GPS 输入支持度分秒（SCREEN_SPEC 2#b-same）：`GeoPoint::parse` 在十进制之外接受带 N/S、E/W 的度分秒（前缀或后缀、度分或度分秒、纬经顺序可互换；分秒须小于 60，只有最后一个数可带小数），预设中的 GPS 值同样适用；批量编辑器用相同规则的 TypeScript 解析，暂存的仍是十进制。Rust 与 TypeScript 各有正反用例。
 - 真实应用 UI 冒烟测试（2026-10-04，调试构建 + 真实后端与 ExifTool 13.59，12 个一次性副本：10 个 JPEG、2 个 NEF）：PASS。批量作者 → 预览（中英文）→ 预览期间被改动的文件被标出并重新规划 → 应用 11 处修改（9 个 JPEG 写入、2 个 NEF 未动、新建 2 个 sidecar）→ 经预览撤销后 12 个文件逐字节还原、无残留 → 历史与“现在与操作后”→ 预设新应用对话框（默认所选文件）→ 干净导出预览；本次新增：检查器内嵌预览图（ExifTool.jpg 的缩略图经后端读取）、“关于”中的真实版本（WebView2 154）、规则构建器试运行（12 个文件只读，文件哈希不变）。`scripts/ui-smoke.mjs` 已按新对话框与新增步骤更新。
 
+## 2026-10-10：发布流水线
+
+- `.github/workflows/release.yml`：推送 `v<版本>` 标签后在 Windows runner 上核对版本（标签、tauri.conf.json、桌面 Cargo.toml、package.json 一致，CHANGELOG 有该版本段落），获取并校验 ExifTool、暂存、构建 NSIS 安装包，`release-check.mjs` 确认程序取用随附 ExifTool 并通过完整性检查（runner 为管理员，`MM_RELEASE_CHECK_ELEVATED=1` 只放行"因管理员权限拒绝写入"这一种情况），然后收集发布文件、生成 GitHub 构建证明与安装包的 SBOM 证明（D-2），建立**草稿** Release。手动运行只上传工作流产物。Actions 按提交 SHA 固定（actions/attest v4.2.2、upload-artifact v7.0.1）。
+- `tools/sbom.py`：CycloneDX 1.6 JSON，与第三方声明同一依赖范围（283 个 crate、11 个 npm 包、ExifTool 包和 5 个自有 crate），哈希取自 Cargo.lock / package-lock.json / exiftool.lock.json，含 crate 与 npm 的依赖边；本地检查无重复引用、无悬空引用、全部可从根到达，`--check` 要求每个第三方组件有许可证和哈希。`third_party_notices.py` 拆出 `cargo_graph()`，重构前后生成的声明逐字节相同。
+- `tools/release_assets.py`：版本一致性、收集安装包/声明/SBOM/ExifTool 源码包（按锁定 SHA-256 核对）、`SHA256SUMS.txt` 和草稿说明（文件、SHA-256、`gh attestation verify` 用法）。用占位安装包在本地验证了正常输出、缺 CHANGELOG 段落和版本不一致三种情况；真实构建需在 CI 上运行（本机未保留 release 构建）。`docs/INSTALLATION.md` 增加构建证明的核对方法。

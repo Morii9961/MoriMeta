@@ -16,6 +16,7 @@ No version has been released yet. The first public preview will be unsigned (DEC
 - Settings › Advanced › Find history in a backup folder…, for a lost data folder.
 - Help › About MoriMeta with the versions a bug report needs and the third-party notices.
 - PRIVACY.md, docs/INSTALLATION.md, issue templates; dependency audit (cargo-deny, npm audit) in CI.
+- Release workflow: a version tag builds the installer on GitHub Actions and drafts a release with SHA-256 checksums, a CycloneDX SBOM, the third-party notices, the ExifTool source and GitHub build attestations.
 
 ### Known limits
 

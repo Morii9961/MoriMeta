@@ -1,0 +1,133 @@
+# Builds the Windows installer from a v<version> tag and puts it, with THIRD_PARTY_NOTICES, the
+# CycloneDX SBOM, the ExifTool source and SHA256SUMS, into a DRAFT release (RELEASE_PLAN §8, §11).
+# Nothing is published: the maintainer reviews the draft, adds the Chinese notes and publishes it.
+# The installer is unsigned until DECISIONS D-2 says otherwise; GitHub build provenance and an
+# SBOM attestation stand in for it ("SHA-256 and GitHub build attestation"). The updater manifest
+# needs the offline Minisign key and is made by hand (docs/UPDATER_RELEASE.md).
+#
+# Run by hand (workflow_dispatch) it builds and checks the same files as a workflow artifact, with
+# no attestation and no release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: installer, notices, SBOM, checksums
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # the draft release (tags only)
+      id-token: write # Sigstore certificate for the attestations
+      attestations: write
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      # the public updater key is not secret; without it the build makes no update requests
+      MORIMETA_UPDATER_PUBLIC_KEY: ${{ vars.MORIMETA_UPDATER_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Versions agree (tag, tauri.conf.json, Cargo.toml, package.json) and the CHANGELOG has the version
+        id: version
+        run: |
+          python - <<'EOF'
+          import os, sys
+          sys.path.insert(0, "tools")
+          import release_assets as r
+          v = r.version(os.environ["TAG"] or None)
+          if os.environ["TAG"] and r.changelog_section(v) is None:
+              sys.exit(f"CHANGELOG.md has no section ## [{v}]")
+          # before 1.0, and any -beta / -rc, is a pre-release (RELEASE_PLAN §6)
+          pre = v.startswith("0.") or "-" in v
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={v}\nprerelease={'true' if pre else 'false'}\n")
+          print("version", v, "(pre-release)" if pre else "")
+          EOF
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Pinned ExifTool (SHA-256 verified against the lock file)
+        run: python research/scripts/fetch_exiftool.py
+
+      - name: Frontend dependencies (exactly package-lock.json)
+        working-directory: apps/desktop
+        run: |
+          node --version
+          npm ci --no-fund --no-audit
+
+      - name: Stage ExifTool and THIRD_PARTY_NOTICES
+        run: python apps/desktop/scripts/stage-exiftool.py
+
+      - name: Build the installer
+        working-directory: apps/desktop
+        run: |
+          [ -n "$MORIMETA_UPDATER_PUBLIC_KEY" ] || echo "::warning::MORIMETA_UPDATER_PUBLIC_KEY is not set: this build never checks for updates"
+          npx tauri build --ci --config src-tauri/tauri.bundle.conf.json
+
+      - name: The built program finds and checks its ExifTool
+        working-directory: apps/desktop
+        env:
+          MM_RELEASE_CHECK_ELEVATED: "1" # the runner is elevated
+        run: node scripts/release-check.mjs "$RUNNER_TEMP/release-check"
+
+      - name: Release files
+        run: |
+          python tools/release_assets.py --out "$RUNNER_TEMP/release/files" ${TAG:+--tag "$TAG"}
+          cat "$RUNNER_TEMP"/release/release-notes-*.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build provenance (installer, SBOM, notices, ExifTool source)
+        if: github.ref_type == 'tag'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/release/files/SHA256SUMS.txt
+
+      - name: SBOM attestation for the installer
+        if: github.ref_type == 'tag'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release/files/MoriMeta_${{ steps.version.outputs.version }}_x64-setup.exe
+          sbom-path: ${{ runner.temp }}/release/files/MoriMeta_${{ steps.version.outputs.version }}_sbom.cdx.json
+
+      - name: Draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          gh release create "$TAG" --draft --verify-tag --prerelease="$PRERELEASE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "MoriMeta $VERSION" \
+            --notes-file "$RUNNER_TEMP/release/release-notes-$VERSION.md" \
+            "$RUNNER_TEMP"/release/files/*

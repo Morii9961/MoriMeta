@@ -20,6 +20,12 @@ English is the authoritative version; a Chinese translation follows.
    Get-FileHash .\MoriMeta_<version>_x64-setup.exe -Algorithm SHA256
    ```
 
+   With the [GitHub CLI](https://cli.github.com) you can also check that the installer was built by the project's GitHub Actions from the release's tagged source:
+
+   ```powershell
+   gh attestation verify .\MoriMeta_<version>_x64-setup.exe -R Morii9961/MoriMeta
+   ```
+
 3. Run it. It installs for your user account only, in `%LOCALAPPDATA%\MoriMeta`, without asking for administrator rights.
 
 ### Windows SmartScreen
@@ -76,6 +82,12 @@ Copy `%LOCALAPPDATA%\MoriMeta` and your backup location. If only the backups sur
 
    ```powershell
    Get-FileHash .\MoriMeta_<版本>_x64-setup.exe -Algorithm SHA256
+   ```
+
+   安装了 [GitHub CLI](https://cli.github.com) 的话，还可以核对安装程序确实由本项目的 GitHub Actions 从该版本标签的源码构建：
+
+   ```powershell
+   gh attestation verify .\MoriMeta_<版本>_x64-setup.exe -R Morii9961/MoriMeta
    ```
 
 3. 运行安装程序。它只为当前用户安装到 `%LOCALAPPDATA%\MoriMeta`，不需要管理员权限。
