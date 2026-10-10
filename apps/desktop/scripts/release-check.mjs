@@ -7,7 +7,7 @@
 //
 // MM_RELEASE_CHECK_ELEVATED=1: on an elevated CI runner, accept that writes are refused for that reason.
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,10 +42,20 @@ const dump = (dir) => {
     if (/\.(log|txt|json|jsonl)$/i.test(p)) console.error(readFileSync(p, 'utf8').slice(-4000))
   }
 }
+// the program's and WebView2's processes (session, window title) and who listens on the port
+const processes = () => {
+  if (process.platform !== 'win32') return
+  for (const image of ['morimeta.exe', 'msedgewebview2.exe']) {
+    console.error(spawnSync('tasklist', ['/v', '/fo', 'list', '/fi', `imagename eq ${image}`], { encoding: 'utf8' }).stdout)
+  }
+  const listening = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' }).stdout ?? ''
+  console.error(listening.split('\n').filter((l) => l.includes(`:${PORT}`)).join('\n') || `(nothing on port ${PORT})`)
+}
 const fail = (m) => {
   console.error(`FAIL: ${m}`)
   console.error(exited === undefined ? 'the program was still running (a native error dialog waits for a click)' : `the program exited with ${exited}`)
   dump(data)
+  processes()
   app.kill()
   process.exit(1)
 }
