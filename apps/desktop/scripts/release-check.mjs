@@ -8,8 +8,8 @@
 // MM_RELEASE_CHECK_ELEVATED=1: on an elevated CI runner, accept that writes are refused for that reason.
 
 import { spawn } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const work = resolve(process.argv[2] ?? '.')
@@ -19,18 +19,40 @@ mkdirSync(work, { recursive: true })
 const PORT = 9334
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+const data = join(work, 'data')
 const app = spawn(exe, [], {
-  env: { ...process.env, MM_DATA: join(work, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
+  env: { ...process.env, MM_DATA: data, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
   stdio: 'inherit',
 })
+let exited
+app.on('exit', (code) => (exited = code))
+// what the data folder holds, with the end of each text file: the logs say why a launch stopped
+const dump = (dir) => {
+  let entries = []
+  try {
+    entries = readdirSync(dir, { recursive: true })
+  } catch {
+    return console.error(`(no data folder at ${dir})`)
+  }
+  for (const e of entries) {
+    const p = join(dir, e)
+    const s = statSync(p)
+    if (!s.isFile()) continue
+    console.error(`--- ${relative(dir, p)} (${s.size} bytes)`)
+    if (/\.(log|txt|json|jsonl)$/i.test(p)) console.error(readFileSync(p, 'utf8').slice(-4000))
+  }
+}
 const fail = (m) => {
   console.error(`FAIL: ${m}`)
+  console.error(exited === undefined ? 'the program was still running (a native error dialog waits for a click)' : `the program exited with ${exited}`)
+  dump(data)
   app.kill()
   process.exit(1)
 }
 
 let target
-for (let i = 0; i < 60 && !target; i++) {
+// a cold WebView2 on a CI runner takes longer than on a desktop
+for (let i = 0; i < 180 && !target && exited === undefined; i++) {
   await sleep(500)
   try {
     target = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === 'page')

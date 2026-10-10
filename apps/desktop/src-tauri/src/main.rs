@@ -15,26 +15,26 @@ use std::sync::Arc;
 
 use tauri::{DragDropEvent, Manager, WindowEvent};
 
+/// Shown to the user, and written to stderr for whoever started the program with one (a release
+/// check, a script); a GUI program without a console simply has nowhere to write it.
+fn cannot_start(why: impl std::fmt::Display) -> ! {
+    eprintln!("MoriMeta cannot start: {why}");
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("MoriMeta")
+        .set_description(format!("MoriMeta cannot start.\n\n{why}"))
+        .show();
+    std::process::exit(1);
+}
+
 fn main() {
     if let Err(why) = journal_repair::startup(&core::data_dir()) {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title("MoriMeta")
-            .set_description(format!("MoriMeta cannot start.\n\n{why}"))
-            .show();
-        std::process::exit(1);
+        cannot_start(why);
     }
     let core = match core::Core::open() {
         Ok(c) => Arc::new(c),
-        Err(why) => {
-            // most often another MoriMeta already runs with the same data folder
-            rfd::MessageDialog::new()
-                .set_level(rfd::MessageLevel::Error)
-                .set_title("MoriMeta")
-                .set_description(format!("MoriMeta cannot start.\n\n{why}"))
-                .show();
-            std::process::exit(1);
-        }
+        // most often another MoriMeta already runs with the same data folder
+        Err(why) => cannot_start(why),
     };
     let for_setup = core.clone();
     tauri::Builder::default()
