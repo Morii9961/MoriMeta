@@ -115,6 +115,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
@@ -145,6 +149,12 @@ jobs:
           cargo fmt -- --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --all-targets --locked
+
+      - name: Release files the installer ships with (third-party notices, SBOM)
+        # what release.yml makes at a tag; every shipped component needs a license and a hash
+        run: |
+          python tools/third_party_notices.py --check --out "$RUNNER_TEMP/THIRD_PARTY_NOTICES.md"
+          python tools/sbom.py --check --out "$RUNNER_TEMP/sbom.cdx.json"
 
   deps:
     # SECURITY_MODEL §11: licenses (GPL-3.0-or-later compatible), RustSec advisories and crate
