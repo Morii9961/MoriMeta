@@ -191,7 +191,7 @@ Planned ─► Prechecked(输出路径不存在、输出卷空间) ─► TempWr
 
 `manifest.json`（`manifest_version`）每个条目：原始绝对路径、卷序列号、File ID、大小、原修改/创建时间、H0、执行后 H1、备份文件名、条目角色（`PreImage` / `CreatedByOperation` / `PreImageBeforeForcedRestore`）。执行期间追加写入并 fsync；Operation 结束时写入最终版本。
 
-实现（2026-09-27，PHASE1_REPORT G-7）：`manifest.jsonl` 第一行描述 Operation，随后每个文件一行登记路径、角色、临时名、bak 名、备份文件（任何文件被触碰之前）；之后每次 Journal 变化追加一行，`BackedUp`（H0）、`Ready`（H1）、重新登记名称与结束状态四类记录追加后立即刷盘，其余只追加。身份字段（大小、File ID、修改时间）在 `plan.json` 的指纹中。角色对应：`embedded` = PreImage，`recreate` = 由 Undo 重建（执行前不存在），`remove` = 移入备份库（CreatedByOperation 的撤销）；PreImageBeforeForcedRestore 尚未实现（强制恢复未实现）。最后一行被截断（追加中进程终止）时忽略该行；中间行损坏时整个记录不导入，不猜测。
+实现（2026-09-27，PHASE1_REPORT G-7）：`manifest.jsonl` 第一行描述 Operation，随后每个文件一行登记路径、角色、临时名、bak 名、备份文件（任何文件被触碰之前）；之后每次 Journal 变化追加一行，`BackedUp`（H0）、`Ready`（H1）、重新登记名称与结束状态四类记录追加后立即刷盘，其余只追加。身份字段（大小、File ID、修改时间）在 `plan.json` 的指纹中。角色对应：`embedded` = PreImage，`recreate` = 由 Undo 重建（执行前不存在），`remove` = 移入备份库（CreatedByOperation 的撤销）；强制恢复（§7.2，已实现）不另设角色：执行前先把文件的当前内容按 PreImage（`embedded`）备份，因此强制恢复本身也可以撤销（e2e `forced_restore_of_a_file_changed_later`）。最后一行被截断（追加中进程终止）时忽略该行；中间行损坏时整个记录不导入，不猜测。
 
 ### 6.2 规则
 
