@@ -13,6 +13,8 @@ MoriMeta makes exactly one kind of network request, and only if you allow it:
 - **Update check** (Settings › Updates, asked once at first launch with nothing pre-selected). When you choose weekly checks or click *Check now*, MoriMeta requests `https://github.com/Morii9961/MoriMeta/releases/latest/download/latest.json`. The request carries no information about you, your photos or your installation; its user agent names only the update library (`tauri-plugin-updater/<version>`). If you then choose to download an update, the installer is fetched from the same GitHub release. GitHub receives your IP address as with any web request; see GitHub's privacy statement.
 - A build made without an update signing key never makes any request.
 
+The installer downloads Microsoft's WebView2 Runtime, which draws the app's window, only if Windows does not have it yet. The runtime is a Microsoft component and follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement) and your Windows diagnostic-data settings; MoriMeta gives it no information about your photos.
+
 Opening a folder on a network drive or a cloud-synced folder makes Windows (or the sync client) transfer those files; that is your storage, not a service of MoriMeta.
 
 ## What MoriMeta stores on your computer
@@ -53,6 +55,8 @@ MoriMeta 只会发出一种网络请求，而且只有在你允许时才会发�
 
 - **检查更新**（设置 › 更新；首次启动时询问一次，默认不勾选任何选项）。选择每周检查或点击“立即检查”后，MoriMeta 会请求 `https://github.com/Morii9961/MoriMeta/releases/latest/download/latest.json`。请求中不包含任何关于你、你的照片或你的安装的信息；User-Agent 只写明更新组件（`tauri-plugin-updater/<版本>`）。如果你随后选择下载更新，安装包同样从该 GitHub Release 下载。和任何网页请求一样，GitHub 会看到你的 IP 地址，详见 GitHub 的隐私声明。
 - 未配置更新签名密钥的构建不会发出任何请求。
+
+只有在 Windows 尚未安装时，安装程序才会下载用于绘制应用窗口的 Microsoft WebView2 运行时。该运行时是 Microsoft 的组件，适用 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)和你的 Windows 诊断数据设置；MoriMeta 不向它提供任何关于你照片的信息。
 
 打开网络驱动器或云同步文件夹中的照片时，文件传输由 Windows 或同步客户端完成，属于你自己的存储，不是 MoriMeta 的服务。
 
