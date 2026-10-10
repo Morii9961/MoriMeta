@@ -1,0 +1,45 @@
+# DEVELOPMENT_PLAN §5.4 Nightly, the "fuzz time slice": the property tests of the time tools, GPS
+# input and the ExifTool argfile encoding with a hundred times the cases of a pull request. A
+# failure prints the shrunk input; turn it into a regular test with the fix.
+name: nightly
+
+on:
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  properties:
+    name: property tests, 200k cases each
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      MM_PROPTEST_CASES: "200000"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            target
+          key: nightly-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: nightly-${{ runner.os }}-
+
+      - name: Properties (release build: the same checks, faster)
+        run: cargo test --release --locked -p mm-domain --test properties -p mm-exiftool --test encode_properties

@@ -8,6 +8,14 @@ use mm_exiftool::encode::{Line, TagName, ValueError, check_value, xml_value};
 use proptest::prelude::*;
 use std::path::Path;
 
+/// Cases per property: the default here, or `MM_PROPTEST_CASES` (the nightly run uses many more).
+fn cases(default: u32) -> u32 {
+    std::env::var("MM_PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 /// What `-ex` does to a value: the five XML entities and decimal or hex character references.
 fn unescape(s: &str) -> Option<String> {
     let mut out = String::new();
@@ -69,7 +77,7 @@ fn tricky() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 2048, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(2048), failure_persistence: None, ..ProptestConfig::default() })]
 
     #[test]
     fn a_value_is_one_line_and_reads_back_exactly(v in prop_oneof![tricky(), any::<String>()]) {

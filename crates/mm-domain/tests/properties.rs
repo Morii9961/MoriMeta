@@ -13,6 +13,14 @@ use proptest::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+/// Cases per property: the default here, or `MM_PROPTEST_CASES` (the nightly run uses many more).
+fn cases(default: u32) -> u32 {
+    std::env::var("MM_PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 /// 0001-01-01 00:00:00 and 9999-12-31 23:59:59 as Unix seconds: what EXIF can store.
 const MIN: i64 = -62_135_596_800;
 const MAX: i64 = 253_402_300_799;
@@ -106,7 +114,7 @@ fn expected(t: NaiveDateTime, d: TimeDelta) -> Result<NaiveDateTime, TimeOpError
 
 proptest! {
     // a failure prints the shrunk case; nothing is written next to the sources
-    #![proptest_config(ProptestConfig { cases: 1024, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(1024), failure_persistence: None, ..ProptestConfig::default() })]
 
     #[test]
     fn shift_moves_wall_clock_only_and_is_reversible(t in capture_time(), d in delta()) {
