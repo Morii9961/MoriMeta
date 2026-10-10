@@ -227,3 +227,7 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - 对照 SCREEN_SPEC 逐项核对后补上三处：规则构建器拖动排序（3#rules-drag，拖动柄、抬起的行、标注"第 NN 位"的落点线；重排为可测函数 `moveRule`）；预设行菜单（3#p-menu，右键、菜单键/Shift+F10 或行尾"⋯"，含查看/编辑规则、复制、重命名、导出、删除、应用），复制后新副本直接进入行内重命名并全选名称；资料库扫描条的剩余时间与滚动条旁的扫描线（1#large）。表头菜单与预设菜单共用 `components/PopupMenu.tsx`。模拟后端的预设改为会话内有状态。均在模拟后端中验证，真实应用 UI 冒烟测试再次 PASS。
 - 其余状态核对结论：检查器对读取失败（含权限被拒、元数据损坏）有统一错误状态；"撤销所选文件"由撤销对话框的逐文件选择覆盖；重试/重新规划、恢复到文件夹、导出日志均已有。
 - 测试：界面文案 966 条均有中英文、两种语言的 `{参数}` 一致、无漏译；后端句子的中文模板恰好引用英文模板的全部值（126 条带值句子）；删除 8 条无人使用的旧文案（其中两条内容已不属实）。模拟后端缺 `app_close`、`recovery_keep` 已补，测试保证它覆盖界面调用的全部命令；`check_architecture.py` 另要求界面实际调用的命令与授权表完全一致（无多余授权）。前端 49 项测试通过。
+
+## 2026-10-10：IPC 类型一致性检查
+
+- `tools/check_ipc_types.py`（CI test 任务）：前端手写的 `ipc/types.ts` 与 `presets/model.ts` 中 44 个接口、5 个可辨识联合（`AppEvent` 与四种批量编辑），各自对照显式表中的 Rust 结构体/内部标签枚举（含 `flatten`、`extends`、`rename`）。后端→界面：界面读取的必需字段后端必须发送，`skip_serializing_if` 的字段在 TS 中必须可选；界面→后端：字段集合相等。首跑发现 `PlanEntry.excluded` 仅在为真时发送却被声明为必需——改为可选，`DiffTable` 三处显式转为布尔。变异检查（TS 多一个后端不发的字段、Rust 字段加 `skip_serializing_if`、联合多一个后端没有的标签）均被抓到。
