@@ -201,3 +201,9 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - `.github/workflows/release.yml`：推送 `v<版本>` 标签后在 Windows runner 上核对版本（标签、tauri.conf.json、桌面 Cargo.toml、package.json 一致，CHANGELOG 有该版本段落），获取并校验 ExifTool、暂存、构建 NSIS 安装包，`release-check.mjs` 确认程序取用随附 ExifTool 并通过完整性检查（runner 为管理员，`MM_RELEASE_CHECK_ELEVATED=1` 只放行"因管理员权限拒绝写入"这一种情况），然后收集发布文件、生成 GitHub 构建证明与安装包的 SBOM 证明（D-2），建立**草稿** Release。手动运行只上传工作流产物。Actions 按提交 SHA 固定（actions/attest v4.2.2、upload-artifact v7.0.1）。
 - `tools/sbom.py`：CycloneDX 1.6 JSON，与第三方声明同一依赖范围（283 个 crate、11 个 npm 包、ExifTool 包和 5 个自有 crate），哈希取自 Cargo.lock / package-lock.json / exiftool.lock.json，含 crate 与 npm 的依赖边；本地检查无重复引用、无悬空引用、全部可从根到达，`--check` 要求每个第三方组件有许可证和哈希。`third_party_notices.py` 拆出 `cargo_graph()`，重构前后生成的声明逐字节相同。
 - `tools/release_assets.py`：版本一致性、收集安装包/声明/SBOM/ExifTool 源码包（按锁定 SHA-256 核对）、`SHA256SUMS.txt` 和草稿说明（文件、SHA-256、`gh attestation verify` 用法）。用占位安装包在本地验证了正常输出、缺 CHANGELOG 段落和版本不一致三种情况；真实构建需在 CI 上运行（本机未保留 release 构建）。`docs/INSTALLATION.md` 增加构建证明的核对方法。
+
+## 2026-10-10：时间工具与 GPS 输入的属性测试
+
+- DEVELOPMENT_PLAN §5.1 要求的 `mm-domain` 属性测试此前没有。`crates/mm-domain/tests/properties.rs`（proptest 1.11，仅开发依赖，MIT/Apache）每项 1024 组随机输入，拍摄时间覆盖 EXIF 全范围并偏向月末、年末、闰日与范围两端，含亚秒和 UTC 偏移：Shift 只移动本地时间、超出 0001–9999 时报 OutOfRange、反向 Shift 精确还原；保持相对间隔时锚点落在新时间、任意两文件间隔不变；按拍摄时间的序列保持亚秒在内的顺序、等间隔、偏移保留；RAW+JPG 配对共享位置且位置连续无空缺；绝对时间保留偏移、去掉亚秒；本地时间、Shift、偏移与 EXIF 字段文本往返；-12:00…+14:00 之外的偏移被拒绝；任意文本输入不会 panic；自然排序是全序（排序不 panic、反对称、传递），相机编号按数值且不分大小写；GPS 十进制显示与度分秒（前缀/后缀、经纬顺序互换）往返。
+- `crates/mm-exiftool/tests/encode_properties.rs`（每项 2048 组，偏向换行、`-execute`、`#[CSTR]`、伪造终止符、实体与控制字符）：任意值要么恰好在 `check_value` 拒绝时被拒绝，要么只成为一行、不以空格开头，按 `-ex` 反转义后与原值逐字相同；标签名无法携带选项或值；路径只能是不含 `|` 的绝对单行。与真实 ExifTool 的往返仍由 `engine.rs` 覆盖。
+- 变异检查：去掉 Shift 的年份范围检查、取消配对共享、非数字段改为区分大小写、换行不转义、首空格不转义、路径允许 `|`，各自被对应属性抓到（随后还原）。本地 workspace 264 项（含新增）、严格 Clippy、MSRV 1.88 检查和桌面适配器 15 项通过。
