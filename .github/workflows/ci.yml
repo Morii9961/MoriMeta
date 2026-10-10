@@ -41,6 +41,9 @@ jobs:
       - name: Architecture rules (dependency direction, pure mm-domain, the frontend's permissions)
         run: python tools/check_architecture.py
 
+      - name: The UI's IPC types match the Rust structs they mirror
+        run: python tools/check_ipc_types.py
+
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal --component clippy,rustfmt

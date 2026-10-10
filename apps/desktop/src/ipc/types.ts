@@ -282,7 +282,8 @@ export interface PlanEntry {
   changes: FieldChange[]
   action?: EntryAction | null
   notes: string[]
-  excluded: boolean
+  /** Present (true) only when the user left the file out. */
+  excluded?: boolean
   excluded_changes?: FieldChange[]
   target: 'in_file' | 'sidecar' | 'new_sidecar'
   warnings: string[]

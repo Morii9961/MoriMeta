@@ -64,10 +64,10 @@ export function DiffTable(p: Props) {
   if (p.view === 'change') {
     for (const e of p.entries) {
       const all = [
-        ...e.changes.map((c) => ({ c, excluded: e.excluded })),
+        ...e.changes.map((c) => ({ c, excluded: !!e.excluded })),
         ...(e.excluded_changes ?? []).map((c) => ({ c, excluded: true })),
       ]
-      if (all.length === 0) changeRows.push({ e, c: null, excluded: e.excluded, first: true })
+      if (all.length === 0) changeRows.push({ e, c: null, excluded: !!e.excluded, first: true })
       all.forEach((x, i) => {
         if (p.filter !== 'all' && p.filter !== 'excluded' && p.filter !== 'warning' && p.filter !== 'unsupported' && !x.excluded && x.c.kind !== p.filter) return
         changeRows.push({ e, c: x.c, excluded: x.excluded, first: i === 0 })
@@ -167,7 +167,7 @@ export function DiffTable(p: Props) {
                   const xc = e.excluded_changes?.find((x) => x.field === f)
                   if (c || xc) {
                     const change = (c ?? xc)!
-                    const excluded = !c || e.excluded
+                    const excluded = !c || !!e.excluded
                     const dim = p.filter !== 'all' && p.filter !== 'excluded' && p.filter !== 'warning' && change.kind !== p.filter
                     return (
                       <ChangeCell
