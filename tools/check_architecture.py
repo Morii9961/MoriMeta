@@ -8,8 +8,8 @@
 2. mm-domain stays pure (no IO, no async, no processes): its external dependencies are an explicit
    list, so adding one is a reviewed change to this file.
 3. The frontend can call exactly the app's own commands (SECURITY_MODEL §6): the command list in
-   `build.rs`, the grants in `capabilities/default.json` and the handlers registered in `main.rs`
-   are the same set; there is one capability file and no plugin permission; the frontend imports
+   `build.rs`, the grants in `capabilities/default.json`, the handlers registered in `main.rs` and
+   the commands the UI calls are the same set; there is one capability file and no plugin permission; the frontend imports
    no Tauri plugin package; the content security policy loads nothing from outside the app.
 
     python tools/check_architecture.py
@@ -97,6 +97,19 @@ def check_capabilities(problems: list[str]) -> None:
             problems.append(f"{c}: in build.rs COMMANDS but not {what}")
         for c in sorted(names - commands):
             problems.append(f"{c}: {what} but not in build.rs COMMANDS")
+
+    # what the UI calls (apps/desktop/src/ipc is the only caller; the mock and tests do not count):
+    # a call to a command that is not granted fails at run time, a granted command no one calls is
+    # surface that only an attacker would use
+    called = set()
+    for f in (ROOT / "apps" / "desktop" / "src").rglob("*.ts*"):
+        if "mock" in f.name or ".test." in f.name:
+            continue
+        called |= set(re.findall(r"\b(?:call|invoke)(?:<[^>]*>)?\(\s*'([a-z_]+)'", f.read_text(encoding="utf-8")))
+    for c in sorted(called - commands):
+        problems.append(f"the UI calls {c}, which build.rs COMMANDS does not list")
+    for c in sorted(commands - called):
+        problems.append(f"{c} is granted to the UI but nothing in apps/desktop/src calls it: remove it")
 
     pkg = json.loads((ROOT / "apps" / "desktop" / "package.json").read_text(encoding="utf-8"))
     for d in sorted({**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}):
