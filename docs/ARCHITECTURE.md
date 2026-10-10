@@ -101,7 +101,7 @@ apps/
     └── src/         React 前端
 ```
 
-依赖方向（严格单向，CI 用 `cargo-deny` 的 bans / 自定义检查约束）：
+依赖方向（严格单向，CI 用 `cargo-deny` 的 bans / 自定义检查约束；2026-10-10 起由 `tools/check_architecture.py` 在每次 CI 中检查，同时检查 `mm-domain` 的外部依赖白名单与前端权限面）：
 
 ```text
 mm-domain  ◄── mm-exiftool

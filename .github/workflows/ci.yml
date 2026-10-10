@@ -38,6 +38,9 @@ jobs:
       - name: Every backend text has a Chinese translation (apps/desktop/src/i18n/backend.zh.json)
         run: python tools/message_inventory.py --check apps/desktop/src/i18n/backend.zh.json
 
+      - name: Architecture rules (dependency direction, pure mm-domain, the frontend's permissions)
+        run: python tools/check_architecture.py
+
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
