@@ -9,6 +9,7 @@ import { useApp } from '../../state/store'
 import { useT, useBT, fieldLabel, type MessageKey } from '../../i18n'
 import { useVisibleItems } from '../library/hooks'
 import { Dialog } from '../../components/Dialog'
+import { PopupMenu, type MenuItem } from '../../components/PopupMenu'
 import { showPreview } from '../../app/actions'
 import { actionText, conditionText, presetKind, type PresetInfo } from './model'
 import './presets.css'
@@ -84,6 +85,33 @@ export function PresetsView() {
 
   const count = (f: (p: PresetInfo) => boolean) => (list ?? []).filter(f).length
 
+  // a duplicate opens with its name ready to change (SCREEN_SPEC 3#p-menu)
+  const duplicate = (p: PresetInfo) =>
+    run(async () => {
+      const copy = await api.presetDuplicate(p.id)
+      setSel(copy)
+      setRenaming(copy)
+    })
+  const editRules = (p: PresetInfo) => {
+    useApp.setState({ editPreset: p.id })
+    setModule('rules')
+  }
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  // the rename field opens with the whole name selected, ready to type over
+  const selectOnMount = useCallback((el: HTMLInputElement | null) => {
+    el?.focus()
+    el?.select()
+  }, [])
+  const closeMenu = useCallback(() => setMenu(null), [])
+  const menuItems = (p: PresetInfo): MenuItem[] => [
+    { text: p.builtin ? t('presets.view_rules') : t('presets.edit_rules'), run: () => editRules(p) },
+    { text: t('presets.duplicate'), run: () => duplicate(p), disabled: busy },
+    { text: t('presets.rename'), keys: 'F2', run: () => setRenaming(p.id), disabled: busy || p.builtin },
+    { text: `${t('presets.export')}…`, run: () => run(() => api.presetExport(p.id)), disabled: busy },
+    { text: `${t('presets.delete')}…`, run: () => setDeleting(p), disabled: busy || p.builtin },
+    { text: t('presets.apply'), run: () => setApplying(p), disabled: !assets.length },
+  ]
+
   return (
     <>
       <nav className="pane-sidebar" aria-label={t('presets.sources')}>
@@ -133,17 +161,26 @@ export function PresetsView() {
                 tabIndex={0}
                 className={`preset-row${cur?.id === p.id ? ' on' : ''}`}
                 onClick={() => setSel(p.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setSel(p.id)
+                  setMenu({ id: p.id, x: e.clientX, y: e.clientY })
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'F2' && !p.builtin) setRenaming(p.id)
+                  if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+                    e.preventDefault()
+                    const b = e.currentTarget.getBoundingClientRect()
+                    setMenu({ id: p.id, x: b.left + 24, y: b.bottom })
+                  }
                 }}
               >
                 <div className="preset-main">
                   {renaming === p.id ? (
                     <input
                       className="input ui"
-                      autoFocus
+                      ref={selectOnMount}
                       defaultValue={p.name}
-                      onFocus={(e) => e.target.select()}
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') setRenaming(null)
                         if (e.key === 'Enter') {
@@ -169,6 +206,20 @@ export function PresetsView() {
                 <span className="mono faint">
                   {p.last_used_ms ? new Date(p.last_used_ms).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '—'}
                 </span>
+                <button
+                  className="link preset-more"
+                  aria-label={t('presets.more')}
+                  title={t('presets.more')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSel(p.id)
+                    const b = e.currentTarget.getBoundingClientRect()
+                    setMenu({ id: p.id, x: b.left, y: b.bottom })
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  ⋯
+                </button>
               </div>
             )
           })}
@@ -209,16 +260,10 @@ export function PresetsView() {
                 <p className="note">{t('presets.safety_note')}</p>
               </div>
               <div className="insp-section preset-actions">
-                <button
-                  className="btn"
-                  onClick={() => {
-                    useApp.setState({ editPreset: cur.id })
-                    setModule('rules')
-                  }}
-                >
+                <button className="btn" onClick={() => editRules(cur)}>
                   {cur.builtin ? t('presets.view_rules') : t('presets.edit_rules')}
                 </button>
-                <button className="btn" disabled={busy} onClick={() => run(async () => setSel(await api.presetDuplicate(cur.id)))}>
+                <button className="btn" disabled={busy} onClick={() => duplicate(cur)}>
                   {t('presets.duplicate')}
                 </button>
                 <button className="btn" disabled={busy || cur.builtin} onClick={() => setRenaming(cur.id)}>
@@ -242,6 +287,10 @@ export function PresetsView() {
           </>
         )}
       </aside>
+      {menu && (() => {
+        const p = list?.find((x) => x.id === menu.id)
+        return p ? <PopupMenu x={menu.x} y={menu.y} items={menuItems(p)} onClose={closeMenu} /> : null
+      })()}
       {applying && <ApplyDialog preset={applying} onCancel={() => setApplying(null)} onBuild={(ids) => apply(applying, ids)} />}
       {deleting && (
         <Dialog

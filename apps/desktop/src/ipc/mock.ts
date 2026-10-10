@@ -3,6 +3,7 @@
 // (`npm run dev`) to look at screens. It invents a small Session; it never touches files and is
 // not included in production builds (ipc/index.ts imports it only under import.meta.env.DEV).
 
+import type { PresetInfo } from '../features/presets/model'
 import type {
   AppEvent,
   AppInfo,
@@ -193,6 +194,14 @@ function bump(id: string, f: (e: PlanEntry[]) => PlanEntry[]): PlanView {
 
 const roCleared = new Set<number>()
 
+const presets: PresetInfo[] = [
+  { id: 'builtin:Copyright Template', name: 'Copyright Template', builtin: true, fields: ['copyright'], last_used_ms: null, untrusted: false, lint: [],
+    preset: { schema_version: 1, name: 'Copyright Template', rules: [{ name: 'Copyright from creator and year where there is none', enabled: true, when: [{ if: 'empty', field: 'copyright' }], then: [{ do: 'set_copyright', value: '© {creator} {year}' }] }] } },
+  { id: 'builtin:Remove GPS', name: 'Remove GPS', builtin: true, fields: ['gps'], last_used_ms: null, untrusted: false, lint: [],
+    preset: { schema_version: 1, name: 'Remove GPS', rules: [{ name: '', enabled: true, when: [], then: [{ do: 'remove_gps' }] }] } },
+]
+let presetSeq = 0
+
 const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   backup_usage: () => mockBackups.usage(),
   backup_keep: (a) => mockBackups.keep(a.opId as string, a.keep as boolean),
@@ -313,15 +322,29 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   asset_preview: () => null,
   history_import: () => ({ location: 'E:\\MoriMeta backups', imported: ['op-mock-1', 'op-mock-2'], skipped: [], recovered_files: 0 }),
   restore_to: () => ({ folder: 'D:\\restored', restored: 3, without_backup: 0, notes: [] }),
-  presets_list: () => [
-    { id: 'builtin:Copyright Template', name: 'Copyright Template', builtin: true, fields: ['copyright'], last_used_ms: null, untrusted: false, lint: [],
-      preset: { schema_version: 1, name: 'Copyright Template', rules: [{ name: 'Copyright from creator and year where there is none', enabled: true, when: [{ if: 'empty', field: 'copyright' }], then: [{ do: 'set_copyright', value: '© {creator} {year}' }] }] } },
-    { id: 'builtin:Remove GPS', name: 'Remove GPS', builtin: true, fields: ['gps'], last_used_ms: null, untrusted: false, lint: [],
-      preset: { schema_version: 1, name: 'Remove GPS', rules: [{ name: '', enabled: true, when: [], then: [{ do: 'remove_gps' }] }] } },
-  ],
-  preset_save: () => 'preset-mock',
-  preset_duplicate: () => 'preset-mock',
-  preset_delete: () => undefined,
+  presets_list: () => presets.map((p) => ({ ...p })),
+  // the user's presets live for the session, like the real list (copies, renames, deletes)
+  preset_save: (a) => {
+    const preset = a.preset as PresetInfo['preset']
+    const id = (a.id as string | null) ?? `mock:${++presetSeq}`
+    const at = presets.findIndex((p) => p.id === id && !p.builtin)
+    const info = { id, name: preset.name, builtin: false, fields: at >= 0 ? presets[at].fields : [], last_used_ms: null, untrusted: false, lint: [], preset }
+    if (at >= 0) presets[at] = info
+    else presets.push(info)
+    return id
+  },
+  preset_duplicate: (a) => {
+    const src = presets.find((p) => p.id === a.id)
+    if (!src) throw 'no such preset'
+    const id = `mock:${++presetSeq}`
+    const name = `${src.name} (copy)`
+    presets.push({ ...src, id, name, builtin: false, last_used_ms: null, preset: { ...src.preset, name } })
+    return id
+  },
+  preset_delete: (a) => {
+    const at = presets.findIndex((p) => p.id === a.id && !p.builtin)
+    if (at >= 0) presets.splice(at, 1)
+  },
   preset_import: () => null,
   preset_export: () => null,
   plan_preset: (a) => planBatch(a.ids as number[], { copyright: { op: 'set', value: '© {creator} {year}' }, title: 'Copyright Template' }),

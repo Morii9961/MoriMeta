@@ -5,13 +5,14 @@
 // SCREEN_SPEC 1#sort / 1#columns: rows grouped by a column (24 px group rows with a count), a
 // header context menu, columns resized by dragging the header edge with a live readout.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useApp } from '../../state/store'
 import { useT, type T } from '../../i18n'
 import { COLUMNS, flagsOf, middleTruncate, type Item } from './data'
 import { clampWidth, itemsInOrder, visibleColumns, withGroups } from './layout'
 import { rowHeight } from '../../app/uiPrefs'
+import { PopupMenu } from '../../components/PopupMenu'
 
 const GROUP_ROW = 24
 const FLAGS_W = 64
@@ -77,17 +78,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
 
-  useEffect(() => {
-    if (!menu) return
-    const close = () => setMenu(null)
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && close()
-    window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  const closeMenu = useCallback(() => setMenu(null), [])
 
   const onHeader = (e: MouseEvent, key: string) => {
     const at = sort.findIndex((s) => s.key === key)
@@ -349,32 +340,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
           {t(COLUMNS.find((c) => c.key === resizing.key)!.label)} · {resizing.from} → {resizing.to} px
         </div>
       )}
-      {menu && (
-        <div className="menu-popup header-menu" role="menu" style={{ position: 'fixed', left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
-          {menuItems(menu.key).map((m, k) => (
-            <button
-              key={m.text}
-              role="menuitem"
-              disabled={m.disabled}
-              autoFocus={k === 0}
-              onClick={() => {
-                setMenu(null)
-                m.run()
-              }}
-              onKeyDown={(e) => {
-                const all = [...(e.currentTarget.parentElement?.querySelectorAll('button:not(:disabled)') ?? [])] as HTMLElement[]
-                const at = all.indexOf(e.currentTarget)
-                if (e.key === 'ArrowDown') all[(at + 1) % all.length]?.focus()
-                if (e.key === 'ArrowUp') all[(at - 1 + all.length) % all.length]?.focus()
-              }}
-            >
-              <span className="menu-check">{m.checked ? '✓' : ''}</span>
-              <span className="menu-label">{m.text}</span>
-              <span className="menu-keys" />
-            </button>
-          ))}
-        </div>
-      )}
+      {menu && <PopupMenu className="header-menu" x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={closeMenu} />}
     </div>
   )
 }

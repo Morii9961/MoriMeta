@@ -819,6 +819,7 @@ export const messages = {
   'presets.view_rules': ['View rules', '查看规则'],
   'presets.edit_rules': ['Edit rules', '编辑规则'],
   'presets.duplicate': ['Duplicate', '复制'],
+  'presets.more': ['Actions for this preset', '此预设的操作'],
   'presets.rename': ['Rename', '重命名'],
   'presets.export': ['Export', '导出'],
   'presets.delete': ['Delete', '删除'],
