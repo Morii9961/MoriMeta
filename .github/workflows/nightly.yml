@@ -41,5 +41,5 @@ jobs:
           key: nightly-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: nightly-${{ runner.os }}-
 
-      - name: Properties (release build: the same checks, faster)
+      - name: Properties (release build, same checks, faster)
         run: cargo test --release --locked -p mm-domain --test properties -p mm-exiftool --test encode_properties
