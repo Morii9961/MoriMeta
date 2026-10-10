@@ -32,7 +32,7 @@ Safety claims are limited to what has been tested (see [`docs/SPIKE_REPORT.md`](
 | `apps/desktop/` | The desktop app: Tauri adapter over `mm-core` (`src-tauri/`) and the React UI (`src/`), following the frozen design (`docs/DESIGN*.md`, `SCREEN_SPEC.md`, `INTERACTION_SPEC.md`) |
 | `crates/` | Rust workspace: `mm-exiftool` (ExifTool process protocol), `mm-fs` (Windows file primitives), `mm-domain` (fields, time tools, templates, rules; no IO), `mm-store` (SQLite journal, backup manifests), `mm-core` (planner, transactional executor, recovery, undo, retention, backend interface for the future UI), `mm-cli` (development driver and end-to-end tests) |
 | `research/` | Reproducible Phase 0 experiments and throwaway prototypes (not product code) |
-| `tools/` | Repository checks |
+| `tools/` | Repository and architecture checks, message inventory, third-party notices, SBOM, release files, the ExifTool release watch |
 
 ## Building and testing
 
@@ -69,6 +69,8 @@ npx tauri build --config src-tauri/tauri.bundle.conf.json   # unsigned per-user 
 ```
 
 Only work on copies of photos: this is pre-alpha software.
+
+Releases are built on GitHub Actions, not on a personal computer: a `v<version>` tag runs [`release.yml`](.github/workflows/release.yml), which drafts a release with the installer, SHA-256 checksums, a CycloneDX SBOM, the third-party notices and build attestations ([`docs/RELEASE_PLAN.md`](docs/RELEASE_PLAN.md) §11).
 
 ## Code signing policy
 
