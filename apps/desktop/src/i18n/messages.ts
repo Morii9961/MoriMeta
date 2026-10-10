@@ -170,6 +170,9 @@ export const messages = {
 
   'scan.reading': ['Reading metadata {done} / {total}', '正在读取元数据 {done} / {total}'],
   'scan.read_only': ['read-only, nothing is written', '只读，不会写入任何内容'],
+  'scan.eta_s': ['about {n} s left', '约剩 {n} 秒'],
+  'scan.eta_min': ['about {n} min left', '约剩 {n} 分钟'],
+  'scan.line': ['Read up to here; rows below still show …', '已读到此处；下方的行仍显示 …'],
   'scan.cancel': ['Cancel scan', '取消扫描'],
 
   'empty.title': ['Add photos to start', '添加照片以开始'],

@@ -27,7 +27,11 @@
 .library-empty .formats { font-size: 10.5px; }
 .table-empty { padding: 16px 12px; display: flex; gap: 10px; }
 
+.mtable-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .mtable { flex: 1; min-height: 0; overflow: auto; position: relative; outline: none; }
+/* the scan line beside the scrollbar: rows below it are still being read */
+.scan-track { position: absolute; top: var(--h-table-header); bottom: 0; right: 0; width: 10px; pointer-events: none; }
+.scan-line { position: absolute; right: 0; width: 10px; height: 2px; background: var(--accent); pointer-events: auto; cursor: help; }
 .mtable:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 0; }
 .mtable-inner { position: relative; min-width: 100%; }
 .mtable-header {

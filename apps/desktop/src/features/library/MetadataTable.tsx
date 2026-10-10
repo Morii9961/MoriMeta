@@ -66,6 +66,13 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
     overscan: 20,
   })
   useEffect(() => v.measure(), [display, v, ROW])
+  // where the scan has got to, in the order shown: the first row still unread (SCREEN_SPEC 1#large)
+  const scanning = useApp((s) => s.scan.running)
+  const scanLine = useMemo(() => {
+    if (!scanning || display.length === 0) return null
+    const at = display.findIndex((d) => d.kind === 'item' && !d.it.row)
+    return at < 0 ? null : at / display.length
+  }, [scanning, display])
   const width = FLAGS_W + columns.reduce((a, c) => a + (resizing?.key === c.key ? resizing.to : c.width), 0)
   const index = useMemo(() => new Map(ordered.map((it, i) => [it.asset.id, i])), [ordered])
   const row = useMemo(() => new Map(display.map((d, i) => [d.kind === 'item' ? d.it.asset.id : -1 - i, i])), [display])
@@ -224,6 +231,7 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
   }
 
   return (
+    <div className="mtable-wrap">
     <div
       className="mtable"
       ref={scroller}
@@ -341,6 +349,12 @@ export function MetadataTable({ items, onColumns }: { items: Item[]; onColumns: 
         </div>
       )}
       {menu && <PopupMenu className="header-menu" x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={closeMenu} />}
+    </div>
+    {scanLine !== null && (
+      <div className="scan-track" aria-hidden>
+        <div className="scan-line" style={{ top: `${scanLine * 100}%` }} title={t('scan.line')} />
+      </div>
+    )}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 // Library (SCREEN_SPEC §1): Sources + facets | MetadataTable | Inspector slot (session summary,
 // one file, batch panel, or the capture-time tools).
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useApp } from '../../state/store'
 import { useT } from '../../i18n'
 import { useVisibleItems } from './hooks'
@@ -15,6 +15,7 @@ import { api } from '../../ipc'
 import { ColumnChooser } from './ColumnChooser'
 import { ConditionRow } from './Conditions'
 import { COLUMNS } from './data'
+import { etaParts, scanSecondsLeft } from './scanEta'
 import './library.css'
 
 export function LibraryView() {
@@ -44,6 +45,12 @@ export function LibraryView() {
     setConditions([])
   }
   const groupCol = COLUMNS.find((c) => c.key === groupBy)
+  // time left: measured from when this scan started (SCREEN_SPEC 1#large)
+  const scanStart = useRef<{ ms: number; done: number } | null>(null)
+  if (!scan.running) scanStart.current = null
+  else if (!scanStart.current) scanStart.current = { ms: Date.now(), done: scan.done }
+  const left = scan.running && scanStart.current ? scanSecondsLeft(scanStart.current, Date.now(), scan.done, scan.total) : null
+  const eta = left === null ? null : etaParts(left)
 
   return (
     <>
@@ -98,6 +105,7 @@ export function LibraryView() {
               {t('scan.reading', { done: Math.min(scan.done, scan.total), total: scan.total })}
             </span>
             <span className="mono faint">{scan.total ? Math.floor((100 * Math.min(scan.done, scan.total)) / scan.total) : 0}%</span>
+            {eta && <span className="mono faint">{t(eta.unit === 's' ? 'scan.eta_s' : 'scan.eta_min', { n: eta.n })}</span>}
             <div className="scan-bar">
               <div style={{ width: `${scan.total ? (100 * Math.min(scan.done, scan.total)) / scan.total : 0}%` }} />
             </div>
