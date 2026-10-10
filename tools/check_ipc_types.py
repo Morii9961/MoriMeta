@@ -11,7 +11,8 @@ interface PAIRS names the Rust struct it mirrors and the direction it travels:
 - `in` / `both` (the UI sends it): the field sets are equal; serde would silently drop a field the
   Rust struct does not have.
 
-`#[serde(flatten)]` fields are expanded through FLATTEN. Field names are compared as serialized
+UNIONS does the same for the UI's unions of tagged objects and the internally tagged Rust enums
+(`#[serde(tag = ...)]`, variants in snake_case). `#[serde(flatten)]` fields are expanded through FLATTEN. Field names are compared as serialized
 (`rename` honoured). A new interface or struct needs a line here.
 
     python tools/check_ipc_types.py
@@ -73,6 +74,14 @@ PAIRS: dict[str, tuple[str, str, str]] = {
     "StartupInfo": ("apps/desktop/src-tauri/src/core.rs", "StartupInfo", "out"),
     "UpdateInfo": ("apps/desktop/src-tauri/src/updater.rs", "Info", "out"),
     "WriteTargets": ("crates/mm-domain/src/plan.rs", "WriteTargets", "out"),
+}
+# TypeScript union of tagged objects: (Rust file, internally tagged enum, direction)
+UNIONS: dict[str, tuple[str, str, str]] = {
+    "AppEvent": ("apps/desktop/src-tauri/src/dto.rs", "AppEvent", "out"),
+    "ListEdit": ("apps/desktop/src-tauri/src/dto.rs", "ListEdit", "in"),
+    "TextEdit": ("apps/desktop/src-tauri/src/dto.rs", "TextEdit", "in"),
+    "GpsEdit": ("apps/desktop/src-tauri/src/dto.rs", "GpsEditDto", "in"),
+    "TimeEdit": ("apps/desktop/src-tauri/src/dto.rs", "TimeEditDto", "in"),
 }
 # a flattened field's type: (Rust file, struct)
 FLATTEN = {
@@ -140,6 +149,79 @@ def ts_interfaces() -> dict[str, dict[str, bool]]:
     return out
 
 
+def snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def rust_enum(file: str, name: str) -> dict[str, set[str]] | None:
+    """Tag value → serialized fields of an internally tagged enum (`#[serde(tag = ...)]`). A
+    newtype variant has the fields of its struct, found through PAIRS."""
+    src = (ROOT / file).read_text(encoding="utf-8")
+    m = re.search(rf"pub enum {name}\s*\{{(.*?)\n\}}", src, re.S)
+    if not m:
+        return None
+    body = re.sub(r"//[^\n]*", "", m.group(1))
+    out: dict[str, set[str]] = {}
+    for v in re.finditer(r"(\w+)\s*(\{[^}]*\}|\(([^)]*)\))?\s*,?", body):
+        vname, payload, newtype = v.group(1), v.group(2), v.group(3)
+        if not vname[0].isupper():
+            continue
+        tag = snake(vname)
+        if newtype:
+            inner = newtype.strip()
+            struct = next((pair for pair in PAIRS.values() if pair[1] == inner), None)
+            fields = rust_struct(struct[0], inner)[0] if struct else {}
+            out[tag] = set(fields)
+        elif payload:
+            out[tag] = set(re.findall(r"(\w+)\s*:", payload))
+        else:
+            out[tag] = set()
+    return out
+
+
+def ts_union(name: str) -> dict[str, dict[str, bool]] | None:
+    """Tag value → field → optional, for `export type X = { tag: 'a'; f: T } | ...`."""
+    for f in TS_FILES:
+        src = f.read_text(encoding="utf-8")
+        m = re.search(rf"export type {name}\s*=\s*(.*?)(?=\nexport |\n\n|\Z)", src, re.S)
+        if not m:
+            continue
+        out: dict[str, dict[str, bool]] = {}
+        for member in re.findall(r"\(?\{([^{}]*)\}(?:\s*&\s*(\w+))?\)?", m.group(1)):
+            inner, ext = member
+            fields = {fm.group(1): fm.group(2) == "?" for fm in re.finditer(r"(\w+)(\??)\s*:", inner)}
+            tag = next((re.search(rf"{k}\s*:\s*'(\w+)'", inner).group(1) for k in fields if re.search(rf"{k}\s*:\s*'\w+'", inner)), None)
+            if tag is None:
+                continue
+            fields = {k: o for k, o in fields.items() if not re.search(rf"{k}\s*:\s*'{tag}'", inner)}
+            if ext:
+                fields.update(ts_interfaces().get(ext, {}))
+            out[tag] = fields
+        return out
+    return None
+
+
+def check_unions(problems: list[str]) -> None:
+    for name, (file, enum, way) in sorted(UNIONS.items()):
+        r = rust_enum(file, enum)
+        u = ts_union(name)
+        if r is None or u is None:
+            problems.append(f"{name}: {'enum ' + enum + ' not found in ' + file if r is None else 'union type not found in the UI'}")
+            continue
+        where = f"{name} (UI) / {enum} ({file})"
+        for tag in sorted(set(r) - set(u)):
+            problems.append(f"{where}: the backend has {tag!r}, the UI's union does not")
+        for tag in sorted(set(u) - set(r)):
+            problems.append(f"{where}: the UI has {tag!r}, the backend does not")
+        for tag in sorted(set(r) & set(u)):
+            for f, optional in u[tag].items():
+                if f not in r[tag]:
+                    problems.append(f"{where}: {tag!r} — the UI has {f}, the backend does not")
+            if way in ("in", "both"):
+                for f in sorted(r[tag] - set(u[tag])):
+                    problems.append(f"{where}: {tag!r} — the backend expects {f}, the UI does not send it")
+
+
 def main() -> int:
     problems: list[str] = []
     ts = ts_interfaces()
@@ -169,10 +251,11 @@ def main() -> int:
         if way in ("in", "both"):
             for f in sorted(set(rfields) - set(tfields)):
                 problems.append(f"{where}: the backend expects {f}, the UI's type does not have it")
+    check_unions(problems)
     for p in problems:
         print("problem:", p, file=sys.stderr)
     if not problems:
-        print(f"IPC types agree: {len(PAIRS)} UI interfaces against their Rust structs")
+        print(f"IPC types agree: {len(PAIRS)} interfaces and {len(UNIONS)} tagged unions against their Rust types")
     return 1 if problems else 0
 
 
