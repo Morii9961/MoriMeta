@@ -12,6 +12,8 @@
    the commands the UI calls are the same set; there is one capability file and no plugin permission; the frontend imports
    no Tauri plugin package; the content security policy loads nothing from outside the app.
 
+4. Every call in `ipc/index.ts` passes exactly the command's parameters, named as Tauri names them.
+
     python tools/check_architecture.py
 """
 
@@ -135,10 +137,72 @@ def check_capabilities(problems: list[str]) -> None:
         problems.append(f"tauri.conf.json: plugins beyond the updater: {sorted(set(conf['plugins']) - {'updater'})}")
 
 
+INJECTED = re.compile(r"^(AppHandle|CoreState|State<|tauri::State<|Window|WebviewWindow|tauri::Window|tauri::AppHandle)")
+
+
+def split_top(s: str) -> list[str]:
+    """Split at commas outside <...>, (...), [...] and {...}."""
+    out, depth, cur = [], 0, ""
+    for ch in s:
+        if ch in "<([{":
+            depth += 1
+        elif ch in ">)]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    return [x.strip() for x in out if x.strip()]
+
+
+def camel(name: str) -> str:
+    head, *rest = name.split("_")
+    return head + "".join(w[:1].upper() + w[1:] for w in rest)
+
+
+def check_command_args(problems: list[str]) -> None:
+    """4. The keys the UI passes to a command are the command's parameters as Tauri names them
+    (camelCase); a missing required one fails only when that command runs."""
+    params: dict[str, dict[str, bool]] = {}
+    for f in sorted((ADAPTER / "src").glob("*.rs")):
+        src = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"#\[tauri::command\]\s*pub (?:async )?fn (\w+)\((.*?)\)\s*(?:->|\{)", src, re.S):
+            args = {}
+            for p in split_top(m.group(2)):
+                name, _, ty = p.partition(":")
+                ty = ty.strip()
+                if INJECTED.match(ty):
+                    continue
+                args[camel(name.strip())] = ty.startswith("Option<")
+            params[m.group(1)] = args
+    ipc = (ROOT / "apps" / "desktop" / "src" / "ipc" / "index.ts").read_text(encoding="utf-8")
+    for m in re.finditer(r"\b(?:call|invoke)(?:<[^>]*>)?\(\s*'([a-z_]+)'\s*(?:,\s*\{)?", ipc):
+        cmd = m.group(1)
+        keys: set[str] = set()
+        if m.group(0).rstrip().endswith("{"):
+            depth, i = 1, m.end()
+            while depth and i < len(ipc):
+                depth += {"{": 1, "}": -1}.get(ipc[i], 0)
+                i += 1
+            body = ipc[m.end() : i - 1]
+            keys = {k.split(":")[0].strip() for k in split_top(body)}
+        if cmd not in params:
+            continue  # unknown commands are reported by the permission check
+        want = params[cmd]
+        for k in sorted(keys - set(want)):
+            problems.append(f"the UI passes {k!r} to {cmd}, which has no such parameter")
+        for k in sorted(k for k, optional in want.items() if not optional and k not in keys):
+            problems.append(f"the UI calls {cmd} without its parameter {k!r}")
+
+
 def main() -> int:
     problems: list[str] = []
     check_dependencies(problems)
     check_capabilities(problems)
+    check_command_args(problems)
     for p in problems:
         print("problem:", p, file=sys.stderr)
     if not problems:
