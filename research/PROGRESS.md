@@ -215,3 +215,9 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - `tools/exiftool_watch.py` + `.github/workflows/exiftool-watch.yml`（RELEASE_PLAN §10 第 1 步）：每天对比 exiftool.org 的 `ver.txt`、`history.html` 与锁定版本，每个新版本开一个 Issue，标题标注安全更新（14 天 SLA），正文列出变更与更新步骤；已存在同名 Issue 时不重复。模拟锁定 13.52 时正确列出 7 个新版本、3 个安全更新（含 Windows only）；GitHub 上手动运行一次：锁定 13.59 即最新，未开 Issue。
 - `MM_PROPTEST_CASES` 控制属性测试用例数；`.github/workflows/nightly.yml` 每晚以 release 构建跑 20 万例（DEVELOPMENT_PLAN §5.4 的模糊测试时间片），首跑通过（时间/GPS 12 项 35 秒，编码 4 项 5 秒）。
 - 真实应用 UI 冒烟测试（调试构建 + ExifTool 13.59，10 个 ExifTool 样本 JPEG + 2 个 NEF 的一次性副本）：PASS，覆盖本次 `core.rs` 启动日志与 `main.rs` 的改动；新日志行不含路径。脚本修正：页面重新加载（Vite 新装依赖后会整页刷新）后重新注入辅助函数；干净导出详情的断言不再依赖某个样本含制造商注释；头部注明需要 ExifTool.jpg 与 Writer.jpg。
+
+## 2026-10-10：前后端规则一致性、架构检查
+
+- `tools/check_architecture.py`（CI test 任务）：crate 依赖方向按 ARCHITECTURE §4.1、`mm-domain` 外部依赖白名单（chrono、serde、serde_json）、前端权限面（`build.rs` 命令表 = `capabilities/default.json` 授权 = `main.rs` 注册，无插件权限与插件包，CSP 不加载外部内容）；7 种人为违规均被报告。CI 桌面任务另在每次变更时生成第三方声明与 SBOM（`--check`）。
+- GPS 输入：前端 `parseGpsInput` 与后端 `GeoPoint::parse` 原有分歧——前端经 `Number()` 接受 `0x1A` 等，后端只认空格/制表符而前端接受不换行空格。现在两边都按 Rust `f64` 语法读十进制、任何空白都作分隔；`crates/mm-domain/tests/gps_input_cases.json` 39 条用例同时驱动 Rust 与 Vitest 测试。
+- 时间工具预览：按拍摄时间的 Sequence 预览忽略亚秒（连拍在名称翻转或两机混拍时预览顺序与 Plan 不同）；名称排序用 `Intl.Collator` 而非后端 `natural_cmp`；Shift/保持相对间隔的"之后"丢掉了后端会保留的亚秒；Shift 小时数前端限两位；0–99 年被 `Date.UTC` 读成 1900+。均已对齐：精确的（秒，纳秒）排序键、移植 `natural_cmp`、共享 `crates/mm-domain/tests/time_text_cases.json`（标准答案由后端测试给出）；Sequence 顺序提取为可测函数。模拟后端中验证了 226 个文件的序列预览，控制台无错误；前端 38 项、`mm-domain` 全部测试通过。
