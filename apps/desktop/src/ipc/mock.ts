@@ -338,6 +338,9 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   recovery_status: () => [],
   recovery_dismiss: () => undefined,
   recovery_resume: () => undefined,
+  recovery_keep: () => undefined,
+  // the browser has no window to close
+  app_close: () => undefined,
   clear_read_only: (a) => {
     roCleared.add(a.id as number)
     return true
@@ -348,6 +351,9 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   settings_reset: () => mockSettings.reset(),
   settings_migrations: () => [],
 }
+
+/** The commands the mock answers (`mock.test.ts` compares them with what the UI calls). */
+export const mockCommands = Object.keys(handlers)
 
 export const transport = {
   invoke: async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
