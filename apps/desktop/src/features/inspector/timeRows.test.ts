@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from 'vitest'
-import { finishRows, summarize } from './timeRows'
+import { finishRows, sequenceOrder, summarize } from './timeRows'
 
 const row = (id: number, name: string, now: string | null, next: string | null) => ({ id, name, folder: 'D:\p', writesTo: 'in_file', now, next })
 
@@ -13,6 +13,26 @@ describe('time preview rows', () => {
     expect(r.map((x) => x.order)).toEqual(['kept', 'kept'])
     expect(r[0].change).toBe('+01:00:00')
     expect(summarize(r)).toEqual({ files: 2, changing: 2, moved: 0, tied: 0, noTime: 0 })
+  })
+  it('a burst within one second keeps its order through a shift (sub-seconds kept)', () => {
+    const r = finishRows([
+      row(1, 'DSC_9999.jpg', '2026:09:11 10:00:00.10', '2026:09:11 11:00:00.10'),
+      row(2, 'DSC_0001.jpg', '2026:09:11 10:00:00.40', '2026:09:11 11:00:00.40'),
+      row(3, 'DSC_0002.jpg', '2026:09:11 10:00:00.70', '2026:09:11 11:00:00.70'),
+    ])
+    expect(r.map((x) => x.order)).toEqual(['kept', 'kept', 'kept'])
+    expect(r[0].change).toBe('+01:00:00')
+  })
+  it('a Sequence by time orders a burst by its sub-seconds, also when the names roll over', () => {
+    const files = [
+      { id: 1, name: 'DSC_0001.jpg', now: '2026:09:11 10:00:00.70' },
+      { id: 2, name: 'DSC_9998.jpg', now: '2026:09:11 10:00:00.10' },
+      { id: 3, name: 'DSC_9999.jpg', now: '2026:09:11 10:00:00.40' },
+      { id: 4, name: 'DSC_0002.jpg', now: null },
+      { id: 5, name: 'DSC_0000.jpg', now: '2026:09:11 10:00:00.4' },
+    ]
+    expect(sequenceOrder(files, 'time').map((f) => f.id)).toEqual([2, 5, 3, 1, 4])
+    expect(sequenceOrder(files, 'name').map((f) => f.id)).toEqual([5, 1, 4, 2, 3])
   })
   it('one time for every file loses the order', () => {
     const r = finishRows([

@@ -8,8 +8,8 @@ import type { TimeEdit } from '../../ipc/types'
 import { useApp } from '../../state/store'
 import { useT, type MessageKey, type T } from '../../i18n'
 import { openPreview } from '../../app/actions'
-import { formatExif, formatShift, localFromParts, naturalCompare, parseExif, parseShift } from './timeMath'
-import { finishRows, summarize, type TimeRow } from './timeRows'
+import { formatExif, formatShift, localFromParts, parseExif, parseShift, subsecOf } from './timeMath'
+import { finishRows, sequenceOrder, summarize, type TimeRow } from './timeRows'
 
 type Mode = 'absolute' | 'shift' | 'sequence' | 'preserve'
 
@@ -119,14 +119,10 @@ export function TimeTools() {
     if (!e) return out
     if (e.mode === 'sequence') {
       const key = (f: (typeof files)[number]) => `${f.a.folder}|${f.a.name.replace(/\.[^.]+$/, '').toLowerCase()}`
-      const sorted = [...files].sort((x, y) => {
-        if (e.order === 'time') {
-          const a = parseExif(x.now) ?? Infinity
-          const b = parseExif(y.now) ?? Infinity
-          if (a !== b) return a - b
-        }
-        return naturalCompare(x.a.name, y.a.name)
-      })
+      const sorted = sequenceOrder(
+        files.map((f) => ({ ...f, id: f.a.id, name: f.a.name })),
+        e.order,
+      )
       const positions = new Map<string, number>()
       const start = parseExif(e.start)!
       for (const f of sorted) {
@@ -144,7 +140,8 @@ export function TimeTools() {
           : null
     for (const f of files) {
       const now = parseExif(f.now)
-      const next = e.mode === 'absolute' ? e.to : now === null || delta === null ? null : formatExif(now + delta)
+      // Shift and Preserve Relative Timing keep the sub-seconds; Absolute removes them
+      const next = e.mode === 'absolute' ? e.to : now === null || delta === null ? null : formatExif(now + delta) + subsecOf(f.now)
       out.push({ id: f.a.id, name: f.a.name, folder: f.a.folder, writesTo: f.writesTo, now: f.now, next })
     }
     return out

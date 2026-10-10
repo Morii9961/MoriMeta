@@ -3,7 +3,7 @@
 // and what happens to its place in the order by time. The Plan the backend makes is what is
 // written; this only shows the effect of the parameters while they are typed.
 
-import { formatShift, naturalCompare, parseExif } from './timeMath'
+import { compareExifOrder, exifOrder, formatShift, naturalCompare, parseExif, type ExifOrder } from './timeMath'
 
 export interface TimeRow {
   id: number
@@ -29,6 +29,18 @@ export function stemKey(folder: string, name: string): string {
   return `${folder}|${name.replace(/\.[^.]+$/, '').toLowerCase()}`
 }
 
+/** The order a Sequence assigns times in, as the backend's (mm_domain::time::apply): by capture
+ * time with sub-seconds (files without one last), or by name; then natural name, then id. */
+export function sequenceOrder<T extends { id: number; name: string; now: string | null }>(files: T[], order: 'time' | 'name'): T[] {
+  return [...files].sort((x, y) => {
+    if (order === 'time') {
+      const o = compareExifOrder(exifOrder(x.now), exifOrder(y.now))
+      if (o) return o
+    }
+    return naturalCompare(x.name, y.name) || x.id - y.id
+  })
+}
+
 /** Fill in pairs, changes and the order status of rows that have `now` and `next`. */
 export function finishRows(rows: Omit<TimeRow, 'pair' | 'order' | 'change'>[]): TimeRow[] {
   const stems = new Map<string, number>()
@@ -40,21 +52,24 @@ export function finishRows(rows: Omit<TimeRow, 'pair' | 'order' | 'change'>[]): 
   // only positions with a time on both sides are compared
   const both = new Set(rows.filter((r) => parseExif(r.now) !== null && parseExif(r.next) !== null).map(pos))
   const rank = (key: 'now' | 'next', into: Map<string, number>) => {
-    const seen = new Map<string, number>()
+    const seen = new Map<string, ExifOrder>()
     for (const r of rows) {
-      const s = parseExif(r[key])
+      // the order counts sub-seconds, as the backend's does
+      const s = exifOrder(r[key])
       const p = pos(r)
       if (s === null || !both.has(p)) continue
-      seen.set(p, Math.min(seen.get(p) ?? Infinity, s))
+      const had = seen.get(p)
+      if (!had || compareExifOrder(s, had) < 0) seen.set(p, s)
     }
-    const ordered = [...seen.entries()].sort((a, b) => a[1] - b[1] || naturalCompare(a[0], b[0]))
+    const ordered = [...seen.entries()].sort((a, b) => compareExifOrder(a[1], b[1]) || naturalCompare(a[0], b[0]))
     ordered.forEach(([p], i) => into.set(p, i))
-    return seen
+    // the same time, as a map key
+    return new Map([...seen].map(([p, s]) => [p, s.join(':')]))
   }
   const nowTimes = rank('now', byNow)
   const nextTimes = rank('next', byNext)
-  const nextCount = new Map<number, Set<string>>()
-  const nowCount = new Map<number, Set<string>>()
+  const nextCount = new Map<string, Set<string>>()
+  const nowCount = new Map<string, Set<string>>()
   for (const [p, s] of nextTimes) nextCount.set(s, (nextCount.get(s) ?? new Set()).add(p))
   for (const [p, s] of nowTimes) nowCount.set(s, (nowCount.get(s) ?? new Set()).add(p))
   return rows.map((r) => {
