@@ -47,7 +47,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Versions agree (tag, tauri.conf.json, Cargo.toml, package.json) and the CHANGELOG has the version
+      - name: Versions agree (tag, tauri.conf.json, Cargo.toml, package.json) and both CHANGELOGs have the version
         id: version
         run: |
           python - <<'EOF'
@@ -55,8 +55,9 @@ jobs:
           sys.path.insert(0, "tools")
           import release_assets as r
           v = r.version(os.environ["TAG"] or None)
-          if os.environ["TAG"] and r.changelog_section(v) is None:
-              sys.exit(f"CHANGELOG.md has no section ## [{v}]")
+          for name in ("CHANGELOG.md", "CHANGELOG.zh-CN.md"):
+              if os.environ["TAG"] and r.changelog_section(v, name) is None:
+                  sys.exit(f"{name} has no section ## [{v}]")
           # before 1.0, and any -beta / -rc, is a pre-release (RELEASE_PLAN §6)
           pre = v.startswith("0.") or "-" in v
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:

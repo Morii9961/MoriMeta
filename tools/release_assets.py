@@ -14,7 +14,8 @@ and next to OUT `release-notes-<version>.md`: the version's CHANGELOG section fo
 files, their SHA-256 and how to verify them, the text of the draft release.
 
 The version must be the same in tauri.conf.json, the desktop Cargo.toml and package.json, and match
-`--tag` when given. With `--tag` the CHANGELOG must have a section for the version.
+`--tag` when given. With `--tag` CHANGELOG.md and CHANGELOG.zh-CN.md must both have a section for the version; the
+Chinese one follows the English in the notes.
 
     python tools/release_assets.py --out DIR [--tag vX.Y.Z]
 """
@@ -63,8 +64,12 @@ def version(tag: str | None) -> str:
     return next(iter(found.values()))
 
 
-def changelog_section(ver: str) -> str | None:
-    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+def changelog_section(ver: str, name: str = "CHANGELOG.md") -> str | None:
+    """The version's section of CHANGELOG.md, or of its Chinese counterpart CHANGELOG.zh-CN.md."""
+    path = ROOT / name
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
     m = re.search(rf"^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.MULTILINE | re.DOTALL)
     return m.group(1).strip() if m else None
 
@@ -76,8 +81,11 @@ def main() -> int:
     a = ap.parse_args()
     ver = version(a.tag)
     notes = changelog_section(ver)
-    if a.tag and notes is None:
-        sys.exit(f"CHANGELOG.md has no section ## [{ver}]")
+    notes_zh = changelog_section(ver, "CHANGELOG.zh-CN.md")
+    # release notes in English and Chinese (RELEASE_PLAN §11)
+    for name, section in (("CHANGELOG.md", notes), ("CHANGELOG.zh-CN.md", notes_zh)):
+        if a.tag and section is None:
+            sys.exit(f"{name} has no section ## [{ver}]")
 
     out = a.out
     if out.exists() and any(out.iterdir()):
@@ -111,6 +119,8 @@ def main() -> int:
 
     rows = "\n".join(f"| `{n}` | `{h}` |" for n, h in sums.items())
     body = notes if notes is not None else "_No CHANGELOG section for this version: a test build._"
+    if notes_zh is not None:
+        body += f"\n\n## 中文\n\n{notes_zh}"
     text = f"""{body}
 
 ## Files
