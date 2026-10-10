@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! mm-cli — development and test driver for the MoriMeta core (not a public product; ARCHITECTURE §4.1).
 //!
+//! ```text
 //! Global options (before the command):
 //!   --data DIR          application data (db, backups, run); default %LOCALAPPDATA%\MoriMeta-dev
 //!   --exiftool DIR      pinned ExifTool package (folder containing exiftool_files); or MM_EXIFTOOL_PKG
@@ -94,6 +95,7 @@
 //!                             (log[:N], simulated IO error after N successful appends);
 //!                             with --journal-fail-persist every later write fails too
 //!   --space-reserve BYTES     replace the 1 GiB backup-volume reserve of the space pre-check
+//! ```
 //! Output is JSON on stdout. Exit codes: 0 ok, 1 error, 3 operation finished with files not done,
 //! 4 fsck found problems.
 

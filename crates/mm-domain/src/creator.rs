@@ -19,7 +19,7 @@ pub const DC_CREATOR: &str = "XMP-dc:Creator";
 pub const IPTC_BYLINE: &str = "IPTC:By-line";
 pub const TIFF_ARTIST: &str = "XMP-tiff:Artist";
 pub const IPTC_DIGEST: &str = iptc::DIGEST;
-/// IPTC.pm: By-line => string[0,32]
+/// IPTC.pm: `By-line => string[0,32]`
 pub const BYLINE_MAX_BYTES: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

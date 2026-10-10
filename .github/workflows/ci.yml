@@ -73,6 +73,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Docs (broken intra-doc links and HTML in doc comments)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --workspace --locked
+
       - name: exFAT and FAT32 test volumes (256 MB VHDs for files_on_an_exfat / a_fat32_drive_are_not_written)
         # best effort: without them those tests are skipped
         continue-on-error: true
@@ -152,6 +157,7 @@ jobs:
           cargo fmt -- --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --all-targets --locked
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 
       - name: Release files the installer ships with (third-party notices, SBOM)
         # what release.yml makes at a tag; every shipped component needs a license and a hash

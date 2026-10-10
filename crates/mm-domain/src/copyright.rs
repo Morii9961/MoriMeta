@@ -25,7 +25,7 @@ pub const DC_RIGHTS_WRITE: &str = "XMP-dc:Rights-x-default";
 pub const IPTC_NOTICE: &str = "IPTC:CopyrightNotice";
 pub const TIFF_COPYRIGHT: &str = "XMP-tiff:Copyright";
 pub const TIFF_COPYRIGHT_WRITE: &str = "XMP-tiff:Copyright-x-default";
-/// IPTC.pm: CopyrightNotice => string[0,128]
+/// IPTC.pm: `CopyrightNotice => string[0,128]`
 pub const NOTICE_MAX_BYTES: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
