@@ -194,6 +194,15 @@ function bump(id: string, f: (e: PlanEntry[]) => PlanEntry[]): PlanView {
 
 const roCleared = new Set<number>()
 
+/** Files in a mock folder: 240, or `localStorage['mm.mockFiles']` to try a large Library. */
+function folderSize(): number {
+  try {
+    return Math.min(20000, Number(localStorage.getItem('mm.mockFiles')) || 240)
+  } catch {
+    return 240
+  }
+}
+
 const presets: PresetInfo[] = [
   { id: 'builtin:Copyright Template', name: 'Copyright Template', builtin: true, fields: ['copyright'], last_used_ms: null, untrusted: false, lint: [],
     preset: { schema_version: 1, name: 'Copyright Template', rules: [{ name: 'Copyright from creator and year where there is none', enabled: true, when: [{ if: 'empty', field: 'copyright' }], then: [{ do: 'set_copyright', value: '© {creator} {year}' }] }] } },
@@ -213,7 +222,7 @@ const handlers: Record<string, (a: Record<string, unknown>) => unknown> = {
   update_cancel: () => mockUpdates.cancel(),
   update_install: (a) => mockUpdates.install(a.id as string),
   app_info: () => info(),
-  import_dialog: (a) => makeSession(a.kind === 'folder' ? 240 : 12),
+  import_dialog: (a) => makeSession(a.kind === 'folder' ? folderSize() : 12),
   scan_cancel: () => undefined,
   rescan: () => undefined,
   session_clear: () => {

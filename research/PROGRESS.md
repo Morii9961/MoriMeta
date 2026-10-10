@@ -231,3 +231,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 ## 2026-10-10：IPC 类型一致性检查
 
 - `tools/check_ipc_types.py`（CI test 任务）：前端手写的 `ipc/types.ts` 与 `presets/model.ts` 中 44 个接口、5 个可辨识联合（`AppEvent` 与四种批量编辑），各自对照显式表中的 Rust 结构体/内部标签枚举（含 `flatten`、`extends`、`rename`）。后端→界面：界面读取的必需字段后端必须发送，`skip_serializing_if` 的字段在 TS 中必须可选；界面→后端：字段集合相等。首跑发现 `PlanEntry.excluded` 仅在为真时发送却被声明为必需——改为可选，`DiffTable` 三处显式转为布尔。变异检查（TS 多一个后端不发的字段、Rust 字段加 `skip_serializing_if`、联合多一个后端没有的标签）均被抓到。
+
+## 2026-10-10：命令参数与设置名检查、资料库规模
+
+- `check_architecture.py` 新增：界面每处调用传给命令的键与 Rust 命令参数（按 Tauri 的 camelCase 命名，排除注入参数）完全一致——63 个命令、73 个参数；界面使用的 9 个设置名都在 mm-core 设置登记表中（常量已解析），模拟后端提供同样的 11 项。各有变异检查。
+- 资料库规模（规格 1#large 为 5,860 个文件）：6,000 个仿真条目在 Node 中的计算耗时——按名称排序 1.7 ms、相机 + 拍摄时间两级排序 23.9 ms、搜索 2.5 ms、分面 0.6 ms、两个条件 0.8 ms、按相机分组 1.8 ms。表格是虚拟滚动；浏览器面板隐藏时页面不渲染，渲染耗时未测。模拟后端可用 `localStorage['mm.mockFiles']`（最多 20,000）设定"添加文件夹"的文件数。
