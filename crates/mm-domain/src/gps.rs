@@ -133,7 +133,9 @@ fn parse_dms(s: &str) -> Result<GeoPoint, String> {
                 flush(&mut num, &mut toks)?;
                 toks.push(Tok::Hemi(c.to_ascii_uppercase()));
             }
-            ' ' | ',' | ';' | '°' | 'º' | '\'' | '"' | '′' | '″' | '’' | '”' | '\t' => {
+            // any white space: text copied from a map or a web page often has no-break spaces
+            c if c.is_whitespace() => flush(&mut num, &mut toks)?,
+            ',' | ';' | '°' | 'º' | '\'' | '"' | '′' | '″' | '’' | '”' => {
                 flush(&mut num, &mut toks)?
             }
             _ => return Err(bad()),

@@ -10,10 +10,13 @@ export interface GeoInput {
 }
 
 const DMS_MARK = /[NSEWnsew°º'"′″’”]/
+// a decimal number as the backend reads one (Rust's f64 syntax, without inf/NaN): `Number()`
+// would also take "0x1A" or "Infinity"
+const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/
 
 function decimal(text: string): GeoInput | null {
   const parts = text.split(',').map((x) => x.trim())
-  if (parts.length < 2 || parts.length > 3 || parts.some((p) => p === '')) return null
+  if (parts.length < 2 || parts.length > 3 || parts.some((p) => !NUMBER.test(p))) return null
   const n = parts.map(Number)
   if (n.some((x) => !Number.isFinite(x))) return null
   return { lat: n[0], lon: n[1], alt: parts.length === 3 ? n[2] : null }
