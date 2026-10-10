@@ -221,3 +221,9 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - `tools/check_architecture.py`（CI test 任务）：crate 依赖方向按 ARCHITECTURE §4.1、`mm-domain` 外部依赖白名单（chrono、serde、serde_json）、前端权限面（`build.rs` 命令表 = `capabilities/default.json` 授权 = `main.rs` 注册，无插件权限与插件包，CSP 不加载外部内容）；7 种人为违规均被报告。CI 桌面任务另在每次变更时生成第三方声明与 SBOM（`--check`）。
 - GPS 输入：前端 `parseGpsInput` 与后端 `GeoPoint::parse` 原有分歧——前端经 `Number()` 接受 `0x1A` 等，后端只认空格/制表符而前端接受不换行空格。现在两边都按 Rust `f64` 语法读十进制、任何空白都作分隔；`crates/mm-domain/tests/gps_input_cases.json` 39 条用例同时驱动 Rust 与 Vitest 测试。
 - 时间工具预览：按拍摄时间的 Sequence 预览忽略亚秒（连拍在名称翻转或两机混拍时预览顺序与 Plan 不同）；名称排序用 `Intl.Collator` 而非后端 `natural_cmp`；Shift/保持相对间隔的"之后"丢掉了后端会保留的亚秒；Shift 小时数前端限两位；0–99 年被 `Date.UTC` 读成 1900+。均已对齐：精确的（秒，纳秒）排序键、移植 `natural_cmp`、共享 `crates/mm-domain/tests/time_text_cases.json`（标准答案由后端测试给出）；Sequence 顺序提取为可测函数。模拟后端中验证了 226 个文件的序列预览，控制台无错误；前端 38 项、`mm-domain` 全部测试通过。
+
+## 2026-10-10：界面规格补齐、文案与模拟后端检查
+
+- 对照 SCREEN_SPEC 逐项核对后补上三处：规则构建器拖动排序（3#rules-drag，拖动柄、抬起的行、标注"第 NN 位"的落点线；重排为可测函数 `moveRule`）；预设行菜单（3#p-menu，右键、菜单键/Shift+F10 或行尾"⋯"，含查看/编辑规则、复制、重命名、导出、删除、应用），复制后新副本直接进入行内重命名并全选名称；资料库扫描条的剩余时间与滚动条旁的扫描线（1#large）。表头菜单与预设菜单共用 `components/PopupMenu.tsx`。模拟后端的预设改为会话内有状态。均在模拟后端中验证，真实应用 UI 冒烟测试再次 PASS。
+- 其余状态核对结论：检查器对读取失败（含权限被拒、元数据损坏）有统一错误状态；"撤销所选文件"由撤销对话框的逐文件选择覆盖；重试/重新规划、恢复到文件夹、导出日志均已有。
+- 测试：界面文案 966 条均有中英文、两种语言的 `{参数}` 一致、无漏译；后端句子的中文模板恰好引用英文模板的全部值（126 条带值句子）；删除 8 条无人使用的旧文案（其中两条内容已不属实）。模拟后端缺 `app_close`、`recovery_keep` 已补，测试保证它覆盖界面调用的全部命令；`check_architecture.py` 另要求界面实际调用的命令与授权表完全一致（无多余授权）。前端 49 项测试通过。
