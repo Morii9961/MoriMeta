@@ -37,6 +37,8 @@ Contributor License Agreement.
   ([`docs/REPOSITORY_CHECKLIST.md`](docs/REPOSITORY_CHECKLIST.md))
 - `python tools/check_architecture.py`: crate dependencies point one way, `mm-domain` stays
   pure, and the frontend can call only the app's own commands
+- `python tools/check_ipc_types.py`: the UI's hand-written IPC types (`apps/desktop/src/ipc/types.ts`)
+  match the Rust structs they mirror; a new IPC type needs a line in its table
 - For the desktop app (`apps/desktop`): `npm ci`, `npm run build`, `npm test`; in `src-tauri`,
   `cargo fmt -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. A new UI or
   backend text needs both languages (`src/i18n/messages.ts`; backend sentences in
