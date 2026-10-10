@@ -2,6 +2,8 @@
 // Check a release build as it will run once installed: the bundled ExifTool is found next to the
 // program, passes its manifest (key files at launch, every file afterwards), starts as
 // `perl.exe exiftool.pl`, and writes are allowed. Uses a throwaway data folder; touches no photo.
+// Reads the launch lines the program writes to its own log (no paths in them), so it needs no
+// WebView DevTools port, which GitHub's Windows runners do not open.
 //
 //   node scripts/release-check.mjs <work-folder> [path to morimeta.exe]
 //
@@ -16,17 +18,16 @@ const work = resolve(process.argv[2] ?? '.')
 const here = dirname(fileURLToPath(import.meta.url))
 const exe = resolve(process.argv[3] ?? join(here, '..', 'src-tauri', 'target', 'release', 'morimeta.exe'))
 mkdirSync(work, { recursive: true })
-const PORT = 9334
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const data = join(work, 'data')
-const app = spawn(exe, [], {
-  env: { ...process.env, MM_DATA: data, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
-  stdio: 'inherit',
-})
+const env = { ...process.env, MM_DATA: data }
+delete env.MM_EXIFTOOL_PKG // the bundled package, not an override
+const app = spawn(exe, [], { env, stdio: 'inherit' })
 let exited
 app.on('exit', (code) => (exited = code))
-// what the data folder holds, with the end of each text file: the logs say why a launch stopped
+
+// what the data folder holds, with the end of each text file
 const dump = (dir) => {
   let entries = []
   try {
@@ -42,71 +43,50 @@ const dump = (dir) => {
     if (/\.(log|txt|json|jsonl)$/i.test(p)) console.error(readFileSync(p, 'utf8').slice(-4000))
   }
 }
-// the program's and WebView2's processes (session, window title) and who listens on the port
 const processes = () => {
   if (process.platform !== 'win32') return
-  for (const image of ['morimeta.exe', 'msedgewebview2.exe']) {
-    console.error(spawnSync('tasklist', ['/v', '/fo', 'list', '/fi', `imagename eq ${image}`], { encoding: 'utf8' }).stdout)
-  }
-  const listening = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' }).stdout ?? ''
-  console.error(listening.split('\n').filter((l) => l.includes(`:${PORT}`)).join('\n') || `(nothing on port ${PORT})`)
+  console.error(spawnSync('tasklist', ['/v', '/fo', 'list', '/fi', 'imagename eq morimeta.exe'], { encoding: 'utf8' }).stdout)
 }
 const fail = (m) => {
   console.error(`FAIL: ${m}`)
-  console.error(exited === undefined ? 'the program was still running (a native error dialog waits for a click)' : `the program exited with ${exited}`)
+  console.error(exited === undefined ? 'the program was still running' : `the program exited with ${exited}`)
   dump(data)
   processes()
   app.kill()
   process.exit(1)
 }
 
-let target
-// a cold WebView2 on a CI runner takes longer than on a desktop
-for (let i = 0; i < 180 && !target && exited === undefined; i++) {
-  await sleep(500)
+// `... info exiftool package checked app="0.1.0" build="release" exiftool="13.59" ...`
+const launchLine = () => {
+  let text = ''
   try {
-    target = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === 'page')
+    for (const f of readdirSync(join(data, 'logs'))) if (f.endsWith('.log')) text += readFileSync(join(data, 'logs', f), 'utf8')
   } catch {
-    // not up yet
+    return undefined
   }
+  const line = text.split('\n').find((l) => l.includes(' exiftool package checked '))
+  if (!line) return undefined
+  return Object.fromEntries([...line.matchAll(/ (\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]]))
 }
-if (!target) fail('no WebView DevTools target')
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise((r) => ws.addEventListener('open', r))
-let id = 1
-const pending = new Map()
-ws.addEventListener('message', (m) => {
-  const msg = JSON.parse(m.data)
-  pending.get(msg.id)?.(msg)
-})
-const js = (expression) =>
-  new Promise((r) => {
-    const n = id++
-    pending.set(n, (msg) => r(msg.result?.result?.value))
-    ws.send(JSON.stringify({ id: n, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
-  })
 
-// ask the backend itself, through the page's IPC
 let info
-for (let i = 0; i < 120; i++) {
-  info = await js(`window.__TAURI_INTERNALS__.invoke('app_info')`)
-  if (info?.launched) break
+// launch, recovery and the whole-package check; a cold start on a CI runner is slow
+for (let i = 0; i < 240 && !info && exited === undefined; i++) {
   await sleep(500)
+  info = launchLine()
 }
-if (!info?.launched) fail('the launch sequence did not finish')
-console.log(`MoriMeta ${info.version} (${info.dev ? 'development' : 'release'} build)`)
-console.log(`ExifTool: ${info.exiftool.version ?? '—'} from ${info.exiftool.package}`)
-if (info.dev) fail('this is a development build')
-if (info.exiftool.error) fail(`ExifTool: ${info.exiftool.error}`)
-if (!info.exiftool.package?.replaceAll('\\', '/').includes(dirname(exe).replaceAll('\\', '/'))) fail('ExifTool was not taken from the bundle')
-// the whole-package check runs after launch
-await sleep(3000)
-info = await js(`window.__TAURI_INTERNALS__.invoke('app_info')`)
-if (info.exiftool.integrity) fail(`integrity: ${info.exiftool.integrity}`)
+if (!info) fail('the launch sequence did not log its ExifTool check')
+console.log(`MoriMeta ${info.app} (${info.build} build), ExifTool ${info.exiftool} (${info.source})`)
+if (info.build !== 'release') fail('this is a development build')
+if (info.started !== 'true') fail('ExifTool did not start')
+if (info.source !== 'bundled') fail(`ExifTool was not taken from the bundle (${info.source})`)
+if (info.integrity !== 'ok') fail('the bundled ExifTool does not match its manifest')
 // GitHub's Windows runners are elevated and MoriMeta then refuses to write (SECURITY_MODEL §4.1):
 // with MM_RELEASE_CHECK_ELEVATED=1 that refusal, and only that one, is expected
-const elevated = process.env.MM_RELEASE_CHECK_ELEVATED === '1' && info.writes_refused?.includes('administrator rights')
-if (info.writes_refused && !elevated) fail(`writes refused: ${info.writes_refused}`)
+const elevated = process.env.MM_RELEASE_CHECK_ELEVATED === '1' && info.writes === 'refused: administrator rights'
+if (info.writes !== 'allowed' && !elevated) fail(`writes ${info.writes}`)
+await sleep(1000)
+if (exited !== undefined) fail('the program did not keep running')
 console.log(`bundled ExifTool intact (key files and every file), ${elevated ? 'writes refused only for administrator rights' : 'writes allowed'}`)
 console.log('PASS')
 app.kill()

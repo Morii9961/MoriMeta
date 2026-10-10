@@ -9,7 +9,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use mm_core::engine::Engine;
 use mm_core::integrity::Scope;
-use mm_core::service::{self, InstanceLock, OperationGate, PlanBook, Session, WritePermit};
+use mm_core::service::{
+    self, InstanceLock, OperationGate, PlanBook, ServiceError, Session, WritePermit,
+};
 use mm_exiftool::EngineConfig;
 use mm_store::Store;
 use serde::Serialize;
@@ -225,11 +227,56 @@ impl Core {
         let core = self.clone();
         std::thread::spawn(move || {
             core.launch_inner(resources.as_deref());
+            core.log_exiftool("exiftool started", resources.as_deref());
             *lock(&core.launched.0) = true;
             core.launched.1.notify_all();
             core.emit(AppEvent::Status);
             core.check_whole_package();
+            core.log_exiftool("exiftool package checked", resources.as_deref());
         });
+    }
+
+    /// The launch result in the program's log, for bug reports and the release check
+    /// (`apps/desktop/scripts/release-check.mjs`). Only versions and categories: the log never
+    /// holds a path (PRIVACY.md), and problem texts can.
+    fn log_exiftool(&self, what: &str, resources: Option<&Path>) {
+        let st = lock(&self.exiftool).clone();
+        let source = match st.package.as_deref() {
+            None => "none",
+            Some(_) if std::env::var_os("MM_EXIFTOOL_PKG").is_some() => "MM_EXIFTOOL_PKG",
+            Some(p) if resources.is_some_and(|r| Path::new(p) == r.join("exiftool")) => "bundled",
+            Some(_) => "development",
+        };
+        let writes = match self.gate.write() {
+            Ok(_) | Err(ServiceError::Busy(_)) => "allowed",
+            Err(ServiceError::Elevated) => "refused: administrator rights",
+            Err(_) => "refused",
+        };
+        let build = if cfg!(debug_assertions) {
+            "development"
+        } else {
+            "release"
+        };
+        mm_core::log::event(
+            "info",
+            what,
+            &[
+                ("app", &env!("CARGO_PKG_VERSION")),
+                ("build", &build),
+                ("exiftool", &st.version.as_deref().unwrap_or("-")),
+                ("source", &source),
+                ("started", &(st.error.is_none() && st.version.is_some())),
+                (
+                    "integrity",
+                    &if st.integrity.is_some() {
+                        "failed"
+                    } else {
+                        "ok"
+                    },
+                ),
+                ("writes", &writes),
+            ],
+        );
     }
 
     /// Wait until the launch sequence has finished (recovery done, sessions started or failed).
