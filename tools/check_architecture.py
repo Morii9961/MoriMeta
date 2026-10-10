@@ -13,6 +13,7 @@
    no Tauri plugin package; the content security policy loads nothing from outside the app.
 
 4. Every call in `ipc/index.ts` passes exactly the command's parameters, named as Tauri names them.
+5. The UI uses only settings the backend knows, and the development mock offers the same ones.
 
     python tools/check_architecture.py
 """
@@ -198,11 +199,43 @@ def check_command_args(problems: list[str]) -> None:
             problems.append(f"the UI calls {cmd} without its parameter {k!r}")
 
 
+def check_setting_names(problems: list[str]) -> None:
+    """5. The settings the UI reads and writes are ones the backend knows (mm-core settings.rs);
+    the development mock offers the same set."""
+    consts = {}
+    for f in (ROOT / "crates").glob("*/src/*.rs"):
+        for m in re.finditer(r'pub const (\w+): &str = "([^"]+)"', f.read_text(encoding="utf-8")):
+            consts[m.group(1)] = m.group(2)
+    reg_src = (ROOT / "crates" / "mm-core" / "src" / "settings.rs").read_text(encoding="utf-8")
+    known = set()
+    for m in re.finditer(r'\bname:\s*(?:"([^"]+)"|(?:crate::)?(?:\w+::)*(\w+)),', reg_src):
+        known.add(m.group(1) or consts.get(m.group(2), f"<unresolved {m.group(2)}>"))
+    if len(known) < 5 or any(k.startswith("<") for k in known):
+        problems.append(f"mm-core settings registry not read correctly: {sorted(known)}")
+        return
+    used: dict[str, str] = {}
+    for f in (ROOT / "apps" / "desktop" / "src").rglob("*.ts*"):
+        if "mock" in f.name or ".test." in f.name or f.name == "messages.ts":
+            continue
+        src = f.read_text(encoding="utf-8")
+        pat = r"(?:settingSet\(|\bget\(|\.name === )\s*'([a-z_]+\.[a-z_.]+)'"
+        for m in re.finditer(pat, src):
+            used.setdefault(m.group(1), f.name)
+    for name, where in sorted(used.items()):
+        if name not in known:
+            problems.append(f"{where} uses the setting {name!r}, which the backend does not know")
+    mock = (ROOT / "apps" / "desktop" / "src" / "ipc" / "mockSettings.ts").read_text(encoding="utf-8")
+    offered = set(re.findall(r"'([a-z_]+\.[a-z_.]+)':", mock.split("DEFAULTS", 1)[1].split("\n}", 1)[0]))
+    if offered != known:
+        problems.append(f"the development mock's settings differ from the backend's: missing {sorted(known - offered)}, extra {sorted(offered - known)}")
+
+
 def main() -> int:
     problems: list[str] = []
     check_dependencies(problems)
     check_capabilities(problems)
     check_command_args(problems)
+    check_setting_names(problems)
     for p in problems:
         print("problem:", p, file=sys.stderr)
     if not problems:
