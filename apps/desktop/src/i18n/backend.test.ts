@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from 'vitest'
 import { backendText, compile } from './backend'
+import catalog from './backend.zh.json'
 
 describe('backend texts', () => {
   it('compiles Rust format strings with literal braces', () => {
@@ -29,6 +30,22 @@ describe('backend texts', () => {
         'warning: no photo of this name is next to this XMP sidecar: the change is written to the sidecar alone and shows only in programs that open it',
       ),
     ).toBe('warning: 此 XMP sidecar 旁没有同名照片：修改只写入该 sidecar，只有打开它的程序才会显示')
+  })
+
+  it('uses every value of each sentence, and only those, in its Chinese text', () => {
+    const entries = [...Object.entries(catalog.inventory), ...Object.entries(catalog.extra)] as [string, string][]
+    const bad: string[] = []
+    let withValues = 0
+    for (const [en, zh] of entries) {
+      // the number of values the English template captures, as the UI matches it
+      const groups = new RegExp(`${compile(en).re.source}|`).exec('')!.length - 1
+      if (groups) withValues++
+      const used = new Set([...zh.matchAll(/\{(\d+)w?\}/g)].map((m) => Number(m[1])))
+      const want = new Set(Array.from({ length: groups }, (_, i) => i + 1))
+      if ([...used].sort().join() !== [...want].sort().join()) bad.push(`${en} → ${zh}`)
+    }
+    expect(withValues).toBeGreaterThan(100)
+    expect(bad).toEqual([])
   })
 
   it('leaves unknown texts and English alone', () => {
