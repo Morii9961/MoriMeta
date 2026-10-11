@@ -242,3 +242,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 
 - `backup.root` 以前可经 `setting_set` 设为 UNC 路径，`check_backup_location` 会先建目录、写探测文件再判断卷类型，即先向共享发起 SMB 连接（可能泄露 NTLM 凭据）。现在三层：设置校验不做任何 IO、按语法拒绝 UNC/设备路径（`mm_fs::is_network_or_device_path`）；`check_backup_location` 先按盘符判断卷类型（网络、可移动均拒绝）再访问；`setting_set` 不再接受 `backup.root`，只能经“设置 › 备份 › 更改…”的对话框。测试 `a_share_is_refused_without_being_touched`（不可解析的主机，< 500 ms）经变异验证：旧顺序要等 3 s 名称解析且失败。SECURITY_MODEL T-22。
 - `research/MANUAL_TEST_PLAN.md`：给 Morii 的第一次手动试用清单（安装、只读查看、批量编辑、时间/GPS、撤销、强制结束后恢复、预设/干净导出、设置、卸载），以及出问题时要带的日志。
+
+## 2026-10-11：项目状态快照与验收记录
+
+- `docs/status/PROJECT_STATUS.md` 与 `docs/status/project-status.json`（Project Status Protocol v1，供 Morii 手动导入 Moriium Dashboard）：首份基线，依据 e6c6906 的已有记录，未重跑测试。14 个里程碑，完成 9 项，经 Morii 验收 0 项。只在 Morii 输入「生成项目状态快照」时刷新，规则写在该文件末尾。
+- `docs/status/ACCEPTANCE.md`：Morii 的验收记录（待验收 / 验收通过 / 发现问题），快照的 `human_acceptance` 只取自这里；Agent 只能转录 Morii 的原话，或在修复后登记"待验收"请 Morii 复验。

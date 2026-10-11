@@ -1,0 +1,258 @@
+{
+  "schema_version": "1.0",
+  "project_id": "mori.meta",
+  "project_name": "MoriMeta",
+  "snapshot_at": "2026-10-11T22:35:00+08:00",
+  "source": {
+    "branch": "main",
+    "commit_sha": "e6c6906ddc56da303610350bbdccfe17eb801a31",
+    "basis": [
+      "research/PROGRESS.md",
+      "research/MANUAL_TEST_PLAN.md",
+      "docs/status/ACCEPTANCE.md（尚无记录）",
+      "docs/DECISIONS.md",
+      "docs/RELEASE_PLAN.md §11",
+      "docs/DEVELOPMENT_PLAN.md §2、§4、§7",
+      "docs/PRODUCT_SPEC.md §3.2",
+      "MoriMeta_Project_Spec_v0.1.md §27",
+      "CHANGELOG.md [Unreleased]",
+      "README.md",
+      "git log main（至 e6c6906）",
+      "GitHub Actions 历史运行：ci 38104520043、nightly 38127870408、release 38040422715",
+      "GitHub 上未关闭的 PR 与 issue（只读查询）"
+    ],
+    "tests_rerun": false
+  },
+  "stage": "acceptance",
+  "summary": "MVP 功能已在代码中完成：桌面应用能导入照片、预览并应用修改、撤销、中断后恢复和干净导出，历史自动化测试与 CI 均通过。至今没有任何功能经 Morii 亲自验收；安装包未签名，更新密钥和真实环境验证尚缺。下一步由 Morii 用照片副本按手动试用清单试用。",
+  "overall_progress": null,
+  "milestones": [
+    {
+      "id": "M01",
+      "title": "资料库：添加文件夹、排序筛选、检查器（只读查看）",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §2",
+        "research/PROGRESS.md 2026-10-04 资料库与检查器补全",
+        "research/PROGRESS.md 2026-10-10 真实应用 UI 冒烟测试 PASS",
+        "GitHub Actions ci 38104520043（e6c6906，success）"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M02",
+      "title": "批量编辑作者与版权 → 预览 → 应用",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §3",
+        "research/PROGRESS.md 2026-10-01 桌面应用第一版（UI 冒烟测试：应用后逐个核对磁盘上的文件）",
+        "GitHub Actions ci 38104520043（e6c6906，success）"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M03",
+      "title": "拍摄时间工具（平移、序列、绝对、保持间隔）与 GPS 设置/移除",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §4",
+        "research/PROGRESS.md 2026-10-10 时间工具与 GPS 输入的属性测试",
+        "crates/mm-domain/tests/properties.rs",
+        "GitHub Actions nightly 38127870408（e6c6906，success）"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M04",
+      "title": "历史与撤销、恢复备份到文件夹、导出日志",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §5",
+        "research/PROGRESS.md 2026-10-03 历史撤销选择和重新规划",
+        "research/PROGRESS.md 2026-10-04 真实应用 UI 冒烟测试（撤销后 12 个文件逐字节还原）"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M05",
+      "title": "中断后恢复（继续剩余 / 撤销已完成 / 保持现状）",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §6",
+        "docs/PHASE1B_FAULT_MATRIX.md",
+        "README.md Safety, stated with its conditions",
+        "GitHub Actions ci 38104520043（e6c6906，success）"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M06",
+      "title": "预设与规则（规则构建器、试运行、导入导出）",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §7.1–7.3",
+        "research/PROGRESS.md 2026-10-01 Presets and Rules screens",
+        "research/PROGRESS.md 2026-10-10 界面规格补齐"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M07",
+      "title": "干净导出（JPEG 副本去除位置、序列号等）",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §7.4",
+        "research/PROGRESS.md 2026-10-01 Clean Export",
+        "docs/DECISIONS.md D-15"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M08",
+      "title": "设置、备份管理、中英文界面",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §8",
+        "research/PROGRESS.md 2026-10-03 备份管理界面",
+        "research/PROGRESS.md 2026-10-11 备份位置拒绝网络共享（T-22）",
+        "commit c5cfef2"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M09",
+      "title": "安装包、首次启动、卸载（未签名 NSIS）",
+      "status": "done",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        "research/MANUAL_TEST_PLAN.md §1、§9",
+        "research/PROGRESS.md 2026-10-10 发布流水线",
+        "GitHub Actions release 38040422715（e35f3a0，success）",
+        "docs/DECISIONS.md U-1"
+      ],
+      "human_acceptance": "pending"
+    },
+    {
+      "id": "M10",
+      "title": "应用内更新（S6：生产密钥与真机安装验证）",
+      "status": "in_progress",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "docs/UPDATER_RELEASE.md",
+        "research/PROGRESS.md 2026-10-03 Offline updater release preparation",
+        "CHANGELOG.md Known limits"
+      ],
+      "human_acceptance": "unknown"
+    },
+    {
+      "id": "M11",
+      "title": "发布流水线（首个版本尚未发布）",
+      "status": "in_progress",
+      "evidence_level": "existing_test",
+      "evidence_refs": [
+        ".github/workflows/release.yml",
+        "docs/RELEASE_PLAN.md §11",
+        "GitHub Actions release 38040422715（e35f3a0，success）"
+      ],
+      "human_acceptance": "not_required"
+    },
+    {
+      "id": "M12",
+      "title": "代码签名（SignPath Foundation 申请）",
+      "status": "blocked",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "docs/CODE_SIGNING.md",
+        "docs/DECISIONS.md D-2、D-16"
+      ],
+      "human_acceptance": "not_required"
+    },
+    {
+      "id": "M13",
+      "title": "真实环境验证（D-13：真实语料、第三方软件读取、断电、SD 卡与 NAS、云同步）",
+      "status": "blocked",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "docs/DECISIONS.md D-13",
+        "research/PROGRESS.md Waiting / needs the user",
+        "CHANGELOG.md Known limits"
+      ],
+      "human_acceptance": "not_required"
+    },
+    {
+      "id": "M14",
+      "title": "Moriium Gallery 集成（非 v1 必需）",
+      "status": "not_started",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "MoriMeta_Project_Spec_v0.1.md §27",
+        "docs/PRODUCT_SPEC.md C-13",
+        "docs/DEVELOPMENT_PLAN.md §7 v1.1"
+      ],
+      "human_acceptance": "not_required"
+    }
+  ],
+  "blockers": [
+    {
+      "title": "尚无 Morii 亲自试用的结论",
+      "impact": "全部功能只有代码与自动化测试证据，好不好用、有没有看漏的问题都还不知道，不宜发布公开预览。"
+    },
+    {
+      "title": "代码签名需要 Morii 申请，且须先有公开版本",
+      "impact": "D-2 规定公开 Beta 起安装包必须签名；未签名的安装包会被 SmartScreen 拦截。"
+    },
+    {
+      "title": "更新功能缺生产签名密钥，真机安装未验证（S6）",
+      "impact": "不设密钥构建的版本永不检查更新；安装、升级、卸载未在 Windows 10/11 上实测。"
+    },
+    {
+      "title": "1.0 前的真实环境资源缺失（D-13）",
+      "impact": "真实相机语料、Lightroom/NX Studio 读取、断电、SD 卡与 NAS、云同步均未验证，只能在发布说明中写为未验证并保持默认限制。"
+    }
+  ],
+  "next_actions": [
+    {
+      "title": "Morii 按 research/MANUAL_TEST_PLAN.md 用照片副本完成第一次手动试用，并在 docs/status/ACCEPTANCE.md 登记结论",
+      "priority": "P0",
+      "result": "M01–M09 各有 Morii 的结论：验收通过或发现问题。"
+    },
+    {
+      "title": "工程修复试用中发现的问题；Morii 复验后决定是否推送 v0.1.0 标签，发布未签名公开预览",
+      "priority": "P1",
+      "result": "首个公开版本；release.yml 的构建证明与草稿发布两步首次实际运行。"
+    },
+    {
+      "title": "v0.1.0 发布后，Morii 申请 SignPath Foundation 代码签名（8 周未获批则改用 OV 证书）",
+      "priority": "P2",
+      "result": "公开 Beta 起的安装包可以签名。"
+    }
+  ],
+  "needs_morii": [
+    {
+      "decision": "何时开始第一次手动试用；安装包用本机构建，还是重新运行 release 工作流（现有产物构建于 2026-10-10，早于 T-22 修复，2026-10-24 过期）。"
+    },
+    {
+      "decision": "试用并修复后，是否推送 v0.1.0 标签发布未签名公开预览。"
+    },
+    {
+      "decision": "首个版本前是否设置更新公钥（仓库变量 MORIMETA_UPDATER_PUBLIC_KEY）；不设置，该版本永不检查更新。"
+    },
+    {
+      "decision": "SignPath Foundation 申请与 D-16 角色询问；F-104 报告是否发到 ExifTool 论坛（草稿在 research/reports/）。"
+    },
+    {
+      "decision": "D-13 资源能提供哪些（真实语料、Lightroom/Capture One/NX Studio、SD 卡、NAS、专用云同步目录、断电虚拟机）；其余在发布说明中写为未验证。"
+    },
+    {
+      "decision": "Dependabot PR：工程建议合并 #2、#5，关闭 #3、#4；#6 已被提交 730a728 取代，可直接关闭。"
+    }
+  ]
+}
