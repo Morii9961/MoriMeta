@@ -8,6 +8,7 @@
 
 **拿到安装程序**（任选其一）：
 
+- 本机构建（最快）：在 `apps/desktop` 中运行 `python scripts/stage-exiftool.py`，再运行 `npx tauri build --ci --config src-tauri/tauri.bundle.conf.json`（约 10 分钟），得到 `apps/desktop/src-tauri/target/release/bundle/nsis/MoriMeta_0.1.0_x64-setup.exe`。之后可用 `node scripts/release-check.mjs <临时文件夹>` 检查构建出的程序能找到并核验自带的 ExifTool（不安装、不碰照片）。
 - 最近一次 `release` 工作流（手动运行）的产物，保留 14 天：
 
   ```powershell
@@ -17,7 +18,7 @@
   运行编号见 `gh run list -R Morii9961/MoriMeta --workflow release.yml`（选最新的、结论为 success 的那次）。没有可用的，就在 GitHub 网页的 Actions › release › Run workflow 手动运行一次（约 15 分钟）。
 - 或推送 `v0.1.0` 标签，得到草稿发布（见 PROGRESS.md “First release”）。
 
-**核对**：`Get-FileHash <安装程序> -Algorithm SHA256` 应与同目录 `SHA256SUMS.txt` 中的一致。安装程序未签名，SmartScreen 会拦：“更多信息” › “仍要运行”。
+**核对**（CI 产物）：`Get-FileHash <安装程序> -Algorithm SHA256` 应与同目录 `SHA256SUMS.txt` 中的一致。安装程序未签名，SmartScreen 会拦：“更多信息” › “仍要运行”。
 
 ## 1. 安装与首次启动
 
