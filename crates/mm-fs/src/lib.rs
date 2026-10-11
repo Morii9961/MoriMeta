@@ -448,6 +448,23 @@ pub fn volume_root(p: &Path) -> io::Result<PathBuf> {
     Ok(PathBuf::from(s))
 }
 
+/// A path that names a network share or a device by its form alone (`\\server\share`,
+/// `//server/share`, `\\?\UNC\…`, `\\.\…`), decided without touching it: opening such a path
+/// already connects to the server, and Windows sends the user's credentials there.
+pub fn is_network_or_device_path(p: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    match p.components().next() {
+        Some(Component::Prefix(pre)) => matches!(
+            pre.kind(),
+            Prefix::UNC(..) | Prefix::VerbatimUNC(..) | Prefix::DeviceNS(..)
+        ),
+        _ => {
+            let s = p.as_os_str().to_string_lossy();
+            s.starts_with(r"\\") || s.starts_with("//")
+        }
+    }
+}
+
 /// File system of the volume whose mount point is `root` (from [`volume_root`]): `NTFS`, `exFAT`,
 /// `FAT32`, `ReFS`, …; `None` when Windows does not say.
 pub fn file_system(root: &Path) -> Option<String> {
@@ -840,6 +857,22 @@ pub fn sibling_name(p: &Path, infix: &str, token: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shares_and_devices_are_known_by_their_form() {
+        for p in [
+            r"\\server\share\backups",
+            "//server/share/backups",
+            r"\\?\UNC\server\share",
+            r"\\.\PhysicalDrive0",
+            r"\\server",
+        ] {
+            assert!(is_network_or_device_path(Path::new(p)), "{p}");
+        }
+        for p in [r"C:\Backups", r"\\?\C:\Backups", r"D:\", "relative"] {
+            assert!(!is_network_or_device_path(Path::new(p)), "{p}");
+        }
+    }
     use std::io::Seek;
 
     fn dir(name: &str) -> PathBuf {

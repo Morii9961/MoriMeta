@@ -282,6 +282,24 @@ enum Outcome {
 /// drive or removable media are refused (INTERACTION_SPEC §15).
 pub fn check_backup_location(store: &Store) -> Result<(), CoreError> {
     let root = store.backup_root();
+    let refuse = || {
+        CoreError::BackupUnavailable(format!(
+            "{}: backups must be on a local disk, not a network drive or removable media",
+            root.display()
+        ))
+    };
+    // decided before the folder is created or probed: touching a share already connects to it
+    if mm_fs::is_network_or_device_path(root) {
+        return Err(refuse());
+    }
+    if let Some(drive) = drive_root(root)
+        && matches!(
+            mm_fs::volume_kind(&drive),
+            mm_fs::VolumeKind::Network | mm_fs::VolumeKind::Removable
+        )
+    {
+        return Err(refuse());
+    }
     store
         .check_backup_root()
         .map_err(|e| CoreError::BackupUnavailable(format!("{}: {e}", root.display())))?;
@@ -295,6 +313,21 @@ pub fn check_backup_location(store: &Store) -> Result<(), CoreError> {
             )))
         }
         _ => Ok(()),
+    }
+}
+
+/// `X:\` of a path that starts with a drive letter (no IO): Windows tells its kind locally,
+/// also for a mapped network drive.
+fn drive_root(p: &Path) -> Option<PathBuf> {
+    use std::path::{Component, Prefix};
+    match p.components().next() {
+        Some(Component::Prefix(pre)) => match pre.kind() {
+            Prefix::Disk(d) | Prefix::VerbatimDisk(d) => {
+                Some(PathBuf::from(format!("{}:\\", d as char)))
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }
 

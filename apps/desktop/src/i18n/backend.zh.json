@@ -185,7 +185,8 @@
     "{to:?} is not a time": "{1} 不是有效的时间",
     "{by:?} is not a shift": "{1} 不是有效的平移量",
     "nothing to prune": "没有可清理的备份",
-    "the backup selection changed; preview it again": "所选备份或保留策略已改变，请重新预览"
+    "the backup selection changed; preview it again": "所选备份或保留策略已改变，请重新预览",
+    "a folder on a local disk, not a network share": "本地磁盘上的文件夹，不能是网络共享"
   },
   "extra": {
     "written to the XMP sidecar; the RAW file is not modified": "写入 XMP sidecar；RAW 文件不会被修改",
@@ -240,6 +241,7 @@
     "the update signature has several signed versions": "更新签名包含多个签名版本",
     "the signed installer version does not match a newer update": "签名的安装包版本与新版本信息不一致",
     "{}: use lat,lon[,alt] in decimal degrees, or degrees, minutes and seconds with N/S and E/W": "{1}：请使用十进制度数的 纬度,经度[,海拔]，或带 N/S 与 E/W 的度分秒",
-    "{}: use lat,lon[,alt] in decimal degrees and metres": "{1}：请使用十进制度数和米表示的 纬度,经度[,海拔]"
+    "{}: use lat,lon[,alt] in decimal degrees and metres": "{1}：请使用十进制度数和米表示的 纬度,经度[,海拔]",
+    "the backup location is chosen in Settings › Backup › Change…": "备份位置请在“设置 › 备份 › 更改…”中选择"
   }
 }

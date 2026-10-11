@@ -143,6 +143,7 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 - Morii to carry out (outward-facing or paid): SignPath Foundation application and the D-16 question (D-2); posting the F-104 report to the ExifTool forum (draft in `research/reports/`).
 - Design session files stay the design session's (engineering does not edit them); Morii's manual screen review once the app runs.
 - Dependabot (2026-10-10, merging needs Morii's approval): #2 (tauri 2.12.1, tauri-plugin-updater =2.12.0, tauri-build 2.7.1) and #5 (@tauri-apps/api, cli 2.12.1, vite 8.3.2) pass every check and are recommended; the updater plugin's 2.11/2.12 changes do not touch this app (no webview updater permission) and it still uses minisign-verify 0.2.5. #3 (base64 0.23) and #4 (minisign-verify 0.3.0) are better closed: each adds a second copy beside the one tauri-plugin-updater uses, and #4 would make the app's own signature pre-check use a different verifier than the plugin that installs. Revisit when the plugin moves. #6 (source-map-js in apps/desktop) is superseded by 730a728 and should close itself; #7 bumps the same package in the throwaway research spike `research/spikes/s5-ui` (merge or close, no effect on the product).
+- Hands-on test by Morii: `research/MANUAL_TEST_PLAN.md` (installer from the latest `release` workflow artifact, 9 sections, about 1–2 hours).
 - First release: rename `## [Unreleased]` in CHANGELOG.md and CHANGELOG.zh-CN.md to the version, make the versions agree, push the `v<version>` tag; `release.yml` then drafts the release (RELEASE_PLAN §11). Optionally set the repository variable `MORIMETA_UPDATER_PUBLIC_KEY` first, or the build never checks for updates.
 - Resources (D-13): LR/C1/NX Studio etc., real 5,000-file corpus, mid-range laptop / Win10 for S5 manual items, VM for power loss, a real SD card (exFAT and FAT32 are covered by VHDs in CI), a real NAS (SMB is covered over localhost), a dedicated cloud-sync folder (V-04, downloaded cloud files stay blocked until then).
 
@@ -236,3 +237,8 @@ Public repository github.com/Morii9961/MoriMeta (GPL-3.0-or-later). The v0.3 spe
 
 - `check_architecture.py` 新增：界面每处调用传给命令的键与 Rust 命令参数（按 Tauri 的 camelCase 命名，排除注入参数）完全一致——63 个命令、73 个参数；界面使用的 9 个设置名都在 mm-core 设置登记表中（常量已解析），模拟后端提供同样的 11 项。各有变异检查。
 - 资料库规模（规格 1#large 为 5,860 个文件）：6,000 个仿真条目在 Node 中的计算耗时——按名称排序 1.7 ms、相机 + 拍摄时间两级排序 23.9 ms、搜索 2.5 ms、分面 0.6 ms、两个条件 0.8 ms、按相机分组 1.8 ms。表格是虚拟滚动；浏览器面板隐藏时页面不渲染，渲染耗时未测。模拟后端可用 `localStorage['mm.mockFiles']`（最多 20,000）设定"添加文件夹"的文件数。
+
+## 2026-10-11：备份位置拒绝网络共享（T-22）、手动试用清单
+
+- `backup.root` 以前可经 `setting_set` 设为 UNC 路径，`check_backup_location` 会先建目录、写探测文件再判断卷类型，即先向共享发起 SMB 连接（可能泄露 NTLM 凭据）。现在三层：设置校验不做任何 IO、按语法拒绝 UNC/设备路径（`mm_fs::is_network_or_device_path`）；`check_backup_location` 先按盘符判断卷类型（网络、可移动均拒绝）再访问；`setting_set` 不再接受 `backup.root`，只能经“设置 › 备份 › 更改…”的对话框。测试 `a_share_is_refused_without_being_touched`（不可解析的主机，< 500 ms）经变异验证：旧顺序要等 3 s 名称解析且失败。SECURITY_MODEL T-22。
+- `research/MANUAL_TEST_PLAN.md`：给 Morii 的第一次手动试用清单（安装、只读查看、批量编辑、时间/GPS、撤销、强制结束后恢复、预设/干净导出、设置、卸载），以及出问题时要带的日志。

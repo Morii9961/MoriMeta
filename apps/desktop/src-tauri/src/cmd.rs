@@ -1382,8 +1382,19 @@ pub fn settings_list(core: CoreState) -> Res<Vec<SettingDto>> {
         .collect()
 }
 
+/// Settings the UI may write as text. A path is never one of them (SECURITY_MODEL §6): the
+/// backup location comes from the folder dialog in `choose_backup_folder`, which checks it before
+/// it is kept; clearing it (back to the default) is allowed.
+fn ui_may_set(name: &str, value: &str) -> Res<()> {
+    if name == "backup.root" && !value.is_empty() {
+        return Err("the backup location is chosen in Settings › Backup › Change…".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn setting_set(core: CoreState, name: String, value: String) -> Res<()> {
+    ui_may_set(&name, &value)?;
     let mut store = lock(&core.store);
     settings::set(&mut store, &name, &value).map_err(ue)?;
     Ok(())
@@ -1456,6 +1467,15 @@ pub fn settings_migrations(core: CoreState) -> Vec<(i64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ui_cannot_type_a_backup_location() {
+        for v in [r"\\server\share", r"C:\Backups", "//server/share"] {
+            assert!(ui_may_set("backup.root", v).is_err(), "{v}");
+        }
+        assert!(ui_may_set("backup.root", "").is_ok(), "back to the default");
+        assert!(ui_may_set("metadata.default_creator", "Morii").is_ok());
+    }
 
     #[test]
     fn clean_export_checks_the_gate_before_waiting_or_changing_cancel_state() {

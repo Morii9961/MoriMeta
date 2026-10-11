@@ -45,6 +45,10 @@ fn check_root(v: &str) -> Result<(), String> {
     if !p.is_absolute() {
         return Err("an absolute folder path".into());
     }
+    // refused by its form, before anything opens it (backups must be on a local disk)
+    if mm_fs::is_network_or_device_path(p) {
+        return Err("a folder on a local disk, not a network share".into());
+    }
     Ok(())
 }
 
@@ -252,6 +256,10 @@ mod tests {
             ("backup.max_age_days", "0"),
             ("backup.max_share_of_volume", "2"),
             ("backup.root", "relative\\folder"),
+            ("backup.root", r"\\server\share\backups"),
+            ("backup.root", "//server/share/backups"),
+            ("backup.root", r"\\?\UNC\server\share\backups"),
+            ("backup.root", r"\\.\PhysicalDrive0"),
             ("metadata.preserve_mtime", "yes"),
             ("exec.workers", "64"),
             ("metadata.copyright_template", "© {index}"),

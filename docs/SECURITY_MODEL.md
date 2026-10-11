@@ -213,6 +213,7 @@
 | T-19 | MoriMeta 崩溃后遗留 ExifTool 进程，持有文件句柄或继续执行 | 文件被锁、行为不可控 | Job Object `KILL_ON_JOB_CLOSE` | S1 R8 |
 | T-20 | ReplaceFileW 的 bak 名处已有文件（被预测或巧合） | 用户文件被静默覆盖 | bak 名 ≥ 64 位随机；提交前核对不存在；登记在 Journal | S2 F5 实测会覆盖 |
 | T-21 | 读取时字符串被转为数字/布尔值 | Preview 与实际值不一致 | `StructFormat=JSONQ` | S1 |
+| T-22 | 被控制的前端（或用户误操作）把备份位置设为网络共享 `\\主机\共享` | 访问共享即发起 SMB 连接，Windows 自动发送用户的 NTLM 凭据；照片备份写到他人机器 | 2026-10-10：设置校验按语法拒绝 UNC/设备路径（不做 IO）；`check_backup_location` 先按语法与盘符类型（`GetDriveTypeW`，本地查询）拒绝网络/可移动位置，再创建目录与探测文件；`setting_set` 不接受界面写入非空 `backup.root`，只能经 Rust 端文件夹对话框 `choose_backup_folder` | 单元测试（路径分类、设置校验、界面不可写）；`mm-core/tests/backup_location.rs` 证明不存在的主机未被查找（修复前 3 秒后报 IO 错误） |
 
 ---
 
