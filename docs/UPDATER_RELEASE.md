@@ -20,6 +20,8 @@ $env:MORIMETA_UPDATER_PUBLIC_KEY = [Convert]::ToBase64String([IO.File]::ReadAllB
 
 应用版本须同时更新桌面 `Cargo.toml` 与 `tauri.conf.json`，与签名版本一致。安装包使用 ASCII 文件名，以 `.exe` 结尾，最多 128 MiB。
 
+更新插件只启用 `rustls-tls` 和 `system-proxy`；关闭默认的 `zip` 功能，因为它仅用于旧版 Tauri v1 的压缩更新包。本项目直接分发签名后的 NSIS `.exe`，不接受 ZIP 更新包。这样也移除了有安全公告的 `zip` 4 依赖；不得通过忽略 RustSec 公告恢复该功能。插件功能说明和直接安装路径见[上游源码](https://github.com/tauri-apps/plugins-workspace/blob/updater-v2.12.0/plugins/updater/src/lib.rs#L7-L13)及[Windows 安装路径](https://github.com/tauri-apps/plugins-workspace/blob/updater-v2.12.0/plugins/updater/src/updater.rs#L884-L930)。
+
 ## 2. 签名最终安装包
 
 发布者使用官方 Minisign，并在其交互提示中解锁密钥。示例版本须替换为实际版本：
