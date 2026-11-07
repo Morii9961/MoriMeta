@@ -1,30 +1,27 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "project_id": "mori.meta",
   "project_name": "MoriMeta",
-  "snapshot_at": "2026-10-11T22:35:00+08:00",
+  "snapshot_at": "2026-11-07T12:30:00+08:00",
   "source": {
     "branch": "main",
-    "commit_sha": "e6c6906ddc56da303610350bbdccfe17eb801a31",
+    "commit_sha": "3ed621dcdcbf17dd7e9b8e96b6c34fb9c8599453",
+    "tests_rerun": false,
     "basis": [
-      "research/PROGRESS.md",
+      "2026-11-07 生成快照：只读 Git、GitHub PR 和仓库文档；不重跑测试、构建或真实验收",
+      "本机 main@3ed621d；origin/main@0943aea（依赖 PR #8～#12 已合并），本机未同步",
+      "设计分支 redesign/explore@b358da6，2026-11-01 后各分支无新提交",
+      "docs/status/ACCEPTANCE.md（记录表仍为空）",
       "research/MANUAL_TEST_PLAN.md",
-      "docs/status/ACCEPTANCE.md（尚无记录）",
-      "docs/DECISIONS.md",
-      "docs/RELEASE_PLAN.md §11",
-      "docs/DEVELOPMENT_PLAN.md §2、§4、§7",
-      "docs/PRODUCT_SPEC.md §3.2",
-      "MoriMeta_Project_Spec_v0.1.md §27",
-      "CHANGELOG.md [Unreleased]",
-      "README.md",
-      "git log main（至 e6c6906）",
-      "GitHub Actions 历史运行：ci 38104520043、nightly 38127870408、release 38040422715",
-      "GitHub 上未关闭的 PR 与 issue（只读查询）"
-    ],
-    "tests_rerun": false
+      "开启的依赖 PR #13、#14、#16、#17、#18，未合并"
+    ]
+  },
+  "reporter": {
+    "agent": "claude",
+    "note": "Claude Opus 5.5"
   },
   "stage": "acceptance",
-  "summary": "MVP 功能已在代码中完成：桌面应用能导入照片、预览并应用修改、撤销、中断后恢复和干净导出，历史自动化测试与 CI 均通过。至今没有任何功能经 Morii 亲自验收；安装包未签名，更新密钥和真实环境验证尚缺。下一步由 Morii 用照片副本按手动试用清单试用。",
+  "summary": "11 月 1 日后无新提交。MVP 功能有工程基线，主人验收表仍为空。06 Bridge 深灰已铺到各屏，保存在独立设计分支 b358da6，未并入主线。下一步是新版实机试用和问题收尾，签名/更新与正式发布仍待完成。",
   "overall_progress": null,
   "milestones": [
     {
@@ -198,61 +195,95 @@
         "docs/DEVELOPMENT_PLAN.md §7 v1.1"
       ],
       "human_acceptance": "not_required"
+    },
+    {
+      "id": "dependency_maintenance",
+      "title": "依赖维护及移除未用 ZIP 更新支持（远端 #8–#12 已合并）",
+      "status": "done",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "https://github.com/Morii9961/MoriMeta/pull/12",
+        "git:0943aeaf59f5dc6c51f9d6d5cb5ab09697493356"
+      ],
+      "human_acceptance": "not_required"
+    },
+    {
+      "id": "greycard_redesign",
+      "title": "06 Bridge 深灰已定稿并落地独立分支；旧灰卡方向已放弃，产品待验收",
+      "status": "in_progress",
+      "evidence_level": "repository",
+      "evidence_refs": [
+        "git:b358da6427644296793c77abdccc186b0ad328d3",
+        "独立设计工作树 DESIGN.md",
+        "独立设计工作树 docs/design-decisions.md"
+      ],
+      "human_acceptance": "pending"
     }
   ],
   "blockers": [
     {
+      "id": "no-owner-trial",
       "title": "尚无 Morii 亲自试用的结论",
-      "impact": "全部功能只有代码与自动化测试证据，好不好用、有没有看漏的问题都还不知道，不宜发布公开预览。"
+      "impact": "全部功能只有代码与自动化测试证据，好不好用、有没有漏掉的问题都还不知道，不宜发布公开预览。"
     },
     {
+      "id": "code-signing",
       "title": "代码签名需要 Morii 申请，且须先有公开版本",
       "impact": "D-2 规定公开 Beta 起安装包必须签名；未签名的安装包会被 SmartScreen 拦截。"
     },
     {
+      "id": "updater-key",
       "title": "更新功能缺生产签名密钥，真机安装未验证（S6）",
       "impact": "不设密钥构建的版本永不检查更新；安装、升级、卸载未在 Windows 10/11 上实测。"
     },
     {
+      "id": "real-env-resources",
       "title": "1.0 前的真实环境资源缺失（D-13）",
-      "impact": "真实相机语料、Lightroom/NX Studio 读取、断电、SD 卡与 NAS、云同步均未验证，只能在发布说明中写为未验证并保持默认限制。"
+      "impact": "真实相机语料、Lightroom/NX Studio 读取、断电、SD 卡与 NAS、云同步均未验证，只能在发布说明中写为未验证。"
     }
   ],
   "next_actions": [
     {
-      "title": "Morii 按 research/MANUAL_TEST_PLAN.md 用照片副本完成第一次手动试用，并在 docs/status/ACCEPTANCE.md 登记结论",
-      "priority": "P0",
-      "result": "M01–M09 各有 Morii 的结论：验收通过或发现问题。"
-    },
-    {
-      "title": "工程修复试用中发现的问题；Morii 复验后决定是否推送 v0.1.0 标签，发布未签名公开预览",
+      "id": "first-trial",
+      "title": "用选定 Bridge 界面和照片副本做第一次实机试用",
       "priority": "P1",
-      "result": "首个公开版本；release.yml 的构建证明与草稿发布两步首次实际运行。"
+      "result": "按手动清单记录批量修改、预览、撤销/恢复、导出等主人结论；不再重开已选视觉方向。"
     },
     {
-      "title": "v0.1.0 发布后，Morii 申请 SignPath Foundation 代码签名（8 周未获批则改用 OV 证书）",
+      "id": "merge-redesign",
+      "title": "收尾并整合独立界面分支",
+      "priority": "P1",
+      "result": "根据试用修复问题、完成受影响验证，再按明确授权进入主线。"
+    },
+    {
+      "id": "dependency-prs",
+      "title": "处理依赖 PR #13～#18",
       "priority": "P2",
-      "result": "公开 Beta 起的安装包可以签名。"
+      "result": "确认升级不影响构建后决定是否合并，并把本机 main 同步到 origin/main。"
+    },
+    {
+      "id": "release-prep",
+      "title": "准备发布所需签名和更新配置",
+      "priority": "P2",
+      "result": "由 Morii 确认预览发布、更新公钥和代码签名；未签名包不假称正式分发。"
     }
   ],
   "needs_morii": [
     {
-      "decision": "何时开始第一次手动试用；安装包用本机构建，还是重新运行 release 工作流（现有产物构建于 2026-10-10，早于 T-22 修复，2026-10-24 过期）。"
+      "id": "trial-when",
+      "decision": "何时使用已选 Bridge 界面和照片副本做第一轮实机试用？"
     },
     {
-      "decision": "试用并修复后，是否推送 v0.1.0 标签发布未签名公开预览。"
+      "id": "merge-gate",
+      "decision": "界面分支进入主线前，哪些核心操作必须先完成验收？"
     },
     {
-      "decision": "首个版本前是否设置更新公钥（仓库变量 MORIMETA_UPDATER_PUBLIC_KEY）；不设置，该版本永不检查更新。"
+      "id": "release-when",
+      "decision": "首个预览版本、更新公钥及代码签名何时推进？"
     },
     {
-      "decision": "SignPath Foundation 申请与 D-16 角色询问；F-104 报告是否发到 ExifTool 论坛（草稿在 research/reports/）。"
-    },
-    {
-      "decision": "D-13 资源能提供哪些（真实语料、Lightroom/Capture One/NX Studio、SD 卡、NAS、专用云同步目录、断电虚拟机）；其余在发布说明中写为未验证。"
-    },
-    {
-      "decision": "Dependabot PR：工程建议合并 #2、#5，关闭 #3、#4；#6 已被提交 730a728 取代，可直接关闭。"
+      "id": "real-env",
+      "decision": "真实相机/第三方软件/存储故障验收可提供哪些资源？"
     }
   ]
 }
